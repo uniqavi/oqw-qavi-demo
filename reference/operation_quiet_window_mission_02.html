@@ -1,0 +1,1535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Operation Quiet Window — Mission 02</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Code', Consolas, 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    background: #0c0c0e;
+    font-family: var(--font-sans);
+  }
+  body { display: flex; flex-direction: column; }
+  .frame { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .tabs { display: flex; align-items: center; gap: 0; height: 30px; background: #1a1a1d; padding: 6px 8px 0; flex-shrink: 0; }
+  .tab { background: #0c0c0e; color: #9a9a9f; padding: 6px 12px 8px; font-size: 11px; font-family: var(--font-mono); border-radius: 6px 6px 0 0; margin-right: 2px; max-width: 360px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0.5px solid #2a2a2e; border-bottom: none; }
+  .tab.active { background: #f5f5f5; color: #1a1a1f; }
+  .tab .dot { color: #E63946; margin-right: 6px; }
+  .tab .x { color: #888; margin-left: 8px; }
+  .urlbar { display: flex; align-items: center; gap: 6px; background: #f5f5f5; padding: 6px 10px; border-bottom: 1px solid #2a2a2e; font-family: var(--font-mono); font-size: 11px; flex-shrink: 0; }
+  .nav { color: #888; padding: 0 4px; }
+  .url { flex: 1; background: white; border: 1px solid #ddd; border-radius: 11px; padding: 3px 10px; color: #444; }
+  .canvas-wrap { position: relative; background: #181818; flex: 1; min-height: 0; }
+  canvas#oqw {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    image-rendering: auto;
+  }
+  .hud { display: flex; gap: 22px; align-items: center; padding: 9px 14px; background: #0c0c0e; color: #f5f5f5; font-family: var(--font-mono); font-size: 12px; flex-shrink: 0; border-top: 1px solid #1a1a1d; }
+  .stat { display: flex; align-items: center; gap: 6px; }
+  .stat-label { color: #6b6b73; letter-spacing: 1px; }
+  .bar { display: inline-block; width: 110px; height: 7px; background: #2a2a2e; border-radius: 3px; overflow: hidden; vertical-align: middle; }
+  .bar-fill { height: 100%; transition: width 0.12s linear, background 0.2s; width: 0%; background: #2D8659; }
+  .hint { color: #6b6b73; text-align: right; font-size: 11px; margin-left: auto; }
+  .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; background: rgba(12,12,14,0.94); color: #f5f5f5; text-align: center; padding: 20px; z-index: 10; }
+  .overlay.show { display: flex; }
+  .overlay-tag { font-family: var(--font-mono); font-size: 11px; letter-spacing: 4px; color: #E63946; margin-bottom: 14px; }
+  .overlay h3 { font-size: 36px; margin: 0 0 12px; font-weight: 500; font-family: var(--font-mono); letter-spacing: 2px; color: #fff; }
+  .overlay p { font-size: 15px; color: #9a9a9f; margin: 4px 0; max-width: 520px; line-height: 1.7; font-family: var(--font-sans); }
+  .overlay button { background: transparent; color: #f5f5f5; border: 1px solid #E63946; padding: 10px 28px; margin-top: 26px; font-family: var(--font-mono); font-size: 12px; cursor: pointer; border-radius: 4px; letter-spacing: 2px; transition: background 0.15s; }
+  .overlay button:hover { background: #E63946; }
+  .instr { font-size: 11px; color: #6b6b73; text-align: center; padding: 8px 14px; font-family: var(--font-mono); line-height: 1.5; letter-spacing: 0.5px; background: #0c0c0e; flex-shrink: 0; border-top: 1px solid #1a1a1d; }
+  .instr kbd { background: #1a1a1f; border: 1px solid #2a2a2e; padding: 1px 6px; border-radius: 3px; font-size: 11px; color: #ccc; }
+  .instr code { color: #E63946; }
+  .start { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; background: rgba(245,245,245,0.96); color: #1a1a1f; cursor: pointer; padding: 24px; text-align: center; z-index: 10; }
+  .start.hidden { display: none; }
+  .start-tag { font-family: var(--font-mono); font-size: 11px; letter-spacing: 4px; color: #E63946; margin-bottom: 14px; }
+  .start h3 { font-size: 38px; margin: 0 0 10px; font-weight: 500; font-family: var(--font-mono); letter-spacing: 2px; }
+  .start p { font-size: 14px; color: #6b6b73; margin: 4px 0; max-width: 580px; line-height: 1.7; }
+  .start ul { font-size: 13px; color: #6b6b73; margin: 14px 0; padding: 0; list-style: none; max-width: 580px; line-height: 1.9; text-align: left; }
+  .start ul li::before { content: "▸ "; color: #E63946; }
+  .start-btn { background: #E63946; color: white; border: none; padding: 12px 34px; margin-top: 18px; font-family: var(--font-mono); font-size: 13px; cursor: pointer; border-radius: 4px; letter-spacing: 2px; }
+  .start-btn:hover { background: #c92e3a; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <div class="tabs">
+    <div class="tab active"><span class="dot">●</span>Mission 02 — totallynormaltube.gov.??<span class="x">×</span></div>
+    <div class="tab" style="color:#666">+</div>
+  </div>
+  <div class="urlbar">
+    <span class="nav">←</span><span class="nav">→</span><span class="nav">↻</span>
+    <div class="url">https://totallynormaltube.gov.??/watch?v=truth</div>
+  </div>
+  <div class="canvas-wrap">
+    <canvas id="oqw"></canvas>
+    <div class="start" id="start">
+      <div class="start-tag">[ MISSION BRIEF · 02 ]</div>
+      <h3>HIDDEN AGENTS</h3>
+      <p>You can no longer resize yourself. The only way to grow is the cookie jar at the bottom of the page. Collect all five docs, accept cookies, then subscribe.</p>
+      <ul>
+        <li>recommendation videos chase you (sidebar)</li>
+        <li>the search bar fires autocomplete shrapnel</li>
+        <li>the comments section drops on you</li>
+        <li>the like button explodes into thumbs-up</li>
+        <li>the cookie banner crushes from below</li>
+        <li><b>the account avatar pulls a gun. one shot, lethal at distance, dodge by rushing it</b></li>
+      </ul>
+      <button class="start-btn" id="start-btn">BEGIN INFILTRATION</button>
+    </div>
+    <div class="overlay" id="overlay">
+      <div class="overlay-tag" id="overlay-tag">[ STATUS ]</div>
+      <h3 id="overlay-title">—</h3>
+      <p id="overlay-sub">—</p>
+      <button id="restart">RESTART</button>
+    </div>
+  </div>
+  <div class="hud">
+    <div class="stat"><span class="stat-label">SIZE</span><span id="ui-size">75px</span></div>
+    <div class="stat"><span class="stat-label">GAZE</span><span class="bar"><span class="bar-fill" id="ui-gaze"></span></span></div>
+    <div class="stat"><span class="stat-label">DOCS</span><span id="ui-docs">0 / 5</span></div>
+    <div class="stat"><span class="stat-label">🍪</span><span id="ui-cookie">no</span></div>
+    <div class="stat"><span class="stat-label">ZOOM</span><span id="ui-zoom">100%</span></div>
+    <div class="hint" id="ui-hint">infiltrating…</div>
+  </div>
+  <div class="instr">
+    <kbd>WASD</kbd> move &nbsp;·&nbsp; <kbd>+</kbd>/<kbd>-</kbd> or <kbd>scroll</kbd> zoom &nbsp;·&nbsp; <kbd>drag</kbd> ad banners &nbsp;·&nbsp; grab <code>cookies</code> &nbsp;·&nbsp; reach <code>SUBSCRIBE</code>
+  </div>
+</div>
+
+<script>
+(function() {
+  const canvas = document.getElementById('oqw');
+  const ctx = canvas.getContext('2d');
+
+  // World dimensions (constant)
+  const PW = 960, PH = 1200;
+  // Viewport dimensions (computed dynamically based on canvas size)
+  let VW = 0, VH = 0;
+
+  // ===== PAGE LAYOUT =====
+  const layout = {
+    nav:        { x: 0,    y: 0,   w: PW,  h: 50 },
+    logo:       { x: 16,   y: 12,  w: 140, h: 26 },
+    search:     { x: 280,  y: 14,  w: 380, h: 24 },
+    account:    { x: 880,  y: 14,  w: 60,  h: 24 },
+    video:      { x: 24,   y: 70,  w: 580, h: 340 },
+    title:      { x: 24,   y: 422, w: 580, h: 30 },
+    likeBtn:    { x: 24,   y: 462, w: 80,  h: 30 },
+    dislikeBtn: { x: 110,  y: 462, w: 60,  h: 30 },
+    shareBtn:   { x: 178,  y: 462, w: 80,  h: 30 },
+    description:{ x: 24,   y: 504, w: 580, h: 100 },
+    cookie:     { x: 0,    y: PH-40, w: PW, h: 40 },
+    subscribe:  { x: PW - 180, y: PH - 130, w: 160, h: 50 },
+  };
+  const recSlots = [];
+  for (let i = 0; i < 8; i++) recSlots.push({ x: 620, y: 70 + i * 96, w: 320, h: 86, idx: i });
+  const comments = [];
+  for (let i = 0; i < 4; i++) comments.push({ x: 24, y: 620 + i * 100, w: 580, h: 88, idx: i });
+
+  // ===== AGENTS =====
+  const agents = {
+    chasingRecs: [
+      { recIdx: 1, state: 'idle', x: 0, y: 0, w: 320, h: 86, vx: 0, vy: 0, triggerR: 180, life: 0 },
+      { recIdx: 4, state: 'idle', x: 0, y: 0, w: 320, h: 86, vx: 0, vy: 0, triggerR: 180, life: 0 },
+    ],
+    shootingSearch: { state: 'idle', cooldown: 0, charge: 0, shotsLeft: 0, triggerR: 220 },
+    fallingComment: { commentIdx: 1, state: 'idle', x: 0, y: 0, w: 580, h: 88, vy: 0, triggerR: 140, life: 0 },
+    explodingLike:  { state: 'idle', triggerR: 90, charge: 0 },
+    crushingCookie: { state: 'idle', triggerR: 250, vy: 0 },
+    gunShooter: {
+      state: 'idle',
+      baseX: 892, baseY: 26,
+      triggerR: 350,
+      armLength: 0,
+      currentAngle: Math.atan2(1, -1),
+      awakenT: 0, aimT: 0, spentT: 0,
+      rotateSpeed: 60 * Math.PI / 180,
+      awakenDuration: 0.7,
+      aimDuration: 1.6,
+    },
+  };
+  agents.chasingRecs.forEach(a => {
+    const slot = recSlots[a.recIdx];
+    a.x = slot.x; a.y = slot.y; a.w = slot.w; a.h = slot.h;
+  });
+  {
+    const slot = comments[agents.fallingComment.commentIdx];
+    agents.fallingComment.x = slot.x;
+    agents.fallingComment.y = slot.y;
+  }
+
+  const propaganda = [{ x: 50, y: 850, w: 220, h: 130, dragging: false, dox: 0, doy: 0 }];
+  const truth = [{ x: 80, y: 880, w: 160, h: 90 }];
+  const docs = [
+    { x: 200, y: 230, r: 13, taken: false, takeT: 0 },
+    { x: 140, y: 880, r: 13, taken: false, takeT: 0 },
+    { x: 780, y: 200, r: 13, taken: false, takeT: 0 },
+    { x: 320, y: 670, r: 13, taken: false, takeT: 0 },
+    { x: 800, y: 950, r: 13, taken: false, takeT: 0 },
+  ];
+  const cookieJar = { x: 460, y: 1050, r: 24, taken: false, takeT: 0 };
+  const projectiles = [];
+  const debris = [];
+  const bullets = [];
+
+  const state = {
+    player: { x: 100, y: 100, size: 75, invuln: 0, hitFlash: 0, growT: 0 },
+    cam: { x: 0, y: 0, zoom: 2.0, targetZoom: 2.0, baseZoom: 2.0, minZoom: 1.0, maxZoom: 4.0, initialized: false },
+    cursor: null,
+    gaze: 0,
+    docsCollected: 0,
+    cookieCollected: false,
+    status: 'menu',
+    lostReason: '',
+    keys: {},
+    mouse: { x: 0, y: 0, sx: 0, sy: 0, down: false },
+    time: 0,
+    sparks: [],
+    crumbs: [],
+  };
+
+  function wob(seed, amp = 1.4) {
+    const a = Math.sin(seed * 17.31 + 0.5) * 43.7;
+    return (a - Math.floor(a) - 0.5) * 2 * amp;
+  }
+
+  // ===== RESIZE HANDLING =====
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const wrap = canvas.parentElement;
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    VW = w;
+    VH = h;
+
+    // Default zoom: fit page width to canvas width (so the whole page width is visible).
+    const fitZoom = w / PW;
+    state.cam.baseZoom = fitZoom;
+    state.cam.minZoom = fitZoom * 0.6;   // user can zoom out a bit
+    state.cam.maxZoom = fitZoom * 2.5;   // user can zoom in for precision
+
+    if (!state.cam.initialized) {
+      state.cam.zoom = fitZoom;
+      state.cam.targetZoom = fitZoom;
+      state.cam.initialized = true;
+    } else {
+      // clamp current zoom to new bounds in case window got smaller
+      state.cam.zoom = Math.max(state.cam.minZoom, Math.min(state.cam.maxZoom, state.cam.zoom));
+      state.cam.targetZoom = Math.max(state.cam.minZoom, Math.min(state.cam.maxZoom, state.cam.targetZoom));
+    }
+  }
+  window.addEventListener('resize', resize);
+
+  // ===== INPUT =====
+  document.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    state.keys[k] = true;
+    if (['arrowup','arrowdown','arrowleft','arrowright','+','=','-','_'].includes(k)) e.preventDefault();
+    if (k === '+' || k === '=') state.cam.targetZoom = Math.min(state.cam.maxZoom, state.cam.targetZoom * 1.15);
+    if (k === '-' || k === '_') state.cam.targetZoom = Math.max(state.cam.minZoom, state.cam.targetZoom / 1.15);
+    initAudio();
+  });
+  document.addEventListener('keyup', e => { state.keys[e.key.toLowerCase()] = false; });
+
+  function updateMouseCoords(e) {
+    const r = canvas.getBoundingClientRect();
+    state.mouse.sx = e.clientX - r.left;
+    state.mouse.sy = e.clientY - r.top;
+    state.mouse.x = state.cam.x + state.mouse.sx / state.cam.zoom;
+    state.mouse.y = state.cam.y + state.mouse.sy / state.cam.zoom;
+  }
+  document.addEventListener('mousemove', updateMouseCoords);
+
+  canvas.addEventListener('mousedown', e => {
+    initAudio();
+    updateMouseCoords(e);
+    state.mouse.down = true;
+    for (let i = propaganda.length - 1; i >= 0; i--) {
+      const p = propaganda[i];
+      if (state.mouse.x >= p.x && state.mouse.x <= p.x + p.w &&
+          state.mouse.y >= p.y && state.mouse.y <= p.y + p.h) {
+        p.dragging = true;
+        p.dox = state.mouse.x - p.x;
+        p.doy = state.mouse.y - p.y;
+        beep(420, 0.04, 'square', 0.04);
+        break;
+      }
+    }
+  });
+  document.addEventListener('mouseup', () => {
+    state.mouse.down = false;
+    propaganda.forEach(p => {
+      if (p.dragging) { p.dragging = false; beep(280, 0.04, 'square', 0.03); }
+    });
+  });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (state.status !== 'playing') return;
+    const factor = e.deltaY > 0 ? 1/1.12 : 1.12;
+    state.cam.targetZoom = Math.max(state.cam.minZoom, Math.min(state.cam.maxZoom, state.cam.targetZoom * factor));
+  }, { passive: false });
+
+  // ===== AUDIO =====
+  let audioCtx = null;
+  function initAudio() {
+    if (audioCtx) { if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      osc.type = 'triangle'; osc.frequency.value = 60;
+      const g = audioCtx.createGain(); g.gain.value = 0.012;
+      osc.connect(g).connect(audioCtx.destination); osc.start();
+    } catch (e) {}
+  }
+  function beep(freq, dur, type='sine', vol=0.08) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    osc.type = type; osc.frequency.value = freq;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + dur + 0.02);
+  }
+  function noise(dur, vol=0.1) {
+    if (!audioCtx) return;
+    const len = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * (1 - i/len);
+    const s = audioCtx.createBufferSource(); s.buffer = buf;
+    const g = audioCtx.createGain(); g.gain.value = vol;
+    s.connect(g).connect(audioCtx.destination); s.start();
+  }
+
+  function aabb(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+  function playerBox() {
+    const s = state.player.size;
+    return { x: state.player.x - s/2, y: state.player.y - s*0.375, w: s, h: s*0.75 };
+  }
+  function dist(ax, ay, bx, by) { return Math.hypot(ax-bx, ay-by); }
+
+  function damagePlayer(amount, knockX, knockY) {
+    const p = state.player;
+    if (p.invuln > 0) return;
+    p.size = Math.max(0, p.size - amount);
+    p.invuln = 0.85;
+    p.hitFlash = 0.3;
+    if (knockX !== undefined) { p.x += knockX; p.y += knockY; }
+    noise(0.12, 0.14);
+    beep(140, 0.18, 'sawtooth', 0.09);
+    for (let i = 0; i < 8; i++) state.sparks.push({ x: p.x, y: p.y, life: 0.4, hit: true, vx: (Math.random()-0.5)*200, vy: (Math.random()-0.5)*200 });
+    if (p.size <= 25) {
+      state.status = 'lost';
+      state.lostReason = 'GARBAGE COLLECTED';
+      noise(0.6, 0.2);
+      beep(80, 0.5, 'square', 0.12);
+    }
+  }
+
+  // ===== UPDATE =====
+  function update(dt) {
+    state.time += dt;
+    state.cam.zoom += (state.cam.targetZoom - state.cam.zoom) * Math.min(1, dt * 6);
+
+    if (Math.random() < dt * 4) {
+      state.sparks.push({ x: state.cam.x + Math.random()*VW/state.cam.zoom, y: state.cam.y + Math.random()*VH/state.cam.zoom, life: 0.4 + Math.random()*0.6 });
+    }
+    state.sparks = state.sparks.filter(s => {
+      s.life -= dt;
+      if (s.vx !== undefined) { s.x += s.vx * dt; s.y += s.vy * dt; s.vx *= 0.92; s.vy *= 0.92; }
+      return s.life > 0;
+    });
+    state.crumbs = state.crumbs.filter(c => {
+      c.life -= dt;
+      c.x += c.vx * dt; c.y += c.vy * dt;
+      c.vy += 280 * dt;
+      c.rot += c.vrot * dt;
+      return c.life > 0;
+    });
+
+    if (state.status !== 'playing') return;
+
+    const k = state.keys;
+    const p = state.player;
+
+    const speedMult = 1.5 - (p.size / 200) * 0.7;
+    const speed = 230 * speedMult;
+    let vx = 0, vy = 0;
+    if (k['a'] || k['arrowleft'])  vx -= 1;
+    if (k['d'] || k['arrowright']) vx += 1;
+    if (k['w'] || k['arrowup'])    vy -= 1;
+    if (k['s'] || k['arrowdown'])  vy += 1;
+    if (vx || vy) {
+      const len = Math.hypot(vx, vy);
+      vx /= len; vy /= len;
+      if (Math.random() < 0.06) beep(700 + Math.random()*500, 0.015, 'square', 0.02);
+    }
+    p.x += vx * speed * dt;
+    p.y += vy * speed * dt;
+    p.x = Math.max(p.size/2, Math.min(PW - p.size/2, p.x));
+    p.y = Math.max(p.size*0.4, Math.min(PH - p.size*0.4, p.y));
+
+    if (p.invuln > 0) p.invuln -= dt;
+    if (p.hitFlash > 0) p.hitFlash -= dt;
+    if (p.growT > 0) p.growT -= dt;
+
+    // camera
+    const viewW = VW / state.cam.zoom;
+    const viewH = VH / state.cam.zoom;
+    state.cam.x += ((p.x - viewW / 2) - state.cam.x) * Math.min(1, dt * 4);
+    state.cam.y += ((p.y - viewH / 2) - state.cam.y) * Math.min(1, dt * 4);
+    if (PW > viewW) state.cam.x = Math.max(0, Math.min(PW - viewW, state.cam.x));
+    else state.cam.x = (PW - viewW) / 2;
+    if (PH > viewH) state.cam.y = Math.max(0, Math.min(PH - viewH, state.cam.y));
+    else state.cam.y = (PH - viewH) / 2;
+
+    // chasing recs
+    for (let a of agents.chasingRecs) {
+      if (a.state === 'idle') {
+        const slot = recSlots[a.recIdx];
+        const cx = slot.x + slot.w/2, cy = slot.y + slot.h/2;
+        if (dist(p.x, p.y, cx, cy) < a.triggerR) {
+          a.state = 'awakening'; a.life = 0;
+          beep(180, 0.18, 'sawtooth', 0.08);
+          beep(280, 0.18, 'sawtooth', 0.06);
+        } else { a.x = slot.x; a.y = slot.y; }
+      } else if (a.state === 'awakening') {
+        a.life += dt;
+        if (a.life > 0.6) { a.state = 'chasing'; a.life = 0; }
+      } else if (a.state === 'chasing') {
+        a.life += dt;
+        const cx = a.x + a.w/2, cy = a.y + a.h/2;
+        const dx = p.x - cx, dy = p.y - cy;
+        const d = Math.hypot(dx, dy) || 1;
+        a.vx += (dx/d) * 380 * dt;
+        a.vy += (dy/d) * 380 * dt;
+        a.vx *= 0.93; a.vy *= 0.93;
+        a.x += a.vx * dt; a.y += a.vy * dt;
+        if (aabb(playerBox(), a)) damagePlayer(15, (p.x - cx) / d * 40, (p.y - cy) / d * 40);
+        if (a.life > 7) { a.state = 'returning'; a.life = 0; }
+      } else if (a.state === 'returning') {
+        const slot = recSlots[a.recIdx];
+        a.x += (slot.x - a.x) * Math.min(1, dt * 3);
+        a.y += (slot.y - a.y) * Math.min(1, dt * 3);
+        if (dist(a.x, a.y, slot.x, slot.y) < 5) { a.state = 'idle'; a.vx = 0; a.vy = 0; }
+      }
+    }
+
+    // search bar
+    {
+      const ag = agents.shootingSearch;
+      const cx = layout.search.x + layout.search.w/2;
+      const cy = layout.search.y + layout.search.h/2;
+      if (ag.state === 'idle') {
+        if (dist(p.x, p.y, cx, cy) < ag.triggerR && p.y < 200) {
+          ag.state = 'charging'; ag.charge = 0;
+          beep(900, 0.04, 'square', 0.04); beep(1100, 0.04, 'square', 0.04);
+        }
+      } else if (ag.state === 'charging') {
+        ag.charge += dt;
+        if (ag.charge > 0.7) { ag.state = 'firing'; ag.cooldown = 0; ag.shotsLeft = 5; }
+      } else if (ag.state === 'firing') {
+        ag.cooldown -= dt;
+        if (ag.cooldown <= 0 && ag.shotsLeft > 0) {
+          const sx = cx, sy = layout.search.y + layout.search.h;
+          const dx = p.x - sx, dy = p.y - sy;
+          const d = Math.hypot(dx, dy) || 1;
+          projectiles.push({
+            x: sx, y: sy, vx: (dx/d) * 280, vy: (dy/d) * 280,
+            life: 3, text: ['"hidden truth"','"is it safe"','"how to escape"','"who watches"','"what they hide"'][ag.shotsLeft - 1] || '"???"',
+          });
+          ag.shotsLeft--; ag.cooldown = 0.2;
+          beep(1400, 0.04, 'square', 0.05); noise(0.04, 0.05);
+        }
+        if (ag.shotsLeft <= 0) { ag.state = 'cooldown'; ag.cooldown = 4; }
+      } else if (ag.state === 'cooldown') {
+        ag.cooldown -= dt;
+        if (ag.cooldown <= 0) ag.state = 'idle';
+      }
+    }
+
+    // falling comment
+    {
+      const ag = agents.fallingComment;
+      const slot = comments[ag.commentIdx];
+      const cx = slot.x + slot.w/2, cy = slot.y + slot.h/2;
+      if (ag.state === 'idle') {
+        ag.x = slot.x; ag.y = slot.y;
+        if (dist(p.x, p.y, cx, cy) < ag.triggerR) {
+          ag.state = 'rumbling'; ag.life = 0; beep(120, 0.4, 'sawtooth', 0.08);
+        }
+      } else if (ag.state === 'rumbling') {
+        ag.life += dt;
+        ag.x = slot.x + Math.sin(ag.life * 30) * 3;
+        if (ag.life > 0.8) { ag.state = 'falling'; ag.vy = 0; }
+      } else if (ag.state === 'falling') {
+        ag.vy += 1100 * dt; ag.y += ag.vy * dt;
+        if (aabb(playerBox(), ag)) {
+          damagePlayer(22, 0, 30); ag.state = 'returning';
+          beep(80, 0.3, 'square', 0.1); noise(0.2, 0.12);
+        }
+        if (ag.y > PH) ag.state = 'returning';
+      } else if (ag.state === 'returning') {
+        ag.y += (slot.y - ag.y) * Math.min(1, dt * 2);
+        ag.x += (slot.x - ag.x) * Math.min(1, dt * 2);
+        ag.vy = 0;
+        if (dist(ag.x, ag.y, slot.x, slot.y) < 5) ag.state = 'idle';
+      }
+    }
+
+    // exploding like
+    {
+      const ag = agents.explodingLike;
+      const cx = layout.likeBtn.x + layout.likeBtn.w/2;
+      const cy = layout.likeBtn.y + layout.likeBtn.h/2;
+      if (ag.state === 'idle') {
+        if (dist(p.x, p.y, cx, cy) < ag.triggerR) {
+          ag.state = 'charging'; ag.charge = 0; beep(600, 0.05, 'square', 0.05);
+        }
+      } else if (ag.state === 'charging') {
+        ag.charge += dt;
+        if (ag.charge > 0.6) {
+          ag.state = 'exploded';
+          for (let i = 0; i < 14; i++) {
+            const angle = (i / 14) * Math.PI * 2;
+            debris.push({
+              x: cx, y: cy,
+              vx: Math.cos(angle) * (200 + Math.random()*100),
+              vy: Math.sin(angle) * (200 + Math.random()*100),
+              rot: 0, vrot: (Math.random()-0.5)*10,
+              life: 2.5, size: 14,
+            });
+          }
+          noise(0.3, 0.18); beep(110, 0.3, 'sawtooth', 0.12); ag.charge = 0;
+        }
+      } else if (ag.state === 'exploded') {
+        ag.charge += dt;
+        if (ag.charge > 5) { ag.state = 'idle'; ag.charge = 0; }
+      }
+    }
+
+    // crushing cookie banner
+    {
+      const ag = agents.crushingCookie;
+      if (ag.state === 'idle') {
+        if (p.y > PH - ag.triggerR) {
+          ag.state = 'crushing'; ag.vy = 0; beep(180, 0.4, 'sawtooth', 0.1);
+        }
+      } else if (ag.state === 'crushing') {
+        ag.vy = 80;
+        layout.cookie.y -= ag.vy * dt;
+        layout.cookie.h += ag.vy * dt;
+        if (p.y > layout.cookie.y) damagePlayer(14, 0, -50);
+        if (layout.cookie.y < p.y - 100 || layout.cookie.y < 200) ag.state = 'returning';
+      } else if (ag.state === 'returning') {
+        layout.cookie.y += (PH - 40 - layout.cookie.y) * Math.min(1, dt * 2);
+        layout.cookie.h += (40 - layout.cookie.h) * Math.min(1, dt * 2);
+        if (Math.abs(layout.cookie.y - (PH - 40)) < 1) {
+          layout.cookie.y = PH - 40; layout.cookie.h = 40; ag.state = 'idle';
+        }
+      }
+    }
+
+    // gun shooter
+    {
+      const ag = agents.gunShooter;
+      const muzzleX = () => ag.baseX + Math.cos(ag.currentAngle) * ag.armLength;
+      const muzzleY = () => ag.baseY + Math.sin(ag.currentAngle) * ag.armLength;
+      if (ag.state === 'idle') {
+        if (dist(p.x, p.y, ag.baseX, ag.baseY) < ag.triggerR) {
+          ag.state = 'awakening'; ag.awakenT = 0; ag.armLength = 0;
+          ag.currentAngle = Math.atan2(p.y - ag.baseY, p.x - ag.baseX);
+          beep(120, 0.3, 'sawtooth', 0.08); beep(80, 0.3, 'sawtooth', 0.06);
+        }
+      } else if (ag.state === 'awakening') {
+        ag.awakenT += dt;
+        ag.armLength = Math.min(55, ag.awakenT * 90);
+        if (ag.awakenT >= ag.awakenDuration) { ag.state = 'aiming'; ag.aimT = 0; }
+      } else if (ag.state === 'aiming') {
+        ag.aimT += dt;
+        const mx = muzzleX(), my = muzzleY();
+        const targetAngle = Math.atan2(p.y - my, p.x - mx);
+        let delta = targetAngle - ag.currentAngle;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        const maxRot = ag.rotateSpeed * dt;
+        if (Math.abs(delta) < maxRot) ag.currentAngle = targetAngle;
+        else ag.currentAngle += Math.sign(delta) * maxRot;
+        if (Math.random() < 0.1) beep(2000, 0.01, 'square', 0.025);
+        if (ag.aimT >= ag.aimDuration) ag.state = 'firing';
+      } else if (ag.state === 'firing') {
+        const mx = muzzleX(), my = muzzleY();
+        const fireDx = Math.cos(ag.currentAngle);
+        const fireDy = Math.sin(ag.currentAngle);
+        bullets.push({
+          x: mx + fireDx * 22, y: my + fireDy * 22,
+          vx: fireDx * 1500, vy: fireDy * 1500,
+          life: 2.5, damage: 60, trail: [],
+        });
+        for (let i = 0; i < 14; i++) {
+          state.sparks.push({
+            x: mx + fireDx * 22, y: my + fireDy * 22,
+            vx: fireDx * 250 + (Math.random()-0.5)*150,
+            vy: fireDy * 250 + (Math.random()-0.5)*150,
+            life: 0.35, hit: true,
+          });
+        }
+        noise(0.18, 0.2); beep(220, 0.18, 'square', 0.16); beep(80, 0.3, 'sawtooth', 0.12);
+        ag.state = 'spent'; ag.spentT = 0;
+      } else if (ag.state === 'spent') {
+        ag.spentT += dt;
+        ag.armLength = Math.max(0, 55 - ag.spentT * 70);
+      }
+    }
+
+    // bullets
+    for (let b of bullets) {
+      b.trail.push({ x: b.x, y: b.y, life: 0.18 });
+      if (b.trail.length > 8) b.trail.shift();
+      b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+      const pb = playerBox();
+      if (b.x > pb.x && b.x < pb.x + pb.w && b.y > pb.y && b.y < pb.y + pb.h) {
+        damagePlayer(b.damage, Math.sign(b.vx) * 30, Math.sign(b.vy) * 30);
+        b.life = 0;
+        for (let i = 0; i < 16; i++) state.sparks.push({ x: b.x, y: b.y, life: 0.4, hit: true, vx: (Math.random()-0.5) * 400, vy: (Math.random()-0.5) * 400 });
+      }
+      if (b.x < 0 || b.x > PW || b.y < 0 || b.y > PH) b.life = 0;
+    }
+    for (let i = bullets.length - 1; i >= 0; i--) if (bullets[i].life <= 0) bullets.splice(i, 1);
+
+    // search projectiles
+    for (let pr of projectiles) {
+      pr.x += pr.vx * dt; pr.y += pr.vy * dt; pr.life -= dt;
+      const pb = playerBox();
+      if (pr.x > pb.x && pr.x < pb.x + pb.w && pr.y > pb.y && pr.y < pb.y + pb.h) { damagePlayer(8); pr.life = 0; }
+    }
+    for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].life <= 0) projectiles.splice(i, 1);
+
+    // debris
+    for (let d of debris) {
+      d.x += d.vx * dt; d.y += d.vy * dt; d.vy += 200 * dt;
+      d.vx *= 0.99; d.rot += d.vrot * dt; d.life -= dt;
+      const pb = playerBox();
+      if (d.x > pb.x && d.x < pb.x + pb.w && d.y > pb.y && d.y < pb.y + pb.h && d.life > 0.5) {
+        damagePlayer(6); d.life = Math.min(d.life, 0.2);
+      }
+    }
+    for (let i = debris.length - 1; i >= 0; i--) if (debris[i].life <= 0) debris.splice(i, 1);
+
+    // propaganda
+    for (let prop of propaganda) {
+      if (prop.dragging) {
+        prop.x = state.mouse.x - prop.dox;
+        prop.y = state.mouse.y - prop.doy;
+        prop.x = Math.max(0, Math.min(PW - prop.w, prop.x));
+        prop.y = Math.max(50, Math.min(PH - prop.h, prop.y));
+      }
+    }
+
+    // truth
+    let exposed = 0;
+    for (let t of truth) {
+      let covered = false;
+      for (let prop of propaganda) {
+        const cx = t.x + t.w/2, cy = t.y + t.h/2;
+        if (cx >= prop.x && cx <= prop.x + prop.w && cy >= prop.y && cy <= prop.y + prop.h) { covered = true; break; }
+      }
+      if (!covered) exposed++;
+    }
+    if (exposed > 0) {
+      state.gaze = Math.min(100, state.gaze + 22 * exposed * dt);
+      if (audioCtx && Math.random() < 0.04) beep(180 + state.gaze * 5, 0.06, 'triangle', 0.018);
+    } else {
+      state.gaze = Math.max(0, state.gaze - 9 * dt);
+    }
+
+    // cursor
+    if (state.gaze >= 100 && !state.cursor) {
+      state.cursor = { x: -40, y: 50, vx: 0, vy: 0, born: 0 };
+      noise(0.35, 0.16); beep(95, 0.5, 'sawtooth', 0.11);
+    }
+    if (state.cursor) {
+      const c = state.cursor;
+      c.born += dt;
+      const dx = p.x - c.x, dy = p.y - c.y;
+      const d = Math.hypot(dx, dy) || 1;
+      c.vx += (dx/d) * 240 * dt; c.vy += (dy/d) * 240 * dt;
+      c.vx *= 0.94; c.vy *= 0.94;
+      c.x += c.vx * dt; c.y += c.vy * dt;
+      if (d < p.size * 0.42 && c.born > 0.4) {
+        state.status = 'lost'; state.lostReason = 'CAUGHT BY CURSOR';
+        noise(0.5, 0.2); beep(70, 0.6, 'square', 0.13);
+      }
+    }
+
+    // docs
+    for (let d of docs) {
+      if (d.taken) continue;
+      if (dist(p.x, p.y, d.x, d.y) < d.r + p.size*0.32) {
+        d.taken = true; d.takeT = state.time;
+        state.docsCollected++;
+        p.size = Math.min(200, p.size + 3);
+        beep(880, 0.08, 'sine', 0.13); beep(1320, 0.12, 'sine', 0.1);
+      }
+    }
+
+    // cookie jar
+    if (!cookieJar.taken && dist(p.x, p.y, cookieJar.x, cookieJar.y) < cookieJar.r + p.size*0.32) {
+      cookieJar.taken = true; cookieJar.takeT = state.time;
+      state.cookieCollected = true;
+      p.size = Math.min(200, p.size + 120);
+      p.growT = 0.8;
+      for (let i = 0; i < 30; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 100 + Math.random() * 200;
+        state.crumbs.push({
+          x: cookieJar.x, y: cookieJar.y,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 100,
+          rot: Math.random() * Math.PI * 2, vrot: (Math.random()-0.5) * 8,
+          life: 1.5, size: 4 + Math.random() * 4,
+          color: ['#8B5A2B','#C68642','#D2A679','#A0522D'][Math.floor(Math.random()*4)],
+        });
+      }
+      beep(440, 0.1, 'sine', 0.12);
+      setTimeout(() => beep(660, 0.1, 'sine', 0.12), 80);
+      setTimeout(() => beep(880, 0.18, 'sine', 0.14), 180);
+      setTimeout(() => beep(1320, 0.25, 'sine', 0.12), 320);
+    }
+
+    // win
+    if (state.docsCollected === docs.length && state.cookieCollected) {
+      const ex = layout.subscribe;
+      if (p.x > ex.x - 10 && p.x < ex.x + ex.w + 10 && p.y > ex.y - 10 && p.y < ex.y + ex.h + 10) {
+        state.status = 'won';
+        beep(523, 0.1, 'sine', 0.1);
+        setTimeout(() => beep(659, 0.1, 'sine', 0.1), 80);
+        setTimeout(() => beep(784, 0.18, 'sine', 0.12), 180);
+        setTimeout(() => beep(1047, 0.25, 'sine', 0.1), 320);
+      }
+    }
+  }
+
+  // ===== RENDER =====
+  function drawHandRect(x, y, w, h, fill, stroke, seed, lineW = 1.2) {
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineW;
+    ctx.beginPath();
+    ctx.moveTo(x + wob(seed, 1), y + wob(seed+1, 1));
+    ctx.lineTo(x + w + wob(seed+2, 1), y + wob(seed+3, 1));
+    ctx.lineTo(x + w + wob(seed+4, 1), y + h + wob(seed+5, 1));
+    ctx.lineTo(x + wob(seed+6, 1), y + h + wob(seed+7, 1));
+    ctx.closePath();
+    ctx.fill();
+    if (stroke) ctx.stroke();
+  }
+
+  function drawArm(ag) {
+    if (ag.armLength <= 0) return;
+    const mx = ag.baseX + Math.cos(ag.currentAngle) * ag.armLength;
+    const my = ag.baseY + Math.sin(ag.currentAngle) * ag.armLength;
+    ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(ag.baseX, ag.baseY); ctx.lineTo(mx, my); ctx.stroke();
+    ctx.strokeStyle = '#3a3a40'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(ag.baseX, ag.baseY); ctx.lineTo(mx, my); ctx.stroke();
+    ctx.fillStyle = '#f0c8a0';
+    ctx.beginPath(); ctx.arc(mx, my, 5, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.save();
+    ctx.translate(mx, my); ctx.rotate(ag.currentAngle);
+    ctx.fillStyle = '#0c0c0e';
+    ctx.fillRect(2, -3, 18, 6);
+    ctx.fillRect(2, 3, 6, 7);
+    ctx.fillStyle = '#444';
+    ctx.fillRect(18, -2, 2, 4);
+    ctx.restore();
+    if (ag.state === 'aiming') {
+      const dotPulse = 0.5 + Math.sin(state.time * 25) * 0.5;
+      ctx.strokeStyle = 'rgba(230,57,70,' + (0.4 + dotPulse * 0.3) + ')';
+      ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(mx + Math.cos(ag.currentAngle) * 22, my + Math.sin(ag.currentAngle) * 22);
+      ctx.lineTo(mx + Math.cos(ag.currentAngle) * 2000, my + Math.sin(ag.currentAngle) * 2000);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const dotX = mx + Math.cos(ag.currentAngle) * 250;
+      const dotY = my + Math.sin(ag.currentAngle) * 250;
+      ctx.fillStyle = 'rgba(230,57,70,' + (0.6 + dotPulse * 0.4) + ')';
+      ctx.beginPath(); ctx.arc(dotX, dotY, 3, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  function render() {
+    ctx.fillStyle = '#181818';
+    ctx.fillRect(0, 0, VW, VH);
+
+    ctx.save();
+    ctx.scale(state.cam.zoom, state.cam.zoom);
+    ctx.translate(-state.cam.x, -state.cam.y);
+
+    ctx.fillStyle = '#f5f5f5'; ctx.fillRect(0, 0, PW, PH);
+    ctx.strokeStyle = 'rgba(0,0,0,0.03)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i <= PW; i += 40) { ctx.moveTo(i, 0); ctx.lineTo(i, PH); }
+    for (let i = 0; i <= PH; i += 40) { ctx.moveTo(0, i); ctx.lineTo(PW, i); }
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, PW, 50);
+    ctx.fillStyle = '#e5e5e5'; ctx.fillRect(0, 50, PW, 1);
+    ctx.fillStyle = '#E63946';
+    ctx.fillRect(layout.logo.x, layout.logo.y, 30, 22);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('▶', layout.logo.x + 9, layout.logo.y + 11);
+    ctx.fillStyle = '#1a1a1f';
+    ctx.font = 'bold 14px var(--font-sans), sans-serif';
+    ctx.fillText('TotallyNormal', layout.logo.x + 38, layout.logo.y + 13);
+
+    // search bar
+    {
+      const s = layout.search;
+      const ag = agents.shootingSearch;
+      const charging = ag.state === 'charging' || ag.state === 'firing';
+      ctx.fillStyle = charging ? '#ffe5e5' : '#fff';
+      ctx.strokeStyle = charging ? '#E63946' : '#bbb';
+      ctx.lineWidth = charging ? 2 : 1;
+      ctx.fillRect(s.x, s.y, s.w, s.h);
+      ctx.strokeRect(s.x, s.y, s.w, s.h);
+      ctx.fillStyle = charging ? '#E63946' : '#888';
+      ctx.font = '11px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(charging ? 'searching for: targets...' : 'search totallynormaltube', s.x + 10, s.y + s.h/2);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.fillRect(s.x + s.w - 36, s.y, 36, s.h);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.fillText('🔍', s.x + s.w - 26, s.y + s.h/2);
+      if (charging) {
+        const pulse = 1 + Math.sin(state.time * 25) * 0.3;
+        ctx.strokeStyle = 'rgba(230,57,70,' + (0.4 * pulse) + ')';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(s.x - 2, s.y - 2, s.w + 4, s.h + 4);
+      }
+    }
+
+    // account avatar
+    {
+      const ag = agents.gunShooter;
+      const isSpent = ag.state === 'spent' && ag.armLength <= 0;
+      const isActive = ag.state !== 'idle' && ag.state !== 'spent';
+      const isAwake = ag.state === 'awakening';
+      const isAiming = ag.state === 'aiming';
+      ctx.fillStyle = isSpent ? '#666' : (isActive ? '#E63946' : '#4A7BC8');
+      ctx.beginPath(); ctx.arc(layout.account.x + 12, layout.account.y + 12, 11, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = isActive ? '#fff' : '#1a1a1f';
+      ctx.lineWidth = isActive ? 1.5 : 1; ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText(isSpent ? '✕' : 'U', layout.account.x + 12, layout.account.y + 13);
+      ctx.textAlign = 'left';
+      if (isAwake || isAiming) {
+        const pulse = 1 + Math.sin(state.time * 18) * 0.15;
+        ctx.strokeStyle = 'rgba(230,57,70,' + (isAiming ? 0.7 : 0.5) + ')';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(layout.account.x + 12, layout.account.y + 12, 14 * pulse, 0, Math.PI*2); ctx.stroke();
+      }
+      if (isActive) {
+        const txt = isAwake ? '🔒 PREMIUM SECURITY ENGAGING' : isAiming ? '⚠ TARGET LOCK' : '';
+        if (txt) {
+          ctx.fillStyle = '#1a1a1f';
+          ctx.font = 'bold 9px ui-monospace, monospace';
+          ctx.textBaseline = 'middle';
+          const w = ctx.measureText(txt).width + 12;
+          ctx.fillRect(layout.account.x - w + 30, layout.account.y + 30, w, 16);
+          ctx.fillStyle = '#E63946';
+          ctx.fillText(txt, layout.account.x - w + 36, layout.account.y + 38);
+        }
+      }
+      drawArm(ag);
+    }
+
+    // video player
+    {
+      const v = layout.video;
+      ctx.fillStyle = '#0c0c0e'; ctx.fillRect(v.x, v.y, v.w, v.h);
+      const colors = ['#E63946','#F4D35E','#2D8659','#4A7BC8','#9b59b6'];
+      const barW = v.w / colors.length;
+      for (let i = 0; i < colors.length; i++) {
+        ctx.fillStyle = colors[i];
+        ctx.globalAlpha = 0.3 + Math.sin(state.time * 2 + i) * 0.1;
+        ctx.fillRect(v.x + i * barW, v.y, barW, v.h - 30);
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(v.x, v.y, v.w, v.h);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      const px = v.x + v.w/2, py = v.y + v.h/2;
+      ctx.moveTo(px - 18, py - 22); ctx.lineTo(px + 22, py); ctx.lineTo(px - 18, py + 22);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#333'; ctx.fillRect(v.x, v.y + v.h - 24, v.w, 4);
+      ctx.fillStyle = '#E63946';
+      ctx.fillRect(v.x, v.y + v.h - 24, v.w * (0.3 + Math.sin(state.time * 0.3) * 0.2), 4);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(v.x, v.y + v.h - 18, v.w, 18);
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('▶  3:14 / ??:??', v.x + 10, v.y + v.h - 9);
+      ctx.fillText('⚙ ⛶', v.x + v.w - 40, v.y + v.h - 9);
+    }
+    ctx.fillStyle = '#1a1a1f';
+    ctx.font = 'bold 16px var(--font-sans), sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText("What They Don't Want You To See (full doc)", layout.title.x, layout.title.y);
+
+    // like / dislike / share
+    {
+      const lb = layout.likeBtn;
+      const ag = agents.explodingLike;
+      const charging = ag.state === 'charging';
+      const exploded = ag.state === 'exploded';
+      const pulse = charging ? 1 + Math.sin(state.time * 30) * 0.05 : 1;
+      ctx.save();
+      ctx.translate(lb.x + lb.w/2, lb.y + lb.h/2);
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = exploded ? '#888' : (charging ? '#E63946' : '#fff');
+      ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1;
+      ctx.fillRect(-lb.w/2, -lb.h/2, lb.w, lb.h);
+      ctx.strokeRect(-lb.w/2, -lb.h/2, lb.w, lb.h);
+      ctx.fillStyle = exploded ? '#fff' : (charging ? '#fff' : '#1a1a1f');
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText('👍 1.4M', 0, 1);
+      ctx.textAlign = 'left';
+      ctx.restore();
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#1a1a1f';
+      ctx.fillRect(layout.dislikeBtn.x, layout.dislikeBtn.y, layout.dislikeBtn.w, layout.dislikeBtn.h);
+      ctx.strokeRect(layout.dislikeBtn.x, layout.dislikeBtn.y, layout.dislikeBtn.w, layout.dislikeBtn.h);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('👎', layout.dislikeBtn.x + 10, layout.dislikeBtn.y + 15);
+      ctx.fillRect(layout.shareBtn.x, layout.shareBtn.y, layout.shareBtn.w, layout.shareBtn.h);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(layout.shareBtn.x + 1, layout.shareBtn.y + 1, layout.shareBtn.w - 2, layout.shareBtn.h - 2);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.fillText('↗ SHARE', layout.shareBtn.x + 8, layout.shareBtn.y + 15);
+    }
+
+    // description
+    {
+      const d = layout.description;
+      ctx.fillStyle = '#eee'; ctx.fillRect(d.x, d.y, d.w, d.h);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.font = '11px var(--font-sans), sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.fillText('UnknownUploader  •  847K views  •  posted ████████', d.x + 10, d.y + 10);
+      ctx.fillStyle = '#666';
+      ctx.fillRect(d.x + 10, d.y + 30, 540, 4);
+      ctx.fillRect(d.x + 10, d.y + 42, 480, 4);
+      ctx.fillRect(d.x + 10, d.y + 54, 510, 4);
+      ctx.fillRect(d.x + 10, d.y + 66, 300, 4);
+    }
+
+    // sidebar
+    for (let i = 0; i < recSlots.length; i++) {
+      const slot = recSlots[i];
+      const agent = agents.chasingRecs.find(a => a.recIdx === i && a.state !== 'idle');
+      if (agent) {
+        ctx.fillStyle = '#222';
+        ctx.fillRect(slot.x, slot.y, slot.w, slot.h);
+        ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(slot.x, slot.y, slot.w, slot.h);
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#666';
+        ctx.font = '10px ui-monospace, monospace';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('[ slot empty ]', slot.x + 10, slot.y + slot.h/2);
+      } else {
+        drawRecCard(slot.x, slot.y, slot.w, slot.h, i, false);
+      }
+    }
+    for (let a of agents.chasingRecs) {
+      if (a.state === 'idle') continue;
+      const wobbleX = a.state === 'awakening' ? Math.sin(state.time * 30) * 4 : 0;
+      drawRecCard(a.x + wobbleX, a.y, a.w, a.h, a.recIdx, true, a.state);
+    }
+
+    // comments
+    for (let i = 0; i < comments.length; i++) {
+      const slot = comments[i];
+      const ag = (agents.fallingComment.commentIdx === i) ? agents.fallingComment : null;
+      if (ag && ag.state !== 'idle') drawComment(ag.x, ag.y, slot.w, slot.h, i, true, ag.state);
+      else drawComment(slot.x, slot.y, slot.w, slot.h, i, false);
+    }
+
+    // truth + propaganda
+    for (let t of truth) {
+      drawHandRect(t.x, t.y, t.w, t.h, '#0c0c0e', '#0c0c0e', 100);
+      ctx.fillStyle = '#E63946';
+      ctx.font = 'bold 10px ui-monospace, monospace';
+      ctx.textBaseline = 'top';
+      ctx.fillText('CLASSIFIED // L4', t.x + 8, t.y + 8);
+      ctx.fillStyle = 'rgba(245,245,245,0.85)';
+      const lines = [110, 90, 100, 70];
+      for (let i = 0; i < lines.length; i++) ctx.fillRect(t.x + 8, t.y + 26 + i*11, lines[i], 5);
+    }
+    for (let prop of propaganda) {
+      ctx.save();
+      if (prop.dragging) { ctx.shadowColor = 'rgba(0,0,0,0.18)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4; }
+      drawHandRect(prop.x, prop.y, prop.w, prop.h, '#F4D35E', '#1a1a1f', 200);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#1a1a1f';
+      ctx.fillRect(prop.x + 1, prop.y + 1, prop.w - 2, 14);
+      ctx.fillStyle = '#fff';
+      ctx.font = '8px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('AD.iframe', prop.x + 5, prop.y + 8);
+      ctx.fillStyle = '#E63946';
+      ctx.fillRect(prop.x + prop.w - 13, prop.y + 3, 9, 9);
+      ctx.fillStyle = '#fff';
+      ctx.fillText('×', prop.x + prop.w - 11, prop.y + 8);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.font = 'bold 32px Georgia, serif';
+      ctx.textBaseline = 'top';
+      ctx.fillText('AD', prop.x + 16, prop.y + 30);
+      ctx.font = 'bold 12px Georgia, serif';
+      ctx.fillText('IGNORANCE', prop.x + 70, prop.y + 36);
+      ctx.fillText('IS STRENGTH', prop.x + 70, prop.y + 52);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.font = '8px ui-monospace, monospace';
+      ctx.fillText('(skip ad in 5...)', prop.x + 16, prop.y + 90);
+      if (!prop.dragging && state.time < 6) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillText('▸ drag me', prop.x + 16, prop.y + prop.h - 14);
+      }
+      ctx.restore();
+    }
+
+    // cookie banner
+    {
+      const cb = layout.cookie;
+      const ag = agents.crushingCookie;
+      const crushing = ag.state === 'crushing' || ag.state === 'returning';
+      ctx.fillStyle = crushing ? '#E63946' : '#1a1a1f';
+      ctx.fillRect(cb.x, cb.y, cb.w, cb.h);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🍪 we use cookies. and other things. accept everything?', cb.x + 16, cb.y + 14);
+      ctx.fillStyle = '#2D8659';
+      ctx.fillRect(cb.x + cb.w - 240, cb.y + 6, 100, 22);
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+      ctx.fillText('ACCEPT ALL', cb.x + cb.w - 190, cb.y + 17);
+      ctx.fillStyle = '#444';
+      ctx.fillRect(cb.x + cb.w - 130, cb.y + 6, 100, 22);
+      ctx.fillStyle = '#fff';
+      ctx.fillText('also accept all', cb.x + cb.w - 80, cb.y + 17);
+      ctx.textAlign = 'left';
+    }
+
+    // cookie jar
+    if (!cookieJar.taken) {
+      const cj = cookieJar;
+      const pulse = 1 + Math.sin(state.time * 3) * 0.06;
+      ctx.save();
+      ctx.translate(cj.x, cj.y);
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = 'rgba(244,211,94,0.35)';
+      ctx.beginPath(); ctx.arc(0, 0, cj.r + 14, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#e8e2c8';
+      ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-cj.r, -cj.r * 0.6);
+      ctx.lineTo(-cj.r, cj.r * 0.9);
+      ctx.quadraticCurveTo(-cj.r, cj.r * 1.05, -cj.r * 0.85, cj.r * 1.05);
+      ctx.lineTo(cj.r * 0.85, cj.r * 1.05);
+      ctx.quadraticCurveTo(cj.r, cj.r * 1.05, cj.r, cj.r * 0.9);
+      ctx.lineTo(cj.r, -cj.r * 0.6);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#E63946';
+      ctx.fillRect(-cj.r - 2, -cj.r * 0.95, cj.r * 2 + 4, cj.r * 0.4);
+      ctx.strokeRect(-cj.r - 2, -cj.r * 0.95, cj.r * 2 + 4, cj.r * 0.4);
+      const cookieColors = ['#A0522D','#8B5A2B','#C68642'];
+      for (let i = 0; i < 6; i++) {
+        const cx = -cj.r * 0.6 + (i % 3) * cj.r * 0.55;
+        const cy = -cj.r * 0.3 + Math.floor(i / 3) * cj.r * 0.55;
+        ctx.fillStyle = cookieColors[i % 3];
+        ctx.beginPath(); ctx.arc(cx, cy, cj.r * 0.22, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#3a1a05';
+        ctx.beginPath(); ctx.arc(cx - 1, cy - 1, 1, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + 2, cy + 1, 1, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(-cj.r * 0.85, cj.r * 0.4, cj.r * 1.7, cj.r * 0.45);
+      ctx.strokeRect(-cj.r * 0.85, cj.r * 0.4, cj.r * 1.7, cj.r * 0.45);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.font = 'bold 10px Georgia, serif';
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText('COOKIES', 0, cj.r * 0.62);
+      ctx.textAlign = 'left';
+      ctx.restore();
+      const bobY = Math.sin(state.time * 2) * 4;
+      ctx.fillStyle = '#1a1a1f';
+      ctx.font = 'bold 10px ui-monospace, monospace';
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText('↓ accept these to subscribe ↓', cj.x, cj.y - cj.r - 22 + bobY);
+      ctx.textAlign = 'left';
+    } else if (state.time - cookieJar.takeT < 0.4) {
+      const a = state.time - cookieJar.takeT;
+      ctx.strokeStyle = 'rgba(244,211,94,' + (1 - a/0.4) + ')';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cookieJar.x, cookieJar.y, cookieJar.r + a * 80, 0, Math.PI*2);
+      ctx.stroke();
+    }
+
+    // crumbs
+    for (let c of state.crumbs) {
+      ctx.save();
+      ctx.translate(c.x, c.y); ctx.rotate(c.rot);
+      ctx.globalAlpha = Math.min(1, c.life);
+      ctx.fillStyle = c.color;
+      ctx.fillRect(-c.size/2, -c.size/2, c.size, c.size);
+      ctx.restore();
+    }
+
+    // subscribe
+    {
+      const ex = layout.subscribe;
+      const allDocs = state.docsCollected === docs.length;
+      const ready = allDocs && state.cookieCollected;
+      const pulse = ready ? 1 + Math.sin(state.time * 4) * 0.05 : 1;
+      ctx.save();
+      ctx.translate(ex.x + ex.w/2, ex.y + ex.h/2);
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = ready ? '#2D8659' : (allDocs ? '#B8860B' : '#666');
+      ctx.fillRect(-ex.w/2, -ex.h/2, ex.w, ex.h);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px ui-monospace, monospace';
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText(ready ? 'SUBSCRIBE ↗' : 'SUBSCRIBE', 0, -4);
+      ctx.font = '8px ui-monospace, monospace';
+      ctx.fillText(
+        ready ? '(exfiltrate)' :
+        (allDocs ? '(accept cookies first)' :
+                   '(need ' + (docs.length - state.docsCollected) + ' more docs)'),
+        0, 12
+      );
+      ctx.textAlign = 'left';
+      ctx.restore();
+    }
+
+    // docs
+    for (let d of docs) {
+      if (d.taken) {
+        if (state.time - d.takeT < 0.4) {
+          const a = state.time - d.takeT;
+          ctx.strokeStyle = 'rgba(244,211,94,' + (1 - a/0.4) + ')';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(d.x, d.y, d.r + a * 50, 0, Math.PI*2); ctx.stroke();
+        }
+        continue;
+      }
+      const pulse = 1 + Math.sin(state.time * 4) * 0.12;
+      ctx.save();
+      ctx.translate(d.x, d.y); ctx.scale(pulse, pulse);
+      ctx.fillStyle = 'rgba(244,211,94,0.45)';
+      ctx.beginPath(); ctx.arc(0, 0, d.r + 8, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#F4D35E';
+      ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.2;
+      ctx.fillRect(-d.r, -d.r*0.7, d.r*2, d.r*1.5);
+      ctx.strokeRect(-d.r, -d.r*0.7, d.r*2, d.r*1.5);
+      ctx.fillRect(-d.r, -d.r*0.95, d.r*0.9, d.r*0.3);
+      ctx.strokeRect(-d.r, -d.r*0.95, d.r*0.9, d.r*0.3);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.font = 'bold 6px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('DOC', -7, 2);
+      ctx.restore();
+    }
+
+    // bullets
+    for (let b of bullets) {
+      for (let i = 0; i < b.trail.length; i++) {
+        const t = b.trail[i];
+        const a = (i / b.trail.length) * 0.6;
+        ctx.fillStyle = 'rgba(230,57,70,' + a + ')';
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, 3 + (i / b.trail.length) * 3, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#1a1a1f';
+      ctx.strokeStyle = '#E63946'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+    }
+
+    // search projectiles
+    for (let pr of projectiles) {
+      ctx.save();
+      ctx.translate(pr.x, pr.y);
+      ctx.rotate(Math.atan2(pr.vy, pr.vx));
+      ctx.fillStyle = '#1a1a1f';
+      ctx.fillRect(-25, -8, 50, 16);
+      ctx.fillStyle = '#E63946';
+      ctx.font = 'bold 8px ui-monospace, monospace';
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText(pr.text || '???', 0, 1);
+      ctx.textAlign = 'left';
+      ctx.restore();
+    }
+
+    // debris
+    for (let d of debris) {
+      ctx.save();
+      ctx.translate(d.x, d.y); ctx.rotate(d.rot);
+      ctx.globalAlpha = Math.min(1, d.life);
+      ctx.fillStyle = '#F4D35E';
+      ctx.fillRect(-d.size/2, -d.size/2, d.size, d.size);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText('👍', 0, 1);
+      ctx.textAlign = 'left';
+      ctx.restore();
+    }
+
+    // sparks
+    for (let s of state.sparks) {
+      if (s.hit) {
+        ctx.fillStyle = 'rgba(230,57,70,' + (s.life * 1.5) + ')';
+        ctx.fillRect(s.x, s.y, 2, 2);
+      } else {
+        ctx.fillStyle = 'rgba(0,0,0,' + (s.life * 0.15) + ')';
+        ctx.fillRect(s.x, s.y, 1, 1);
+      }
+    }
+
+    // player
+    {
+      const p = state.player;
+      const s = p.size;
+      const ph = s * 0.75;
+      const px = p.x - s/2, py = p.y - ph/2;
+      ctx.save();
+      if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.45;
+      if (p.growT > 0) {
+        ctx.strokeStyle = 'rgba(244,211,94,' + p.growT + ')';
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(p.x, p.y, s * 0.7 + (1 - p.growT) * 30, 0, Math.PI*2); ctx.stroke();
+      }
+      drawHandRect(px, py, s, ph, p.hitFlash > 0 ? '#fff' : '#E63946', '#1a1a1f', 50);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.fillRect(px + 1, py + 1, s - 2, 14);
+      ctx.fillStyle = '#fff';
+      ctx.font = '8px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('PRIMITIVE_ERROR.exe', px + 5, py + 8);
+      ctx.fillStyle = '#E63946';
+      ctx.fillRect(px + s - 13, py + 3, 9, 9);
+      ctx.fillStyle = '#fff';
+      ctx.fillText('×', px + s - 11, py + 8);
+      if (s > 50) {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.font = 'bold 10px ui-monospace, monospace';
+        const t = '0x7F4C';
+        const tw = ctx.measureText(t).width;
+        ctx.fillText(t, px + s/2 - tw/2, py + ph/2 + 4);
+      }
+      ctx.restore();
+    }
+
+    // cursor
+    if (state.cursor) {
+      const c = state.cursor;
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.fillStyle = '#0c0c0e';
+      ctx.strokeStyle = '#E63946'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0); ctx.lineTo(0, 38); ctx.lineTo(8, 30);
+      ctx.lineTo(14, 42); ctx.lineTo(20, 38); ctx.lineTo(14, 26);
+      ctx.lineTo(28, 24); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      const pulse = 18 + Math.sin(state.time * 10) * 3;
+      ctx.strokeStyle = 'rgba(230,57,70,0.5)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(14, 22, pulse, 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    // overlay effects
+    ctx.fillStyle = 'rgba(0,0,0,0.05)';
+    for (let y = 0; y < VH; y += 3) ctx.fillRect(0, y, VW, 1);
+    const grad = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW, VH)*0.3, VW/2, VH/2, Math.max(VW, VH)*0.7);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.22)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, VW, VH);
+
+    drawMiniMap();
+  }
+
+  function drawRecCard(x, y, w, h, idx, isAgent, agentState) {
+    const colors = ['#4A7BC8','#9b59b6','#2D8659','#F4D35E','#E63946','#0fa3b1','#888','#444'];
+    const c = colors[idx % colors.length];
+    if (isAgent && (agentState === 'awakening' || agentState === 'chasing')) ctx.fillStyle = '#E63946';
+    else ctx.fillStyle = '#fff';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = isAgent ? '#E63946' : '#ddd';
+    ctx.lineWidth = isAgent ? 2 : 1;
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = c;
+    ctx.fillRect(x + 6, y + 6, 100, h - 12);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(x + 6 + 75, y + 6 + h - 28, 26, 14);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px ui-monospace, monospace';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('12:34', x + 6 + 78, y + 6 + h - 21);
+    const titles = [
+      'How to do the thing','You won\'t BELIEVE this','why is this happening',
+      'top 10 forbidden tabs','they don\'t want you watching','asmr keyboard typing',
+      'a video about something','this changes everything',
+    ];
+    ctx.fillStyle = isAgent ? '#fff' : '#1a1a1f';
+    ctx.font = 'bold 11px var(--font-sans), sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText(titles[idx % titles.length], x + 114, y + 8);
+    ctx.fillStyle = isAgent ? '#fff' : '#888';
+    ctx.font = '10px var(--font-sans), sans-serif';
+    ctx.fillText('UnknownChannel', x + 114, y + 28);
+    ctx.fillText((100 + idx * 73) + 'K views', x + 114, y + 44);
+    ctx.fillText('█ days ago', x + 114, y + 60);
+    if (isAgent && agentState === 'chasing') {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px ui-monospace, monospace';
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText('◣ ◢', x + w/2, y + h/2);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  function drawComment(x, y, w, h, idx, isAgent, agentState) {
+    const charging = isAgent && (agentState === 'rumbling');
+    const falling = isAgent && (agentState === 'falling');
+    ctx.fillStyle = charging ? '#ffe5e5' : (falling ? '#1a1a1f' : '#fff');
+    ctx.strokeStyle = isAgent ? '#E63946' : '#ddd';
+    ctx.lineWidth = isAgent ? 2 : 1;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
+    const avatarC = ['#4A7BC8','#2D8659','#9b59b6','#F4D35E'];
+    ctx.fillStyle = avatarC[idx % avatarC.length];
+    ctx.beginPath(); ctx.arc(x + 22, y + 22, 14, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    ctx.fillText('U' + (idx+1), x + 22, y + 23);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = falling ? '#fff' : '#1a1a1f';
+    ctx.font = 'bold 11px var(--font-sans), sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText('@user_' + (idx+1) + '  •  2 hours ago', x + 44, y + 8);
+    const normal = [
+      'first lol',
+      'this is so true. anyway, here\'s a longer comment about something',
+      'who else is watching in 19██?',
+      'don\'t scroll past, important info: ████████████',
+    ];
+    const menace = 'I SEE YOU LITTLE WINDOW.';
+    ctx.fillStyle = falling ? '#E63946' : (charging ? '#E63946' : '#444');
+    ctx.font = isAgent && (charging || falling) ? 'bold 13px ui-monospace, monospace' : '11px var(--font-sans), sans-serif';
+    ctx.fillText(charging || falling ? menace : normal[idx % normal.length], x + 44, y + 28);
+    ctx.fillStyle = '#888';
+    ctx.font = '10px ui-monospace, monospace';
+    ctx.fillText('👍 ' + (idx * 47) + '   👎   reply', x + 44, y + 56);
+  }
+
+  function drawMiniMap() {
+    // scale mini-map to canvas size
+    const baseScale = Math.max(1, Math.min(VW, VH) / 600);
+    const mmW = 140 * baseScale;
+    const mmH = mmW * (PH / PW);
+    const mmX = VW - mmW - 12, mmY = VH - mmH - 12;
+    ctx.fillStyle = 'rgba(12,12,14,0.85)';
+    ctx.fillRect(mmX, mmY, mmW, mmH);
+    ctx.strokeStyle = '#E63946'; ctx.lineWidth = 1;
+    ctx.strokeRect(mmX, mmY, mmW, mmH);
+    const sx = mmW / PW, sy = mmH / PH;
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 0.5;
+    const viewW = VW / state.cam.zoom;
+    const viewH = VH / state.cam.zoom;
+    ctx.strokeRect(mmX + state.cam.x * sx, mmY + state.cam.y * sy, viewW * sx, viewH * sy);
+    for (let d of docs) {
+      if (d.taken) continue;
+      ctx.fillStyle = '#F4D35E';
+      ctx.fillRect(mmX + d.x * sx - 1.5, mmY + d.y * sy - 1.5, 4, 4);
+    }
+    if (!cookieJar.taken) {
+      ctx.fillStyle = '#A0522D';
+      ctx.fillRect(mmX + cookieJar.x * sx - 2.5, mmY + cookieJar.y * sy - 2.5, 6, 6);
+    }
+    const ex = layout.subscribe;
+    ctx.fillStyle = state.docsCollected === docs.length && state.cookieCollected ? '#2D8659' : '#555';
+    ctx.fillRect(mmX + ex.x * sx, mmY + ex.y * sy, ex.w * sx, ex.h * sy);
+    if (agents.gunShooter.state === 'aiming' || agents.gunShooter.state === 'awakening') {
+      const ag = agents.gunShooter;
+      const flash = Math.sin(state.time * 20) > 0;
+      ctx.fillStyle = flash ? '#E63946' : '#660000';
+      ctx.fillRect(mmX + ag.baseX * sx - 3, mmY + ag.baseY * sy - 3, 6, 6);
+    }
+    ctx.fillStyle = '#E63946';
+    const p = state.player;
+    ctx.fillRect(mmX + p.x * sx - 2.5, mmY + p.y * sy - 2.5, 5, 5);
+    ctx.fillStyle = '#6b6b73';
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.textBaseline = 'top';
+    ctx.fillText('MAP', mmX + 5, mmY + 5);
+  }
+
+  // ===== HUD =====
+  const sizeOut   = document.getElementById('ui-size');
+  const gazeBar   = document.getElementById('ui-gaze');
+  const docsOut   = document.getElementById('ui-docs');
+  const cookieOut = document.getElementById('ui-cookie');
+  const zoomOut   = document.getElementById('ui-zoom');
+  const hint      = document.getElementById('ui-hint');
+
+  function updateHUD() {
+    sizeOut.textContent = Math.round(state.player.size) + 'px';
+    sizeOut.style.color = state.player.size < 40 ? '#E63946' : state.player.size < 60 ? '#F4D35E' : '#f5f5f5';
+    gazeBar.style.width = state.gaze + '%';
+    gazeBar.style.background = state.gaze < 50 ? '#2D8659' : state.gaze < 80 ? '#F4D35E' : '#E63946';
+    docsOut.textContent = state.docsCollected + ' / ' + docs.length;
+    cookieOut.textContent = state.cookieCollected ? 'YES' : 'no';
+    cookieOut.style.color = state.cookieCollected ? '#2D8659' : '#f5f5f5';
+    zoomOut.textContent = Math.round(state.cam.zoom * 100 / state.cam.baseZoom) + '%';
+
+    const gun = agents.gunShooter;
+    if (gun.state === 'aiming') hint.textContent = '⚠ GUN AIMING — close distance now!';
+    else if (gun.state === 'awakening') hint.textContent = '⚠ AGENT DEPLOYING';
+    else if (state.cursor) hint.textContent = 'cursor active — break sight';
+    else if (state.gaze > 60) hint.textContent = 'gaze rising — cover the truth';
+    else if (state.docsCollected === docs.length && !state.cookieCollected) hint.textContent = 'all docs · grab the cookie jar';
+    else if (state.docsCollected === docs.length && state.cookieCollected) hint.textContent = 'subscribe to exfiltrate';
+    else hint.textContent = (docs.length - state.docsCollected) + ' more docs';
+  }
+
+  // ===== OVERLAYS =====
+  const overlay      = document.getElementById('overlay');
+  const overlayTag   = document.getElementById('overlay-tag');
+  const overlayTitle = document.getElementById('overlay-title');
+  const overlaySub   = document.getElementById('overlay-sub');
+  const startScreen  = document.getElementById('start');
+
+  function showOverlay() {
+    if (state.status === 'won') {
+      overlayTag.textContent = '[ EXFILTRATED ]';
+      overlayTag.style.color = '#2D8659';
+      overlayTitle.textContent = 'MISSION COMPLETE';
+      overlaySub.textContent = 'Five docs stolen, cookies accepted, subscribed. The page never knew.';
+    } else {
+      overlayTag.textContent = '[ TERMINATED ]';
+      overlayTag.style.color = '#E63946';
+      overlayTitle.textContent = state.lostReason;
+      overlaySub.textContent = state.lostReason === 'GARBAGE COLLECTED'
+        ? 'You ran out of size. Maybe the gun. Maybe the comments. The page won.'
+        : 'You exposed too much truth. The cursor caught up.';
+    }
+    overlay.classList.add('show');
+  }
+
+  function resetState() {
+    state.player.x = 100; state.player.y = 100; state.player.size = 75;
+    state.player.invuln = 0; state.player.hitFlash = 0; state.player.growT = 0;
+    docs.forEach(d => { d.taken = false; d.takeT = 0; });
+    cookieJar.taken = false; cookieJar.takeT = 0;
+    state.cookieCollected = false;
+    propaganda[0].x = 50; propaganda[0].y = 850; propaganda[0].dragging = false;
+    state.cursor = null;
+    state.gaze = 0;
+    state.docsCollected = 0;
+    state.lostReason = '';
+    state.time = 0;
+    state.cam.zoom = state.cam.baseZoom; state.cam.targetZoom = state.cam.baseZoom;
+    projectiles.length = 0; debris.length = 0; bullets.length = 0;
+    state.crumbs.length = 0;
+    agents.chasingRecs.forEach(a => {
+      const slot = recSlots[a.recIdx];
+      a.x = slot.x; a.y = slot.y; a.vx = 0; a.vy = 0; a.state = 'idle'; a.life = 0;
+    });
+    agents.shootingSearch.state = 'idle'; agents.shootingSearch.cooldown = 0; agents.shootingSearch.charge = 0;
+    {
+      const slot = comments[agents.fallingComment.commentIdx];
+      agents.fallingComment.x = slot.x; agents.fallingComment.y = slot.y;
+      agents.fallingComment.vy = 0; agents.fallingComment.state = 'idle';
+    }
+    agents.explodingLike.state = 'idle'; agents.explodingLike.charge = 0;
+    agents.crushingCookie.state = 'idle';
+    layout.cookie.y = PH - 40; layout.cookie.h = 40;
+    agents.gunShooter.state = 'idle';
+    agents.gunShooter.armLength = 0;
+    agents.gunShooter.awakenT = 0; agents.gunShooter.aimT = 0; agents.gunShooter.spentT = 0;
+    agents.gunShooter.currentAngle = Math.atan2(1, -1);
+    state.status = 'playing';
+  }
+
+  document.getElementById('restart').addEventListener('click', () => {
+    overlay.classList.remove('show');
+    resetState();
+  });
+
+  document.getElementById('start-btn').addEventListener('click', () => {
+    initAudio();
+    startScreen.classList.add('hidden');
+    state.status = 'playing';
+  });
+
+  // ===== INIT & LOOP =====
+  resize();
+
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    update(dt);
+    render();
+    updateHUD();
+    if (state.status !== 'playing' && state.status !== 'menu' && !overlay.classList.contains('show')) showOverlay();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
