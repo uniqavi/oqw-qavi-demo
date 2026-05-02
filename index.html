@@ -3,11 +3,54 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Operation Quiet Window — Web</title>
+    <title>Operation Quiet Window — Mission 02</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="game"></div>
+    <div class="frame">
+      <div class="tabs">
+        <div class="tab active"><span class="dot">●</span>Mission 02 — totallynormaltube.gov.??<span class="x">×</span></div>
+        <div class="tab" style="color:#666">+</div>
+      </div>
+      <div class="urlbar">
+        <span class="nav">←</span><span class="nav">→</span><span class="nav">↻</span>
+        <div class="url">https://totallynormaltube.gov.??/watch?v=truth</div>
+      </div>
+      <div class="canvas-wrap">
+        <div id="game"></div>
+        <div class="start" id="start">
+          <div class="start-tag">[ MISSION BRIEF · 02 ]</div>
+          <h3>HIDDEN AGENTS</h3>
+          <p>You can no longer resize yourself. The only way to grow is the cookie jar at the bottom of the page. Collect all five docs, accept cookies, then subscribe.</p>
+          <ul>
+            <li>recommendation videos chase you (sidebar)</li>
+            <li>the search bar fires autocomplete shrapnel</li>
+            <li>the comments section drops on you</li>
+            <li>the like button explodes into thumbs-up</li>
+            <li>the cookie banner crushes from below</li>
+            <li><b>the account avatar pulls a gun. one shot, lethal at distance, dodge by rushing it</b></li>
+          </ul>
+          <button class="start-btn" id="start-btn">BEGIN INFILTRATION</button>
+        </div>
+        <div class="overlay" id="overlay">
+          <div class="overlay-tag" id="overlay-tag">[ STATUS ]</div>
+          <h3 id="overlay-title">—</h3>
+          <p id="overlay-sub">—</p>
+          <button id="restart">RESTART</button>
+        </div>
+      </div>
+      <div class="hud">
+        <div class="stat"><span class="stat-label">SIZE</span><span id="ui-size">75px</span></div>
+        <div class="stat"><span class="stat-label">GAZE</span><span class="bar"><span class="bar-fill" id="ui-gaze"></span></span></div>
+        <div class="stat"><span class="stat-label">DOCS</span><span id="ui-docs">0 / 5</span></div>
+        <div class="stat"><span class="stat-label">🍪</span><span id="ui-cookie">no</span></div>
+        <div class="stat"><span class="stat-label">ZOOM</span><span id="ui-zoom">100%</span></div>
+        <div class="hint" id="ui-hint">infiltrating…</div>
+      </div>
+      <div class="instr">
+        <kbd>WASD</kbd> move &nbsp;·&nbsp; <kbd>+</kbd>/<kbd>-</kbd> or <kbd>scroll</kbd> zoom &nbsp;·&nbsp; <kbd>drag</kbd> ad banners &nbsp;·&nbsp; grab <code>cookies</code> &nbsp;·&nbsp; reach <code>SUBSCRIBE</code>
+      </div>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
