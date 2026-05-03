@@ -5,6 +5,7 @@ import { recSlots, commentSlots } from '../game/layout.js';
 import { dist } from '../game/physics.js';
 import { initAudio, beep, noise } from '../game/audio.js';
 import { drawHandRect, drawRecCard, drawComment } from '../game/draw.js';
+import * as ExplodingLike from '../game/agents/explodingLike.js';
 
 // Phase 3 — first playable.
 // Renders the entire page chrome to a vanilla 2D canvas overlay (#oqw) layered
@@ -182,34 +183,6 @@ export default class GameScene extends Phaser.Scene {
     this.overlayEl.classList.add('show');
   }
 
-  // Damage helper (will be called by Phase 4 agents).
-  damagePlayer(amount, knockX, knockY) {
-    const p = this.state.player;
-    if (p.invuln > 0) return;
-    p.size = Math.max(0, p.size - amount);
-    p.invuln = PLAYER.invulnDuration;
-    p.hitFlash = PLAYER.hitFlashDuration;
-    if (knockX !== undefined) {
-      p.x += knockX;
-      p.y += knockY;
-    }
-    noise(0.12, 0.14);
-    beep(140, 0.18, 'sawtooth', 0.09);
-    for (let i = 0; i < 8; i++) {
-      this.state.sparks.push({
-        x: p.x, y: p.y, life: 0.4, hit: true,
-        vx: (Math.random() - 0.5) * 200,
-        vy: (Math.random() - 0.5) * 200,
-      });
-    }
-    if (p.size <= PLAYER.deathSize) {
-      this.state.status = 'lost';
-      this.state.lostReason = 'GARBAGE COLLECTED';
-      noise(0.6, 0.2);
-      beep(80, 0.5, 'square', 0.12);
-    }
-  }
-
   // ===== Per-frame =====
   update(_time, deltaMs) {
     const dt = Math.min(0.05, deltaMs / 1000);
@@ -374,6 +347,10 @@ export default class GameScene extends Phaser.Scene {
       setTimeout(() => beep(1320, 0.25, 'sine', 0.12), 320);
     }
 
+    // Agents
+    ExplodingLike.update(state.agents.explodingLike, dt, state);
+    ExplodingLike.updateProjectiles(state, dt);
+
     // Win condition
     if (state.docsCollected === state.docs.length && state.cookieCollected) {
       const ex = state.layout.subscribe;
@@ -496,24 +473,18 @@ export default class GameScene extends Phaser.Scene {
     ctx.textBaseline = 'top';
     ctx.fillText("What They Don't Want You To See (full doc)", layout.title.x, layout.title.y);
 
-    // like / dislike / share (idle)
+    // like button (driven by ExplodingLike agent state)
+    ExplodingLike.drawButton(ctx, state.agents.explodingLike, state);
+    // dislike / share
     {
-      const lb = layout.likeBtn;
-      ctx.fillStyle = '#fff';
       ctx.strokeStyle = '#1a1a1f';
       ctx.lineWidth = 1;
-      ctx.fillRect(lb.x, lb.y, lb.w, lb.h);
-      ctx.strokeRect(lb.x, lb.y, lb.w, lb.h);
-      ctx.fillStyle = '#1a1a1f';
-      ctx.font = 'bold 11px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      ctx.fillText('👍 1.4M', lb.x + lb.w / 2, lb.y + lb.h / 2 + 1);
-      ctx.textAlign = 'left';
       ctx.fillStyle = '#fff';
       ctx.fillRect(layout.dislikeBtn.x, layout.dislikeBtn.y, layout.dislikeBtn.w, layout.dislikeBtn.h);
       ctx.strokeRect(layout.dislikeBtn.x, layout.dislikeBtn.y, layout.dislikeBtn.w, layout.dislikeBtn.h);
       ctx.fillStyle = '#1a1a1f';
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
       ctx.fillText('👎', layout.dislikeBtn.x + 10, layout.dislikeBtn.y + 15);
       ctx.fillRect(layout.shareBtn.x, layout.shareBtn.y, layout.shareBtn.w, layout.shareBtn.h);
       ctx.fillStyle = '#fff';
@@ -758,6 +729,9 @@ export default class GameScene extends Phaser.Scene {
       ctx.fillText('DOC', -7, 2);
       ctx.restore();
     }
+
+    // debris (from explodingLike)
+    ExplodingLike.drawProjectiles(ctx, state);
 
     // sparks (cosmetic)
     for (const s of state.sparks) {
