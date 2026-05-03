@@ -6,6 +6,11 @@ import { dist } from '../game/physics.js';
 import { initAudio, beep, noise } from '../game/audio.js';
 import { drawHandRect, drawRecCard, drawComment } from '../game/draw.js';
 import * as ExplodingLike from '../game/agents/explodingLike.js';
+import * as CrushingCookie from '../game/agents/crushingCookie.js';
+import * as FallingComment from '../game/agents/fallingComment.js';
+import * as ShootingSearch from '../game/agents/shootingSearch.js';
+import * as ChasingRecs from '../game/agents/chasingRecs.js';
+import * as GunShooter from '../game/agents/gunShooter.js';
 
 // Phase 3 — first playable.
 // Renders the entire page chrome to a vanilla 2D canvas overlay (#oqw) layered
@@ -348,8 +353,15 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // Agents
+    ChasingRecs.updateAll(state.agents.chasingRecs, dt, state);
+    ShootingSearch.update(state.agents.shootingSearch, dt, state);
+    ShootingSearch.updateProjectiles(state, dt);
+    FallingComment.update(state.agents.fallingComment, dt, state);
     ExplodingLike.update(state.agents.explodingLike, dt, state);
     ExplodingLike.updateProjectiles(state, dt);
+    CrushingCookie.update(state.agents.crushingCookie, dt, state);
+    GunShooter.update(state.agents.gunShooter, dt, state);
+    GunShooter.updateProjectiles(state, dt);
 
     // Win condition
     if (state.docsCollected === state.docs.length && state.cookieCollected) {
@@ -401,41 +413,10 @@ export default class GameScene extends Phaser.Scene {
     ctx.font = 'bold 14px sans-serif';
     ctx.fillText('TotallyNormal', layout.logo.x + 38, layout.logo.y + 13);
 
-    // search bar (idle in Phase 3)
-    {
-      const s = layout.search;
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = '#bbb';
-      ctx.lineWidth = 1;
-      ctx.fillRect(s.x, s.y, s.w, s.h);
-      ctx.strokeRect(s.x, s.y, s.w, s.h);
-      ctx.fillStyle = '#888';
-      ctx.font = '11px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('search totallynormaltube', s.x + 10, s.y + s.h / 2);
-      ctx.fillStyle = '#1a1a1f';
-      ctx.fillRect(s.x + s.w - 36, s.y, 36, s.h);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 11px ui-monospace, monospace';
-      ctx.fillText('🔍', s.x + s.w - 26, s.y + s.h / 2);
-    }
-
-    // account avatar (idle in Phase 3)
-    {
-      ctx.fillStyle = '#4A7BC8';
-      ctx.beginPath();
-      ctx.arc(layout.account.x + 12, layout.account.y + 12, 11, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#1a1a1f';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 11px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      ctx.fillText('U', layout.account.x + 12, layout.account.y + 13);
-      ctx.textAlign = 'left';
-    }
+    // search bar (driven by ShootingSearch agent state)
+    ShootingSearch.drawBar(ctx, state.agents.shootingSearch, state);
+    // account avatar (driven by GunShooter agent state) — note: arm is drawn here too
+    GunShooter.drawAvatar(ctx, state.agents.gunShooter, state);
 
     // video player
     {
@@ -508,16 +489,25 @@ export default class GameScene extends Phaser.Scene {
       ctx.fillRect(d.x + 10, d.y + 66, 300, 4);
     }
 
-    // sidebar recs (idle for Phase 3 — Phase 4 wakes some up)
+    // sidebar recs — empty slot if a chasing rec is currently away from it
     for (let i = 0; i < recSlots.length; i++) {
       const slot = recSlots[i];
-      drawRecCard(ctx, slot.x, slot.y, slot.w, slot.h, i, false, null, state.time);
+      if (ChasingRecs.isAgentSlot(state.agents.chasingRecs, i)) {
+        ChasingRecs.drawEmptySlot(ctx, slot);
+      } else {
+        drawRecCard(ctx, slot.x, slot.y, slot.w, slot.h, i, false, null, state.time);
+      }
     }
+    ChasingRecs.drawAgents(ctx, state.agents.chasingRecs, state);
 
-    // comments (idle)
+    // comments — skip the falling-comment slot (drawn separately below)
     for (let i = 0; i < commentSlots.length; i++) {
+      if (FallingComment.isAgentSlot(state.agents.fallingComment, i)) continue;
       const slot = commentSlots[i];
       drawComment(ctx, slot.x, slot.y, slot.w, slot.h, i, false, null);
+    }
+    if (state.agents.fallingComment.state !== 'idle') {
+      FallingComment.drawAgent(ctx, state.agents.fallingComment);
     }
 
     // truth + propaganda
@@ -567,26 +557,8 @@ export default class GameScene extends Phaser.Scene {
       ctx.restore();
     }
 
-    // cookie banner (idle)
-    {
-      const cb = layout.cookie;
-      ctx.fillStyle = '#1a1a1f';
-      ctx.fillRect(cb.x, cb.y, cb.w, cb.h);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 11px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('🍪 we use cookies. and other things. accept everything?', cb.x + 16, cb.y + 14);
-      ctx.fillStyle = '#2D8659';
-      ctx.fillRect(cb.x + cb.w - 240, cb.y + 6, 100, 22);
-      ctx.fillStyle = '#fff';
-      ctx.textAlign = 'center';
-      ctx.fillText('ACCEPT ALL', cb.x + cb.w - 190, cb.y + 17);
-      ctx.fillStyle = '#444';
-      ctx.fillRect(cb.x + cb.w - 130, cb.y + 6, 100, 22);
-      ctx.fillStyle = '#fff';
-      ctx.fillText('also accept all', cb.x + cb.w - 80, cb.y + 17);
-      ctx.textAlign = 'left';
-    }
+    // cookie banner (driven by CrushingCookie agent state)
+    CrushingCookie.drawBanner(ctx, state.agents.crushingCookie, state);
 
     // cookie jar
     const cj = state.cookieJar;
@@ -730,7 +702,9 @@ export default class GameScene extends Phaser.Scene {
       ctx.restore();
     }
 
-    // debris (from explodingLike)
+    // bullets (gunShooter), search projectiles, debris (explodingLike)
+    GunShooter.drawProjectiles(ctx, state);
+    ShootingSearch.drawProjectiles(ctx, state);
     ExplodingLike.drawProjectiles(ctx, state);
 
     // sparks (cosmetic)
@@ -819,7 +793,10 @@ export default class GameScene extends Phaser.Scene {
     this.hud.cookie.style.color = state.cookieCollected ? '#2D8659' : '#f5f5f5';
     this.hud.zoom.textContent = Math.round((state.cam.zoom / state.cam.baseZoom) * 100) + '%';
 
-    if (state.cursor) this.hud.hint.textContent = 'cursor active — break sight';
+    const gun = state.agents.gunShooter;
+    if (gun.state === 'aiming') this.hud.hint.textContent = '⚠ GUN AIMING — close distance now!';
+    else if (gun.state === 'awakening') this.hud.hint.textContent = '⚠ AGENT DEPLOYING';
+    else if (state.cursor) this.hud.hint.textContent = 'cursor active — break sight';
     else if (state.gaze > 60) this.hud.hint.textContent = 'gaze rising — cover the truth';
     else if (state.docsCollected === state.docs.length && !state.cookieCollected)
       this.hud.hint.textContent = 'all docs · grab the cookie jar';

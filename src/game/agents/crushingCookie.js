@@ -1,0 +1,62 @@
+// Agent: the cookie banner pushes upward to crush the player when they
+// approach the bottom of the page. Mutates state.layout.cookie y/h.
+// Phaser-free.
+
+import { PH, AGENTS, DAMAGE } from '../../config.js';
+import { beep } from '../audio.js';
+import { damagePlayer } from '../combat.js';
+
+const T = AGENTS.crushingCookie;
+
+export function update(agent, dt, state) {
+  const p = state.player;
+  const layout = state.layout;
+
+  if (agent.state === 'idle') {
+    if (p.y > PH - agent.triggerR) {
+      agent.state = 'crushing';
+      agent.vy = 0;
+      beep(180, 0.4, 'sawtooth', 0.1);
+    }
+  } else if (agent.state === 'crushing') {
+    agent.vy = T.crushSpeed;
+    layout.cookie.y -= agent.vy * dt;
+    layout.cookie.h += agent.vy * dt;
+    if (p.y > layout.cookie.y) damagePlayer(state, DAMAGE.crushingCookie, 0, T.knockY);
+    if (layout.cookie.y < p.y - 100 || layout.cookie.y < 200) {
+      agent.state = 'returning';
+    }
+  } else if (agent.state === 'returning') {
+    layout.cookie.y += (PH - 40 - layout.cookie.y) * Math.min(1, dt * 2);
+    layout.cookie.h += (40 - layout.cookie.h) * Math.min(1, dt * 2);
+    if (Math.abs(layout.cookie.y - (PH - 40)) < 1) {
+      layout.cookie.y = PH - 40;
+      layout.cookie.h = 40;
+      agent.state = 'idle';
+    }
+  }
+}
+
+// Render the cookie banner reflecting agent state. Replaces inline cookie
+// banner drawing in GameScene.
+export function drawBanner(ctx, agent, state) {
+  const cb = state.layout.cookie;
+  const crushing = agent.state === 'crushing' || agent.state === 'returning';
+  ctx.fillStyle = crushing ? '#E63946' : '#1a1a1f';
+  ctx.fillRect(cb.x, cb.y, cb.w, cb.h);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px ui-monospace, monospace';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText('🍪 we use cookies. and other things. accept everything?', cb.x + 16, cb.y + 14);
+  ctx.fillStyle = '#2D8659';
+  ctx.fillRect(cb.x + cb.w - 240, cb.y + 6, 100, 22);
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.fillText('ACCEPT ALL', cb.x + cb.w - 190, cb.y + 17);
+  ctx.fillStyle = '#444';
+  ctx.fillRect(cb.x + cb.w - 130, cb.y + 6, 100, 22);
+  ctx.fillStyle = '#fff';
+  ctx.fillText('also accept all', cb.x + cb.w - 80, cb.y + 17);
+  ctx.textAlign = 'left';
+}
