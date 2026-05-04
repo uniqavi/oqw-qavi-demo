@@ -13,6 +13,10 @@ export function damagePlayer(state, amount, knockX, knockY) {
     p.x += knockX;
     p.y += knockY;
   }
+  // Track for results screen
+  state.stats.damageTaken += amount;
+  state.stats.hitsReceived++;
+
   noise(0.12, 0.14);
   beep(140, 0.18, 'sawtooth', 0.09);
   for (let i = 0; i < 8; i++) {
@@ -25,6 +29,7 @@ export function damagePlayer(state, amount, knockX, knockY) {
   if (p.size <= PLAYER.deathSize) {
     state.status = 'lost';
     state.lostReason = 'GARBAGE COLLECTED';
+    state.stats.endedAt = state.time;
     noise(0.6, 0.2);
     beep(80, 0.5, 'square', 0.12);
   }

@@ -3,55 +3,212 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Operation Quiet Window — Mission 02</title>
+    <title>Operation Quiet Window</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
-  <body>
-    <div class="frame">
-      <div class="tabs">
-        <div class="tab active"><span class="dot">●</span>Mission 02 — totallynormaltube.gov.??<span class="x">×</span></div>
-        <div class="tab" style="color:#666">+</div>
-      </div>
-      <div class="urlbar">
-        <span class="nav">←</span><span class="nav">→</span><span class="nav">↻</span>
-        <div class="url">https://totallynormaltube.gov.??/watch?v=truth</div>
-      </div>
-      <div class="canvas-wrap">
-        <div id="game"></div>
-        <canvas id="oqw"></canvas>
-        <div class="start" id="start">
-          <div class="start-tag">[ MISSION BRIEF · 02 ]</div>
-          <h3>HIDDEN AGENTS</h3>
-          <p>You can no longer resize yourself. The only way to grow is the cookie jar at the bottom of the page. Collect all five docs, accept cookies, then subscribe.</p>
-          <ul>
-            <li>recommendation videos chase you (sidebar)</li>
-            <li>the search bar fires autocomplete shrapnel</li>
-            <li>the comments section drops on you</li>
-            <li>the like button explodes into thumbs-up</li>
-            <li>the cookie banner crushes from below</li>
-            <li><b>the account avatar pulls a gun. one shot, lethal at distance, dodge by rushing it</b></li>
-          </ul>
-          <button class="start-btn" id="start-btn">BEGIN INFILTRATION</button>
+  <body class="menu-mode">
+    <!-- Fixed 1920x1080 design surface. JS scales it to fit the browser window
+         while preserving aspect ratio — the rest of the layout uses logical px. -->
+    <div class="viewport" id="viewport">
+      <div class="frame">
+        <div class="tabs">
+          <div class="tab active"><span class="dot">●</span>Mission 02 — totallynormaltube.gov.??<span class="x">×</span></div>
+          <div class="tab" style="color:#666">+</div>
         </div>
-        <div class="overlay" id="overlay">
-          <div class="overlay-tag" id="overlay-tag">[ STATUS ]</div>
-          <h3 id="overlay-title">—</h3>
-          <p id="overlay-sub">—</p>
-          <button id="restart">RESTART</button>
+        <div class="urlbar">
+          <span class="nav">←</span><span class="nav">→</span><span class="nav">↻</span>
+          <div class="url">https://totallynormaltube.gov.??/watch?v=truth</div>
         </div>
-      </div>
-      <div class="hud">
-        <div class="stat"><span class="stat-label">SIZE</span><span id="ui-size">75px</span></div>
-        <div class="stat"><span class="stat-label">GAZE</span><span class="bar"><span class="bar-fill" id="ui-gaze"></span></span></div>
-        <div class="stat"><span class="stat-label">DOCS</span><span id="ui-docs">0 / 5</span></div>
-        <div class="stat"><span class="stat-label">🍪</span><span id="ui-cookie">no</span></div>
-        <div class="stat"><span class="stat-label">ZOOM</span><span id="ui-zoom">100%</span></div>
-        <div class="hint" id="ui-hint">infiltrating…</div>
-      </div>
-      <div class="instr">
-        <kbd>WASD</kbd> move &nbsp;·&nbsp; <kbd>+</kbd>/<kbd>-</kbd> or <kbd>scroll</kbd> zoom &nbsp;·&nbsp; <kbd>drag</kbd> ad banners &nbsp;·&nbsp; grab <code>cookies</code> &nbsp;·&nbsp; reach <code>SUBSCRIBE</code>
+        <div class="canvas-wrap">
+          <div id="game"></div>
+          <canvas id="oqw"></canvas>
+
+          <!-- ===== MAIN MENU ===== -->
+          <div class="main-menu" id="main-menu">
+            <div class="dark-room">
+              <div class="room-vignette"></div>
+              <div class="monitor">
+                <div class="monitor-screen" id="menu-monitor-screen">STANDBY...</div>
+              </div>
+              <div class="silhouette"></div>
+              <div class="scanlines"></div>
+            </div>
+            <div class="menu-overlay">
+              <div class="menu-tag">[ DEEP-COVER OPS · TIER-IV CLEARANCE ]</div>
+              <h1 class="menu-title">OPERATION<br/>QUIET WINDOW</h1>
+              <div class="menu-sub">2039 &nbsp;·&nbsp; WW3 &nbsp;·&nbsp; DAY 847</div>
+              <div class="menu-buttons">
+                <button class="menu-btn" id="btn-start">START NEW MISSION</button>
+                <button class="menu-btn" id="btn-load" disabled>LOAD GAME <span class="btn-note">(no saves yet)</span></button>
+                <button class="menu-btn" id="btn-settings">SETTINGS</button>
+                <button class="menu-btn" id="btn-help">HELP</button>
+              </div>
+              <div class="menu-foot">v0.5 · placeholder art</div>
+            </div>
+          </div>
+
+          <!-- ===== DIFFICULTY SELECT (after pressing START) ===== -->
+          <div class="diff-menu hidden" id="diff-menu">
+            <div class="dark-room">
+              <div class="room-vignette"></div>
+              <div class="monitor">
+                <div class="monitor-screen">SELECT THREAT LEVEL</div>
+              </div>
+              <div class="silhouette"></div>
+              <div class="scanlines"></div>
+            </div>
+            <div class="diff-overlay">
+              <div class="menu-tag">[ MISSION CONFIG ]</div>
+              <h2 class="diff-title">DIFFICULTY</h2>
+              <div class="menu-sub">PICK YOUR THREAT LEVEL</div>
+              <div class="diff-cards">
+                <button class="diff-card" data-diff="easy">
+                  <div class="diff-name">EASY</div>
+                  <div class="diff-desc">Slow agents, gentle damage. For first runs.</div>
+                </button>
+                <button class="diff-card" data-diff="normal">
+                  <div class="diff-name">NORMAL</div>
+                  <div class="diff-desc">As designed. Recommended.</div>
+                </button>
+                <button class="diff-card" data-diff="hard">
+                  <div class="diff-name">HARD</div>
+                  <div class="diff-desc">Faster, deadlier. For the practiced infiltrator.</div>
+                </button>
+              </div>
+              <div class="diff-actions">
+                <button class="menu-btn ghost" id="diff-back">◀ BACK</button>
+                <button class="menu-btn" id="diff-confirm" disabled>BEGIN INFILTRATION ▶</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== INTRO CUTSCENE ===== -->
+          <div class="intro hidden" id="intro">
+            <div class="dark-room">
+              <div class="room-vignette"></div>
+              <div class="monitor">
+                <div class="monitor-screen" id="intro-monitor-screen">STANDBY...</div>
+              </div>
+              <div class="silhouette"></div>
+              <div class="phone" id="intro-phone">📞</div>
+              <div class="scanlines"></div>
+            </div>
+            <div class="dialogue">
+              <div class="dialogue-speaker" id="dialogue-speaker"></div>
+              <div class="dialogue-line" id="dialogue-line"></div>
+              <div class="dialogue-hint" id="dialogue-hint">▸ click or press SPACE to continue</div>
+            </div>
+          </div>
+
+          <!-- ===== SETTINGS MODAL (audio only — difficulty moved to start flow) ===== -->
+          <div class="modal hidden" id="settings-modal">
+            <div class="modal-panel">
+              <div class="modal-tag">[ SETTINGS ]</div>
+              <h2>CONFIG</h2>
+              <div class="setting-row">
+                <span class="setting-label">AUDIO</span>
+                <div class="diff-options">
+                  <button class="diff-btn" data-audio="on">ON</button>
+                  <button class="diff-btn" data-audio="off">MUTE</button>
+                </div>
+              </div>
+              <button class="modal-close-btn" id="settings-close">CLOSE</button>
+            </div>
+          </div>
+
+          <!-- ===== HELP MODAL ===== -->
+          <div class="modal hidden" id="help-modal">
+            <div class="modal-panel">
+              <div class="modal-tag">[ FIELD MANUAL ]</div>
+              <h2>HOW TO PLAY</h2>
+              <ul class="help-list">
+                <li><kbd>WASD</kbd> / <kbd>↑↓←→</kbd> — move</li>
+                <li><kbd>+</kbd>/<kbd>-</kbd> or <kbd>scroll</kbd> — zoom in / out</li>
+                <li><kbd>click + drag</kbd> — pick up ad banners; cover the <span class="hl">CLASSIFIED</span> doc to keep your gaze low</li>
+                <li>Collect <span class="hl">docs</span> (yellow), then accept the <span class="hl">cookie jar</span>, then reach <span class="hl">SUBSCRIBE</span> to exfiltrate</li>
+                <li>Watch out for: <em>chasing recs · search shrapnel · falling comments · exploding likes · crushing cookie banner</em></li>
+                <li>The <span class="hl">account avatar</span> pulls a gun. One shot is lethal at distance — rush it to break the aim.</li>
+              </ul>
+              <button class="modal-close-btn" id="help-close">CLOSE</button>
+            </div>
+          </div>
+
+          <!-- ===== WIN/LOSE RESULTS SCREEN ===== -->
+          <div class="overlay" id="overlay">
+            <div class="results">
+              <div class="overlay-tag" id="overlay-tag">[ STATUS ]</div>
+              <h3 id="overlay-title">—</h3>
+              <p id="overlay-sub">—</p>
+
+              <div class="grade-display" id="grade-display">
+                <div class="grade-letter" id="grade-letter">—</div>
+                <div class="grade-name" id="grade-name">—</div>
+              </div>
+
+              <div class="stats-grid" id="stats-grid">
+                <div class="stat-row hidden-row" data-stat="time">
+                  <span class="stat-name">TIME</span>
+                  <span class="stat-value" id="stat-time">—</span>
+                  <span class="stat-stars" id="stat-time-stars"></span>
+                </div>
+                <div class="stat-row hidden-row" data-stat="stealth">
+                  <span class="stat-name">STEALTH</span>
+                  <span class="stat-value" id="stat-stealth">—</span>
+                  <span class="stat-stars" id="stat-stealth-stars"></span>
+                </div>
+                <div class="stat-row hidden-row" data-stat="survival">
+                  <span class="stat-name">SURVIVAL</span>
+                  <span class="stat-value" id="stat-survival">—</span>
+                  <span class="stat-stars" id="stat-survival-stars"></span>
+                </div>
+                <div class="stat-row hidden-row" data-stat="docs">
+                  <span class="stat-name">DOCS</span>
+                  <span class="stat-value" id="stat-docs">—</span>
+                  <span class="stat-stars"></span>
+                </div>
+              </div>
+
+              <div class="results-actions">
+                <button id="restart" class="results-btn primary">PLAY AGAIN</button>
+                <button id="back-menu" class="results-btn ghost">MAIN MENU</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="hud">
+          <div class="stat"><span class="stat-label">SIZE</span><span id="ui-size">75px</span></div>
+          <div class="stat"><span class="stat-label">GAZE</span><span class="bar"><span class="bar-fill" id="ui-gaze"></span></span></div>
+          <div class="stat"><span class="stat-label">DOCS</span><span id="ui-docs">0 / 5</span></div>
+          <div class="stat"><span class="stat-label">🍪</span><span id="ui-cookie">no</span></div>
+          <div class="stat"><span class="stat-label">ZOOM</span><span id="ui-zoom">100%</span></div>
+          <div class="hint" id="ui-hint">infiltrating…</div>
+        </div>
+        <div class="instr">
+          <kbd>WASD</kbd> move &nbsp;·&nbsp; <kbd>+</kbd>/<kbd>-</kbd> or <kbd>scroll</kbd> zoom &nbsp;·&nbsp; <kbd>drag</kbd> ad banners &nbsp;·&nbsp; grab <code>cookies</code> &nbsp;·&nbsp; reach <code>SUBSCRIBE</code>
+        </div>
       </div>
     </div>
+    <script>
+      // Lock the .viewport to a fixed 1920x1080 design size, scale-to-fit the
+      // browser window while preserving aspect ratio. Letterboxes appear in
+      // the unfilled area (body background = black).
+      (function () {
+        const DESIGN_W = 1920;
+        const DESIGN_H = 1080;
+        function fitViewport() {
+          const vp = document.getElementById('viewport');
+          if (!vp) return;
+          const s = Math.min(window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H);
+          const tx = (window.innerWidth - DESIGN_W * s) / 2;
+          const ty = (window.innerHeight - DESIGN_H * s) / 2;
+          vp.style.transform = 'translate(' + tx + 'px, ' + ty + 'px) scale(' + s + ')';
+        }
+        window.addEventListener('resize', fitViewport);
+        fitViewport();
+        // Re-run after fonts/images load in case dimensions shift
+        window.addEventListener('load', fitViewport);
+      })();
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

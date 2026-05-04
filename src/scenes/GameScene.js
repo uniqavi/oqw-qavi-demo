@@ -20,7 +20,8 @@ export default class GameScene extends Phaser.Scene {
     super('GameScene');
   }
 
-  create() {
+  create(data) {
+    this.difficulty = data?.difficulty || localStorage.getItem('oqw-difficulty') || 'normal';
     this.state = createState();
     this.state.status = 'playing';
 
@@ -62,14 +63,20 @@ export default class GameScene extends Phaser.Scene {
       c.targetZoom = Phaser.Math.Clamp(c.targetZoom * factor, c.minZoom, c.maxZoom);
     });
 
-    // Restart button (DOM)
+    // Results screen DOM refs
     this.restartBtn = document.getElementById('restart');
+    this.backMenuBtn = document.getElementById('back-menu');
     this.overlayEl = document.getElementById('overlay');
     this.overlayTagEl = document.getElementById('overlay-tag');
     this.overlayTitleEl = document.getElementById('overlay-title');
     this.overlaySubEl = document.getElementById('overlay-sub');
+    this.gradeLetterEl = document.getElementById('grade-letter');
+    this.gradeNameEl = document.getElementById('grade-name');
+    this.statRows = document.querySelectorAll('#stats-grid .stat-row');
     this.onRestart = () => this.restart();
+    this.onBackMenu = () => this.backToMenu();
     this.restartBtn?.addEventListener('click', this.onRestart);
+    this.backMenuBtn?.addEventListener('click', this.onBackMenu);
 
     // HUD DOM refs
     this.hud = {
@@ -85,6 +92,8 @@ export default class GameScene extends Phaser.Scene {
       window.removeEventListener('resize', this.handleResize);
       document.removeEventListener('mouseup', this.onMouseUp);
       this.restartBtn?.removeEventListener('click', this.onRestart);
+      this.backMenuBtn?.removeEventListener('click', this.onBackMenu);
+      if (this.revealTimers) this.revealTimers.forEach(clearTimeout);
     });
   }
 
@@ -164,14 +173,83 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  // ===== Restart =====
+  // ===== Restart / back to menu =====
   restart() {
     if (this.overlayEl) this.overlayEl.classList.remove('show');
+    this.resetResultsUI();
     resetState(this.state);
   }
+  backToMenu() {
+    if (this.overlayEl) this.overlayEl.classList.remove('show');
+    this.resetResultsUI();
+    document.body.classList.add('menu-mode');
+    this.scene.stop('HUDScene');
+    this.scene.start('MenuScene');
+  }
+  resetResultsUI() {
+    if (this.revealTimers) this.revealTimers.forEach(clearTimeout);
+    this.revealTimers = [];
+    this.gradeLetterEl?.classList.remove('show');
+    this.gradeNameEl?.classList.remove('show');
+    this.statRows?.forEach((row) => row.classList.add('hidden-row'));
+  }
+
+  // Compute time/stealth/survival stars and overall letter grade.
+  computeGrade(state) {
+    const elapsed = state.stats.endedAt || state.time;
+
+    // Time: faster = better. Tuned for Level 1 typical playthrough.
+    let timeStars = 1;
+    if (elapsed < 60) timeStars = 3;
+    else if (elapsed < 120) timeStars = 2;
+
+    // Stealth: gaze never crossed threshold = perfect.
+    let stealthStars = 3;
+    if (state.stats.gazeMaxed) stealthStars = 1;
+    else if (state.gaze > 50) stealthStars = 2;
+
+    // Survival: damage taken (lower = better).
+    let survivalStars = 1;
+    if (state.stats.damageTaken === 0) survivalStars = 3;
+    else if (state.stats.damageTaken < 25) survivalStars = 2;
+
+    const total = timeStars + stealthStars + survivalStars; // 3..9
+
+    let letter = 'D';
+    let name = 'BARELY';
+    let tier = 'barely';
+    if (state.status === 'lost') { letter = 'F'; name = 'TERMINATED'; tier = 'fail'; }
+    else if (total >= 9) { letter = 'S+'; name = 'FLAWLESS'; tier = 'flawless'; }
+    else if (total >= 8) { letter = 'S';  name = 'ACE';      tier = 'ace'; }
+    else if (total >= 7) { letter = 'A';  name = 'EXCELLENT'; tier = 'excellent'; }
+    else if (total >= 5) { letter = 'B';  name = 'GOOD';     tier = 'good'; }
+    else if (total >= 4) { letter = 'C';  name = 'PASS';     tier = 'pass'; }
+
+    return { timeStars, stealthStars, survivalStars, total, letter, name, tier, elapsed };
+  }
+
+  formatTime(secs) {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  starsHtml(n) {
+    let out = '';
+    for (let i = 0; i < 3; i++) {
+      out += i < n ? '<span class="filled">★</span>' : '<span>☆</span>';
+    }
+    return out;
+  }
+
   showOverlay() {
     if (!this.overlayEl) return;
-    if (this.state.status === 'won') {
+    const state = this.state;
+    const won = state.status === 'won';
+    const grade = this.computeGrade(state);
+
+    // Header text
+    if (won) {
       this.overlayTagEl.textContent = '[ EXFILTRATED ]';
       this.overlayTagEl.style.color = '#2D8659';
       this.overlayTitleEl.textContent = 'MISSION COMPLETE';
@@ -179,13 +257,61 @@ export default class GameScene extends Phaser.Scene {
     } else {
       this.overlayTagEl.textContent = '[ TERMINATED ]';
       this.overlayTagEl.style.color = '#E63946';
-      this.overlayTitleEl.textContent = this.state.lostReason || 'TERMINATED';
+      this.overlayTitleEl.textContent = state.lostReason || 'TERMINATED';
       this.overlaySubEl.textContent =
-        this.state.lostReason === 'GARBAGE COLLECTED'
-          ? 'You ran out of size. Maybe the gun. Maybe the comments. The page won.'
+        state.lostReason === 'GARBAGE COLLECTED'
+          ? 'You ran out of size. The page won this round.'
           : 'You exposed too much truth. The cursor caught up.';
     }
+
+    // Populate stat rows (still hidden — animation reveals them)
+    document.getElementById('stat-time').textContent       = this.formatTime(grade.elapsed);
+    document.getElementById('stat-time-stars').innerHTML   = this.starsHtml(grade.timeStars);
+    document.getElementById('stat-stealth').textContent    = state.stats.gazeMaxed ? 'DETECTED' : 'CLEAN';
+    document.getElementById('stat-stealth-stars').innerHTML = this.starsHtml(grade.stealthStars);
+    document.getElementById('stat-survival').textContent   = state.stats.damageTaken === 0
+      ? 'UNTOUCHED'
+      : state.stats.damageTaken + ' size lost · ' + state.stats.hitsReceived + ' hit' + (state.stats.hitsReceived === 1 ? '' : 's');
+    document.getElementById('stat-survival-stars').innerHTML = this.starsHtml(grade.survivalStars);
+    document.getElementById('stat-docs').textContent       = state.docsCollected + ' / ' + state.docs.length;
+
+    // Grade letter (class for color tier)
+    this.gradeLetterEl.textContent = grade.letter;
+    this.gradeLetterEl.className = 'grade-letter tier-' + grade.tier;
+    this.gradeNameEl.textContent = grade.name;
+
+    // Show overlay first, then sequentially reveal stat rows + grade
     this.overlayEl.classList.add('show');
+    this.revealTimers = [];
+    const reveal = (delay, fn) => this.revealTimers.push(setTimeout(fn, delay));
+
+    if (won) {
+      reveal(350,  () => { this.statRows[0].classList.remove('hidden-row'); beep(880, 0.06, 'sine', 0.08); });
+      reveal(700,  () => { this.statRows[1].classList.remove('hidden-row'); beep(988, 0.06, 'sine', 0.08); });
+      reveal(1050, () => { this.statRows[2].classList.remove('hidden-row'); beep(1100, 0.06, 'sine', 0.08); });
+      reveal(1400, () => { this.statRows[3].classList.remove('hidden-row'); beep(1320, 0.08, 'sine', 0.08); });
+      reveal(1850, () => {
+        this.gradeLetterEl.classList.add('show');
+        this.gradeNameEl.classList.add('show');
+        if (grade.tier === 'flawless' || grade.tier === 'ace') {
+          beep(523, 0.15, 'sine', 0.1);
+          setTimeout(() => beep(659, 0.15, 'sine', 0.1), 90);
+          setTimeout(() => beep(784, 0.2, 'sine', 0.12), 180);
+          setTimeout(() => beep(1047, 0.3, 'sine', 0.12), 320);
+        } else {
+          beep(660, 0.15, 'sine', 0.1);
+          setTimeout(() => beep(880, 0.25, 'sine', 0.12), 140);
+        }
+      });
+    } else {
+      // Loss: reveal everything quickly, no celebratory grade animation
+      reveal(200, () => { this.statRows.forEach((r) => r.classList.remove('hidden-row')); });
+      reveal(450, () => {
+        this.gradeLetterEl.classList.add('show');
+        this.gradeNameEl.classList.add('show');
+        beep(120, 0.4, 'sawtooth', 0.1);
+      });
+    }
   }
 
   // ===== Per-frame =====
@@ -292,6 +418,7 @@ export default class GameScene extends Phaser.Scene {
     // Cursor (gaze enforcer)
     if (state.gaze >= GAZE.threshold && !state.cursor) {
       state.cursor = { x: -40, y: 50, vx: 0, vy: 0, born: 0 };
+      state.stats.gazeMaxed = true;
       noise(0.35, 0.16);
       beep(95, 0.5, 'sawtooth', 0.11);
     }
@@ -309,6 +436,7 @@ export default class GameScene extends Phaser.Scene {
       if (d < p.size * GAZE.cursorCatchRadiusMult && cu.born > GAZE.cursorBornGrace) {
         state.status = 'lost';
         state.lostReason = 'CAUGHT BY CURSOR';
+        state.stats.endedAt = state.time;
         noise(0.5, 0.2);
         beep(70, 0.6, 'square', 0.13);
       }
@@ -368,6 +496,7 @@ export default class GameScene extends Phaser.Scene {
       const ex = state.layout.subscribe;
       if (p.x > ex.x - 10 && p.x < ex.x + ex.w + 10 && p.y > ex.y - 10 && p.y < ex.y + ex.h + 10) {
         state.status = 'won';
+        state.stats.endedAt = state.time;
         beep(523, 0.1, 'sine', 0.1);
         setTimeout(() => beep(659, 0.1, 'sine', 0.1), 80);
         setTimeout(() => beep(784, 0.18, 'sine', 0.12), 180);

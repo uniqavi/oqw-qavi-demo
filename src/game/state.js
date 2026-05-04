@@ -103,6 +103,12 @@ export function createState() {
     projectiles: [],
     bullets: [],
     debris: [],
+    stats: {
+      damageTaken: 0,
+      hitsReceived: 0,
+      gazeMaxed: false,
+      endedAt: 0,
+    },
     agents: createAgents(),
     layout: createLayout(),
     docs: createDocs(),
@@ -141,6 +147,11 @@ export function resetState(state) {
   state.bullets.length = 0;
   state.debris.length = 0;
   state.crumbs.length = 0;
+
+  state.stats.damageTaken = 0;
+  state.stats.hitsReceived = 0;
+  state.stats.gazeMaxed = false;
+  state.stats.endedAt = 0;
 
   // Agents back to idle
   state.agents.chasingRecs.forEach(a => {
