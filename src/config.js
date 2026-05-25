@@ -2,6 +2,24 @@
 export const PW = 960;
 export const PH = 1200;
 
+// Per-difficulty multipliers. Applied at agent update time. Tuned so EASY
+// is genuinely forgiving for new players, NORMAL is "as designed,"
+// HARD is for repeat players. Picked at the difficulty menu.
+//
+// Note: in addition to these, GameScene grants a SAFE_INTRO window where
+// the most lethal agent (gun shooter) won't trigger for N seconds — see
+// AGENTS.gunShooter.startGracePeriod below.
+export const DIFFICULTY = {
+  easy:   { agentSpeed: 0.75, agentDamage: 0.7,  triggerRange: 0.85, gunGrace: 12 },
+  normal: { agentSpeed: 1.0,  agentDamage: 1.0,  triggerRange: 1.0,  gunGrace: 6  },
+  hard:   { agentSpeed: 1.25, agentDamage: 1.15, triggerRange: 1.15, gunGrace: 3  },
+};
+
+export function getDifficulty() {
+  const key = (typeof localStorage !== 'undefined' && localStorage.getItem('oqw-difficulty')) || 'normal';
+  return DIFFICULTY[key] || DIFFICULTY.normal;
+}
+
 // Player
 export const PLAYER = {
   startX: 100,

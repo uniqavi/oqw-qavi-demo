@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Operation Quiet Window</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body class="menu-mode">
@@ -11,17 +14,54 @@
          while preserving aspect ratio — the rest of the layout uses logical px. -->
     <div class="viewport" id="viewport">
       <div class="frame">
-        <div class="tabs">
-          <div class="tab active"><span class="dot">●</span>Mission 02 — totallynormaltube.gov.??<span class="x">×</span></div>
-          <div class="tab" style="color:#666">+</div>
+        <div class="tabs" id="browser-tabs">
+          <div class="tab active" data-tab="youtube"><span class="dot">●</span>totallynormaltube.gov.??<span class="x">×</span></div>
+          <div class="tab locked" data-tab="spygram" data-tooltip="ACCESS DENIED — finish level 1 first"><span class="lock">🔒</span>???<span class="x">×</span></div>
+          <div class="tab locked" data-tab="unknown" data-tooltip="ACCESS DENIED — still locked"><span class="lock">🔒</span>???<span class="x">×</span></div>
+          <div class="tab plus" style="color:#666">+</div>
         </div>
         <div class="urlbar">
           <span class="nav">←</span><span class="nav">→</span><span class="nav">↻</span>
-          <div class="url">https://totallynormaltube.gov.??/watch?v=truth</div>
+          <div class="url" id="browser-url">https://totallynormaltube.gov.??/watch?v=truth</div>
         </div>
         <div class="canvas-wrap">
           <div id="game"></div>
           <canvas id="oqw"></canvas>
+
+          <!-- ===== ONBOARDING TOOLTIP (first-time tips, fade in/out) ===== -->
+          <div class="onboarding-tip hidden" id="onboarding-tip">
+            <span class="tip-arrow">▸</span>
+            <span class="tip-text" id="onboarding-tip-text"></span>
+          </div>
+
+          <!-- ===== MALWARE INSTALL / SHORT-CIRCUIT SEQUENCE ===== -->
+          <div class="end-sequence hidden" id="end-sequence">
+            <div class="malware-install" id="malware-install">
+              <div class="malware-frame">
+                <div class="malware-tag">[ MALWARE.exe — SILENT INSTALL ]</div>
+                <div class="malware-line">Injecting payload into VEIL pipeline...</div>
+                <div class="malware-bar"><div class="malware-fill" id="malware-fill"></div></div>
+                <div class="malware-pct" id="malware-pct">0%</div>
+              </div>
+            </div>
+            <div class="glitch-sweep" id="glitch-sweep"></div>
+          </div>
+
+          <!-- ===== INTEL DIALOG (triggered when player uncovers a hidden memo) ===== -->
+          <div class="intel-dialog hidden" id="intel-dialog">
+            <div class="intel-frame">
+              <div class="intel-tag" id="intel-speaker">[ INTERCEPT — CLASSIFIED // L4 ]</div>
+              <div class="intel-line" id="intel-line"></div>
+              <div class="intel-hint" id="intel-hint">▸ click or SPACE to continue</div>
+            </div>
+          </div>
+
+          <!-- ===== POST-MISSION OVERLAY (shown after L1 win — minimal, no big results screen) ===== -->
+          <div class="post-mission-banner hidden" id="post-mission-banner">
+            <span class="pm-tag">[ MALWARE PLANTED ]</span>
+            <span class="pm-text">page is yours. Toto just unlocked a new tab → <span class="pm-tab">spygram.hush</span>. click it when you're ready.</span>
+            <span class="pm-hint"><kbd>ESC</kbd> menu · <kbd>R</kbd> again</span>
+          </div>
 
           <!-- ===== MAIN MENU ===== -->
           <div class="main-menu" id="main-menu">
@@ -36,7 +76,7 @@
             <div class="menu-overlay">
               <div class="menu-tag">[ DEEP-COVER OPS · TIER-IV CLEARANCE ]</div>
               <h1 class="menu-title">OPERATION<br/>QUIET WINDOW</h1>
-              <div class="menu-sub">2039 &nbsp;·&nbsp; WW3 &nbsp;·&nbsp; DAY 847</div>
+              <div class="menu-sub">2039 &nbsp;·&nbsp; UNDER VEIL</div>
               <div class="menu-buttons">
                 <button class="menu-btn" id="btn-start">START NEW MISSION</button>
                 <button class="menu-btn" id="btn-load" disabled>LOAD GAME <span class="btn-note">(no saves yet)</span></button>
@@ -94,9 +134,12 @@
               <div class="scanlines"></div>
             </div>
             <div class="dialogue">
-              <div class="dialogue-speaker" id="dialogue-speaker"></div>
-              <div class="dialogue-line" id="dialogue-line"></div>
-              <div class="dialogue-hint" id="dialogue-hint">▸ click or press SPACE to continue</div>
+              <img class="dialogue-portrait" id="dialogue-portrait" alt="" />
+              <div class="dialogue-body">
+                <div class="dialogue-speaker" id="dialogue-speaker"></div>
+                <div class="dialogue-line" id="dialogue-line"></div>
+                <div class="dialogue-hint" id="dialogue-hint">▸ click or press SPACE to continue</div>
+              </div>
             </div>
           </div>
 

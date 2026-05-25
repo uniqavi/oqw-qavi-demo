@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PW, PH, PLAYER, CAMERA, GAZE, PICKUPS, RENDER } from '../config.js';
+import { PW, PH, PLAYER, CAMERA, GAZE, PICKUPS, RENDER, DIFFICULTY } from '../config.js';
 import { createState, resetState } from '../game/state.js';
 import { recSlots, commentSlots } from '../game/layout.js';
 import { dist } from '../game/physics.js';
@@ -11,6 +11,43 @@ import * as FallingComment from '../game/agents/fallingComment.js';
 import * as ShootingSearch from '../game/agents/shootingSearch.js';
 import * as ChasingRecs from '../game/agents/chasingRecs.js';
 import * as GunShooter from '../game/agents/gunShooter.js';
+import { startEndSequence, updateEndSequence, drawArcs, PHASE_DURATIONS } from '../game/endSequence.js';
+import { crossfadeTo, stopMusic } from '../game/music.js';
+import { playVoice, stopVoice } from '../game/voice.js';
+
+// First-time onboarding tips. Direction A voice — has personality but
+// still tells you what to do. Keyed in localStorage so veterans never see.
+const ONBOARDING_TIPS = [
+  { key: 'drag-ad',  text: 'that <span class="hl">weird comment</span> — drag it over the red bit. the page shouldn\'t see what\'s under there.' },
+  { key: 'docs',     text: 'grab the <span class="hl">5 yellow docs</span>. don\'t take all night, people are scrolling.' },
+  { key: 'cookies',  text: 'docs got. <span class="hl">accept the cookies</span>. they\'re lying about what\'s in them, that\'s fine.' },
+  { key: 'exfil',    text: 'hit <span class="hl">SUBSCRIBE</span> to plant the malware. the page won\'t thank you.' },
+];
+
+// Intel memo — plays once when the player first uncovers the CLASSIFIED
+// rect. Max is HUSH's enemy boss (voiced in L2 climax). Lines are written
+// self-contained so a first-time player understands without prior context.
+// Each line has an optional voiceId for drop-in TTS — see public/voice/README.md
+const INTEL_LINES = [
+  { speaker: '[ INTERCEPT — INTERNAL HUSH MEMO ]',
+    text: 'From: Max, Director of Engagement — Q1 2039.',
+    voiceId: 'memo-intercept-01' },
+  { speaker: '[ MEMO ]',
+    text: '"Engagement is down. Our analysts think users are getting suspicious."',
+    voiceId: 'memo-max-01' },
+  { speaker: '[ MEMO ]',
+    text: '"Our analysts are wrong. Users aren\'t suspicious. They\'re bored."',
+    voiceId: 'memo-max-02' },
+  { speaker: '[ MEMO ]',
+    text: '"Bored is fine. Bored people don\'t organize."',
+    voiceId: 'memo-max-03' },
+  { speaker: '[ MEMO ]',
+    text: '"Cancel the next news cycle. Boring people stay quiet."',
+    voiceId: 'memo-max-04' },
+  { speaker: '[ INTERCEPT ]',
+    text: 'Rest didn\'t load. The full version is on HUSH\'s internal chat — they call it SPYGRAM. Of course they do.',
+    voiceId: 'memo-intercept-02' },
+];
 
 // Phase 3 — first playable.
 // Renders the entire page chrome to a vanilla 2D canvas overlay (#oqw) layered
@@ -22,8 +59,26 @@ export default class GameScene extends Phaser.Scene {
 
   create(data) {
     this.difficulty = data?.difficulty || localStorage.getItem('oqw-difficulty') || 'normal';
+    this.diffMod = DIFFICULTY[this.difficulty] || DIFFICULTY.normal;
     this.state = createState();
     this.state.status = 'playing';
+    // Bump every agent's trigger range by the difficulty modifier. Doing it
+    // here (not in state.js) so the value stays a multiplier rather than a
+    // baked constant — easier to retune.
+    const tMul = this.diffMod.triggerRange;
+    this.state.agents.chasingRecs.forEach(a => { a.triggerR *= tMul; });
+    this.state.agents.shootingSearch.triggerR *= tMul;
+    this.state.agents.fallingComment.triggerR *= tMul;
+    this.state.agents.explodingLike.triggerR  *= tMul;
+    this.state.agents.crushingCookie.triggerR *= tMul;
+    this.state.agents.gunShooter.triggerR     *= tMul;
+    // Grace period — gun shooter is muted for the opening. The single most
+    // common first-death cause was the avatar firing 4 seconds in. This
+    // gives new players room to figure out the controls.
+    this.state.gunGraceUntil = this.diffMod.gunGrace;
+
+    // Swap menu music → L1 theme. Crossfade so it feels continuous.
+    crossfadeTo('level1', { fadeMs: 1500 });
 
     // Hidden Phaser canvas children that aren't used — we draw to #oqw instead.
     this.cameras.main.setBackgroundColor(0x181818);
@@ -88,12 +143,101 @@ export default class GameScene extends Phaser.Scene {
       hint: document.getElementById('ui-hint'),
     };
 
+    // End-sequence DOM refs (malware install + glitch wipe)
+    this.endDom = {
+      wrap:    document.getElementById('end-sequence'),
+      install: document.getElementById('malware-install'),
+      fill:    document.getElementById('malware-fill'),
+      pct:     document.getElementById('malware-pct'),
+      sweep:   document.getElementById('glitch-sweep'),
+    };
+    this.canvasWrapEl = document.querySelector('.canvas-wrap');
+    this.endSeq = null;
+
+    // Intel dialog DOM refs (in-game memo popup)
+    this.intelDom = {
+      wrap:    document.getElementById('intel-dialog'),
+      speaker: document.getElementById('intel-speaker'),
+      line:    document.getElementById('intel-line'),
+      hint:    document.getElementById('intel-hint'),
+    };
+    this.intelTypeTimer = null;
+    // Click anywhere on the intel dialog → advance. Also Space.
+    this.onIntelClick = (e) => {
+      if (this.state.intelDialog) {
+        e.stopPropagation();
+        this.advanceIntel();
+      }
+    };
+    this.intelDom.wrap?.addEventListener('click', this.onIntelClick);
+
+    // Post-mission banner DOM ref
+    this.postMissionEl = document.getElementById('post-mission-banner');
+
+    // Keys: ESC → main menu, R → replay. Active in any non-playing state
+    // (post-mission, intel dialog, or loss). Avoids needing a results screen.
+    this.onKey = (e) => {
+      if (this.state.intelDialog && (e.key === ' ' || e.key === 'Enter')) {
+        e.preventDefault();
+        this.advanceIntel();
+        return;
+      }
+      if (this.state.status === 'won') {
+        if (e.key === 'Escape') { e.preventDefault(); this.backToMenu(); }
+        else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); this.restart(); }
+      } else if (this.state.status === 'lost') {
+        if (e.key === 'Escape') { e.preventDefault(); this.backToMenu(); }
+      }
+    };
+    document.addEventListener('keydown', this.onKey);
+
+    // Onboarding tooltip DOM
+    this.tipEl     = document.getElementById('onboarding-tip');
+    this.tipTextEl = document.getElementById('onboarding-tip-text');
+    this.currentTip = null;
+    this.tipTimer = null;
+    this.firstAdDragged = false;
+
+    // Tab system — locked tabs no-op until L1 ends. lattice.veil tab swaps
+    // into Level 2 after the post-mission state begins.
+    this.tabEls = document.querySelectorAll('#browser-tabs .tab');
+    this.onTabClick = (e) => {
+      const el = e.currentTarget;
+      if (el.classList.contains('locked')) return;
+      if (el.classList.contains('plus')) return;
+      // SPYGRAM tab: switch to L2 scene (only if unlocked, i.e. post-mission)
+      if (el.dataset.tab === 'spygram' && this.state.status === 'won') {
+        const urlBar = document.getElementById('browser-url');
+        if (urlBar) urlBar.textContent = 'https://spygram.hush/auth?session=lewis';
+        this.tabEls.forEach((t) => t.classList.remove('active'));
+        el.classList.add('active');
+        this.canvasWrapEl?.classList.remove('post-mission');
+        this.scene.stop();
+        this.scene.start('Level2Scene');
+      }
+    };
+    this.tabEls.forEach((el) => el.addEventListener('click', this.onTabClick));
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       window.removeEventListener('resize', this.handleResize);
       document.removeEventListener('mouseup', this.onMouseUp);
+      document.removeEventListener('keydown', this.onKey);
       this.restartBtn?.removeEventListener('click', this.onRestart);
       this.backMenuBtn?.removeEventListener('click', this.onBackMenu);
+      this.intelDom?.wrap?.removeEventListener('click', this.onIntelClick);
+      this.tabEls?.forEach((el) => el.removeEventListener('click', this.onTabClick));
       if (this.revealTimers) this.revealTimers.forEach(clearTimeout);
+      if (this.tipTimer) clearTimeout(this.tipTimer);
+      if (this.intelTypeTimer) clearTimeout(this.intelTypeTimer);
+      // Reset end-sequence + intel DOM so nothing leaks across re-entries
+      this.endDom?.wrap?.classList.add('hidden');
+      this.endDom?.install?.classList.remove('show');
+      this.endDom?.sweep?.classList.remove('run');
+      this.intelDom?.wrap?.classList.add('hidden');
+      this.intelDom?.wrap?.classList.remove('show');
+      this.postMissionEl?.classList.add('hidden');
+      this.postMissionEl?.classList.remove('show');
+      this.canvasWrapEl?.classList.remove('post-mission');
     });
   }
 
@@ -159,6 +303,9 @@ export default class GameScene extends Phaser.Scene {
         p.dox = m.x - p.x;
         p.doy = m.y - p.y;
         beep(420, 0.04, 'square', 0.04);
+        // Dismiss the "drag ad" onboarding tip — they did it
+        this.firstAdDragged = true;
+        if (this.currentTip === 'drag-ad') this.hideTip();
         break;
       }
     }
@@ -183,15 +330,197 @@ export default class GameScene extends Phaser.Scene {
     if (this.overlayEl) this.overlayEl.classList.remove('show');
     this.resetResultsUI();
     document.body.classList.add('menu-mode');
+    crossfadeTo('menu', { fadeMs: 800 });
     this.scene.stop('HUDScene');
     this.scene.start('MenuScene');
   }
   resetResultsUI() {
     if (this.revealTimers) this.revealTimers.forEach(clearTimeout);
     this.revealTimers = [];
+    if (this.intelTypeTimer) clearTimeout(this.intelTypeTimer);
     this.gradeLetterEl?.classList.remove('show');
     this.gradeNameEl?.classList.remove('show');
     this.statRows?.forEach((row) => row.classList.add('hidden-row'));
+    // Clean up end-sequence DOM so a restart starts from a known state
+    this.endDom?.wrap?.classList.add('hidden');
+    this.endDom?.install?.classList.remove('show');
+    this.endDom?.sweep?.classList.remove('run');
+    if (this.endDom?.fill) this.endDom.fill.style.width = '0%';
+    if (this.endDom?.pct) this.endDom.pct.textContent = '0%';
+    // Intel dialog + post-mission banner reset
+    this.intelDom?.wrap?.classList.add('hidden');
+    this.intelDom?.wrap?.classList.remove('show');
+    if (this.intelDom?.line) this.intelDom.line.textContent = '';
+    if (this.intelDom?.hint) this.intelDom.hint.classList.remove('show');
+    this.postMissionEl?.classList.add('hidden');
+    this.postMissionEl?.classList.remove('show');
+    // Restart wipes the post-mission dim so the page is "live" again
+    this.canvasWrapEl?.classList.remove('post-mission');
+    this.firstAdDragged = false;
+    this.endSeq = null;
+  }
+
+  // ===== Onboarding tooltips =====
+  // Show a tip only on first ever playthrough (localStorage flag). Subsequent
+  // plays skip — reviewer feedback was "first-time players shouldn't need
+  // external guidance," but veterans don't need this clutter every run.
+  shouldShowTip(key) {
+    return localStorage.getItem('oqw-tip-' + key) !== 'done';
+  }
+  markTipDone(key) {
+    localStorage.setItem('oqw-tip-' + key, 'done');
+  }
+  showTip(tip, dwellMs = 5500) {
+    if (!this.tipEl || !this.tipTextEl) return;
+    if (this.currentTip === tip.key) return;
+    if (!this.shouldShowTip(tip.key)) return;
+    this.currentTip = tip.key;
+    this.tipTextEl.innerHTML = tip.text;
+    this.tipEl.classList.remove('hidden');
+    requestAnimationFrame(() => this.tipEl.classList.add('show'));
+    if (this.tipTimer) clearTimeout(this.tipTimer);
+    this.tipTimer = setTimeout(() => this.hideTip(), dwellMs);
+  }
+  hideTip(markDone = true) {
+    if (!this.tipEl) return;
+    if (markDone && this.currentTip) this.markTipDone(this.currentTip);
+    this.tipEl.classList.remove('show');
+    this.currentTip = null;
+    setTimeout(() => this.tipEl?.classList.add('hidden'), 400);
+  }
+
+  // Decide which tip (if any) is relevant given current game state.
+  updateOnboardingTips() {
+    const state = this.state;
+    if (state.status !== 'playing') { this.hideTip(false); return; }
+    if (this.currentTip) return; // a tip is already on screen
+    if (this.shouldShowTip('drag-ad') && state.time < 8 && !this.firstAdDragged) {
+      this.showTip(ONBOARDING_TIPS[0]); return;
+    }
+    if (this.shouldShowTip('docs') && state.time > 8 && state.docsCollected === 0) {
+      this.showTip(ONBOARDING_TIPS[1]); return;
+    }
+    if (this.shouldShowTip('cookies') && state.docsCollected === state.docs.length && !state.cookieCollected) {
+      this.showTip(ONBOARDING_TIPS[2]); return;
+    }
+    if (this.shouldShowTip('exfil') && state.docsCollected === state.docs.length && state.cookieCollected) {
+      this.showTip(ONBOARDING_TIPS[3]); return;
+    }
+  }
+
+  // ===== End sequence (malware install → short-circuit arcs → glitch wipe) =====
+  beginEndSequence() {
+    if (this.endSeq) return;
+    this.endSeq = startEndSequence(this.state);
+    this.state.status = 'ending';
+    // Show DOM overlay + install bar
+    this.endDom.wrap?.classList.remove('hidden');
+    this.endDom.install?.classList.add('show');
+  }
+  tickEndSequenceDom() {
+    const es = this.endSeq;
+    if (!es) return;
+    if (es.phase === 'install') {
+      const pct = Math.min(100, Math.round((es.t / PHASE_DURATIONS.install) * 100));
+      if (this.endDom.fill) this.endDom.fill.style.width = pct + '%';
+      if (this.endDom.pct) this.endDom.pct.textContent = pct + '%';
+    } else if (es.phase === 'arcing') {
+      // Install bar done — hide it
+      this.endDom.install?.classList.remove('show');
+    } else if (es.phase === 'wipe' && !this.sweepRun) {
+      this.sweepRun = true;
+      this.endDom.sweep?.classList.add('run');
+    }
+  }
+  finishEndSequence() {
+    // Hide overlays + apply post-mission dim
+    this.endDom.wrap?.classList.add('hidden');
+    this.endDom.sweep?.classList.remove('run');
+    this.sweepRun = false;
+    this.canvasWrapEl?.classList.add('post-mission');
+    // Unlock the SPYGRAM tab with a pulse animation
+    const spygramTab = document.querySelector('#browser-tabs .tab[data-tab="spygram"]');
+    if (spygramTab) {
+      spygramTab.classList.remove('locked');
+      spygramTab.removeAttribute('data-tooltip');
+      spygramTab.innerHTML = '<span class="dot">●</span>spygram.hush<span class="x">×</span>';
+      spygramTab.classList.add('unlocking');
+    }
+    this.state.status = 'won';
+    // Show the small post-mission banner instead of the big results screen
+    this.postMissionEl?.classList.remove('hidden');
+    requestAnimationFrame(() => this.postMissionEl?.classList.add('show'));
+  }
+
+  // ===== Intel dialog (in-game memo popup) =====
+  startIntel() {
+    const state = this.state;
+    if (state.intelRevealed || state.intelDialog) return;
+    state.intelRevealed = true;
+    state.intelDialog = { idx: 0, charT: 0, typing: true };
+    this.intelDom.wrap?.classList.remove('hidden');
+    requestAnimationFrame(() => this.intelDom.wrap?.classList.add('show'));
+    this.showIntelLine(0);
+    beep(660, 0.08, 'sine', 0.08);
+    setTimeout(() => beep(880, 0.1, 'sine', 0.08), 90);
+  }
+
+  showIntelLine(i) {
+    const line = INTEL_LINES[i];
+    if (!line) return this.closeIntel();
+    if (this.intelDom.speaker) this.intelDom.speaker.textContent = line.speaker;
+    if (this.intelDom.line) this.intelDom.line.textContent = '';
+    this.intelDom.hint?.classList.remove('show');
+    if (line.voiceId) playVoice(line.voiceId);
+    else stopVoice();
+    let chars = 0;
+    const text = line.text;
+    const tick = () => {
+      const dialog = this.state.intelDialog;
+      if (!dialog || !dialog.typing) {
+        if (this.intelDom.line) this.intelDom.line.textContent = text;
+        this.intelDom.hint?.classList.add('show');
+        return;
+      }
+      if (chars < text.length) {
+        chars++;
+        if (this.intelDom.line) this.intelDom.line.textContent = text.slice(0, chars);
+        if (text[chars - 1] !== ' ' && Math.random() < 0.22) {
+          beep(1600 + Math.random() * 600, 0.005, 'square', 0.011);
+        }
+        this.intelTypeTimer = setTimeout(tick, 28);
+      } else {
+        if (this.state.intelDialog) this.state.intelDialog.typing = false;
+        this.intelDom.hint?.classList.add('show');
+      }
+    };
+    tick();
+  }
+
+  advanceIntel() {
+    const dialog = this.state.intelDialog;
+    if (!dialog) return;
+    if (dialog.typing) {
+      // Skip typewriter — show full line immediately
+      if (this.intelTypeTimer) clearTimeout(this.intelTypeTimer);
+      dialog.typing = false;
+      const line = INTEL_LINES[dialog.idx];
+      if (this.intelDom.line) this.intelDom.line.textContent = line.text;
+      this.intelDom.hint?.classList.add('show');
+      return;
+    }
+    dialog.idx++;
+    if (dialog.idx >= INTEL_LINES.length) return this.closeIntel();
+    dialog.typing = true;
+    this.showIntelLine(dialog.idx);
+  }
+
+  closeIntel() {
+    if (this.intelTypeTimer) clearTimeout(this.intelTypeTimer);
+    stopVoice();
+    this.state.intelDialog = null;
+    this.intelDom.wrap?.classList.remove('show');
+    setTimeout(() => this.intelDom.wrap?.classList.add('hidden'), 400);
   }
 
   // Compute time/stealth/survival stars and overall letter grade.
@@ -218,7 +547,7 @@ export default class GameScene extends Phaser.Scene {
     let letter = 'D';
     let name = 'BARELY';
     let tier = 'barely';
-    if (state.status === 'lost') { letter = 'F'; name = 'TERMINATED'; tier = 'fail'; }
+    if (state.status === 'lost') { letter = 'F'; name = 'FAIL'; tier = 'fail'; }
     else if (total >= 9) { letter = 'S+'; name = 'FLAWLESS'; tier = 'flawless'; }
     else if (total >= 8) { letter = 'S';  name = 'ACE';      tier = 'ace'; }
     else if (total >= 7) { letter = 'A';  name = 'EXCELLENT'; tier = 'excellent'; }
@@ -248,32 +577,53 @@ export default class GameScene extends Phaser.Scene {
     const won = state.status === 'won';
     const grade = this.computeGrade(state);
 
-    // Header text
+    // Header text — different framing for win vs loss
     if (won) {
       this.overlayTagEl.textContent = '[ EXFILTRATED ]';
       this.overlayTagEl.style.color = '#2D8659';
       this.overlayTitleEl.textContent = 'MISSION COMPLETE';
-      this.overlaySubEl.textContent = 'Five docs stolen, cookies accepted, subscribed. The page never knew.';
+      this.overlaySubEl.textContent = 'malware planted. page short-circuited. new tab open — spygram.hush';
     } else {
-      this.overlayTagEl.textContent = '[ TERMINATED ]';
+      this.overlayTagEl.textContent = '[ THE PAGE WON ]';
       this.overlayTagEl.style.color = '#E63946';
-      this.overlayTitleEl.textContent = state.lostReason || 'TERMINATED';
+      this.overlayTitleEl.textContent = state.lostReason || 'CLOSED BY BROWSER';
       this.overlaySubEl.textContent =
         state.lostReason === 'GARBAGE COLLECTED'
-          ? 'You ran out of size. The page won this round.'
-          : 'You exposed too much truth. The cursor caught up.';
+          ? "the avatar shot you. it shoots everyone. don't take it personally — just run at it next time."
+          : state.lostReason === 'CAUGHT BY CURSOR'
+            ? 'page noticed the red bit was uncovered. you have to keep something over it.'
+            : 'tab crashed. happens to everyone.';
     }
 
-    // Populate stat rows (still hidden — animation reveals them)
-    document.getElementById('stat-time').textContent       = this.formatTime(grade.elapsed);
-    document.getElementById('stat-time-stars').innerHTML   = this.starsHtml(grade.timeStars);
-    document.getElementById('stat-stealth').textContent    = state.stats.gazeMaxed ? 'DETECTED' : 'CLEAN';
-    document.getElementById('stat-stealth-stars').innerHTML = this.starsHtml(grade.stealthStars);
-    document.getElementById('stat-survival').textContent   = state.stats.damageTaken === 0
-      ? 'UNTOUCHED'
-      : state.stats.damageTaken + ' size lost · ' + state.stats.hitsReceived + ' hit' + (state.stats.hitsReceived === 1 ? '' : 's');
-    document.getElementById('stat-survival-stars').innerHTML = this.starsHtml(grade.survivalStars);
-    document.getElementById('stat-docs').textContent       = state.docsCollected + ' / ' + state.docs.length;
+    // Stat row labels — re-set every show, since loss uses different ones
+    const rowLabels = won
+      ? ['TIME',     'STEALTH', 'SURVIVAL', 'DOCS']
+      : ['SURVIVED', 'GAZE',    'DAMAGE',   'DOCS'];
+    this.statRows.forEach((row, i) => {
+      const nameEl = row.querySelector('.stat-name');
+      if (nameEl) nameEl.textContent = rowLabels[i];
+    });
+
+    // Stat values
+    document.getElementById('stat-time').textContent = this.formatTime(grade.elapsed);
+    if (won) {
+      document.getElementById('stat-stealth').textContent = state.stats.gazeMaxed ? 'DETECTED' : 'CLEAN';
+      document.getElementById('stat-survival').textContent = state.stats.damageTaken === 0
+        ? 'UNTOUCHED'
+        : state.stats.damageTaken + ' size lost · ' + state.stats.hitsReceived + ' hit' + (state.stats.hitsReceived === 1 ? '' : 's');
+    } else {
+      document.getElementById('stat-stealth').textContent = state.stats.gazeMaxed
+        ? 'MAXED OUT'
+        : Math.round(state.gaze) + '%';
+      document.getElementById('stat-survival').textContent =
+        state.stats.damageTaken + ' size lost · ' + state.stats.hitsReceived + ' hit' + (state.stats.hitsReceived === 1 ? '' : 's');
+    }
+    document.getElementById('stat-docs').textContent = state.docsCollected + ' / ' + state.docs.length;
+
+    // Stars — only awarded on win. On loss, leave them empty (no misleading 3 stars).
+    document.getElementById('stat-time-stars').innerHTML     = won ? this.starsHtml(grade.timeStars)     : '';
+    document.getElementById('stat-stealth-stars').innerHTML  = won ? this.starsHtml(grade.stealthStars)  : '';
+    document.getElementById('stat-survival-stars').innerHTML = won ? this.starsHtml(grade.survivalStars) : '';
 
     // Grade letter (class for color tier)
     this.gradeLetterEl.textContent = grade.letter;
@@ -317,7 +667,9 @@ export default class GameScene extends Phaser.Scene {
   // ===== Per-frame =====
   update(_time, deltaMs) {
     const dt = Math.min(0.05, deltaMs / 1000);
-    this.state.time += dt;
+    // Don't accrue game time while the intel memo is on-screen; the player's
+    // run-time stat shouldn't be punished for reading lore.
+    if (!this.state.intelDialog) this.state.time += dt;
 
     // Smooth zoom toward target
     const c = this.state.cam;
@@ -340,13 +692,23 @@ export default class GameScene extends Phaser.Scene {
       return cr.life > 0;
     });
 
-    if (this.state.status === 'playing') {
+    if (this.state.status === 'playing' && !this.state.intelDialog) {
       this.runGameLogic(dt);
+      this.updateOnboardingTips();
+    } else if (this.state.intelDialog) {
+      // Game paused while reading the intel memo — only typewriter ticks
+      // run (driven by its own setTimeout). Don't advance time/gaze/agents.
+    } else if (this.state.status === 'ending') {
+      const done = updateEndSequence(this.endSeq, dt, this.state);
+      this.tickEndSequenceDom();
+      if (done) this.finishEndSequence();
     }
 
     this.render();
     this.updateHUD();
-    if (this.state.status !== 'playing' && !this.overlayEl?.classList.contains('show')) {
+    // Only the LOSS path shows the big results screen. WIN goes straight to
+    // post-mission state (banner + secured page) per the new design.
+    if (this.state.status === 'lost' && !this.overlayEl?.classList.contains('show')) {
       this.showOverlay();
     }
   }
@@ -411,8 +773,16 @@ export default class GameScene extends Phaser.Scene {
     if (exposed > 0) {
       state.gaze = Math.min(GAZE.threshold, state.gaze + GAZE.raisePerSec * exposed * dt);
       if (Math.random() < 0.04) beep(180 + state.gaze * 5, 0.06, 'triangle', 0.018);
+      // First-time intel reveal: if the player has had the memo uncovered
+      // for ~0.4s (debounce so they don't trigger by brushing it), play the
+      // dialog. Only fires once per run.
+      if (!state.intelRevealed) {
+        state.truthExposedT += dt;
+        if (state.truthExposedT >= 0.4) this.startIntel();
+      }
     } else {
       state.gaze = Math.max(0, state.gaze - GAZE.fallPerSec * dt);
+      state.truthExposedT = 0;
     }
 
     // Cursor (gaze enforcer)
@@ -488,19 +858,26 @@ export default class GameScene extends Phaser.Scene {
     ExplodingLike.update(state.agents.explodingLike, dt, state);
     ExplodingLike.updateProjectiles(state, dt);
     CrushingCookie.update(state.agents.crushingCookie, dt, state);
-    GunShooter.update(state.agents.gunShooter, dt, state);
+    // Gun shooter — gated by the difficulty grace period so new players
+    // get a chance to figure out controls before getting one-shot. After
+    // the window expires, runs as normal.
+    if (state.time >= state.gunGraceUntil) {
+      GunShooter.update(state.agents.gunShooter, dt, state);
+    }
     GunShooter.updateProjectiles(state, dt);
 
-    // Win condition
+    // Win trigger — instead of jumping straight to 'won', start the malware
+    // install → short-circuit → glitch-wipe sequence. The sequence then sets
+    // state.status to 'won' which lets the existing results overlay run.
     if (state.docsCollected === state.docs.length && state.cookieCollected) {
       const ex = state.layout.subscribe;
       if (p.x > ex.x - 10 && p.x < ex.x + ex.w + 10 && p.y > ex.y - 10 && p.y < ex.y + ex.h + 10) {
-        state.status = 'won';
         state.stats.endedAt = state.time;
         beep(523, 0.1, 'sine', 0.1);
         setTimeout(() => beep(659, 0.1, 'sine', 0.1), 80);
         setTimeout(() => beep(784, 0.18, 'sine', 0.12), 180);
         setTimeout(() => beep(1047, 0.25, 'sine', 0.1), 320);
+        this.beginEndSequence();
       }
     }
   }
@@ -636,7 +1013,7 @@ export default class GameScene extends Phaser.Scene {
       drawComment(ctx, slot.x, slot.y, slot.w, slot.h, i, false, null);
     }
     if (state.agents.fallingComment.state !== 'idle') {
-      FallingComment.drawAgent(ctx, state.agents.fallingComment);
+      FallingComment.drawAgent(ctx, state.agents.fallingComment, state);
     }
 
     // truth + propaganda
@@ -650,37 +1027,57 @@ export default class GameScene extends Phaser.Scene {
       const lines = [110, 90, 100, 70];
       for (let i = 0; i < lines.length; i++) ctx.fillRect(t.x + 8, t.y + 26 + i * 11, lines[i], 5);
     }
+    // Propaganda — redesigned to look like a slightly-off comment (no more
+    // giant "AD / IGNORANCE IS STRENGTH" block). Background is a muted cream
+    // that's just barely different from the page bg so it hints "something
+    // here is hiding intel," but doesn't shout. Still draggable.
     for (const prop of state.propaganda) {
       ctx.save();
       if (prop.dragging) {
-        ctx.shadowColor = 'rgba(0,0,0,0.18)';
-        ctx.shadowBlur = 12;
+        ctx.shadowColor = 'rgba(0,0,0,0.25)';
+        ctx.shadowBlur = 14;
         ctx.shadowOffsetY = 4;
       }
-      drawHandRect(ctx, prop.x, prop.y, prop.w, prop.h, '#F4D35E', '#1a1a1f', 200);
+      // Slightly darker / off-cream background — subtle visual cue
+      drawHandRect(ctx, prop.x, prop.y, prop.w, prop.h, '#e8e2d0', '#9a8f6a', 200, 1.4);
       ctx.shadowBlur = 0;
-      ctx.fillStyle = '#1a1a1f';
-      ctx.fillRect(prop.x + 1, prop.y + 1, prop.w - 2, 14);
+
+      // Avatar circle (left) — gray "?" to feel anonymized
+      ctx.fillStyle = '#6a6a72';
+      ctx.beginPath();
+      ctx.arc(prop.x + 22, prop.y + 22, 14, 0, Math.PI * 2);
+      ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = '8px ui-monospace, monospace';
+      ctx.font = 'bold 13px ui-monospace, monospace';
       ctx.textBaseline = 'middle';
-      ctx.fillText('AD.iframe', prop.x + 5, prop.y + 8);
-      ctx.fillStyle = '#E63946';
-      ctx.fillRect(prop.x + prop.w - 13, prop.y + 3, 9, 9);
-      ctx.fillStyle = '#fff';
-      ctx.fillText('×', prop.x + prop.w - 11, prop.y + 8);
-      ctx.fillStyle = '#1a1a1f';
-      ctx.font = 'bold 32px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('?', prop.x + 22, prop.y + 23);
+      ctx.textAlign = 'left';
+
+      // Redacted username + timestamp
+      ctx.fillStyle = '#3a3a3f';
+      ctx.font = 'bold 11px sans-serif';
       ctx.textBaseline = 'top';
-      ctx.fillText('AD', prop.x + 16, prop.y + 30);
-      ctx.font = 'bold 12px Georgia, serif';
-      ctx.fillText('IGNORANCE', prop.x + 70, prop.y + 36);
-      ctx.fillText('IS STRENGTH', prop.x + 70, prop.y + 52);
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.font = '8px ui-monospace, monospace';
-      ctx.fillText('(skip ad in 5...)', prop.x + 16, prop.y + 90);
-      if (!prop.dragging && state.time < 6) {
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillText('@████████  •  █ hours ago', prop.x + 44, prop.y + 8);
+
+      // Body — looks like a comment but the lines are abnormally censored,
+      // so a careful player notices something's off. Black "redaction" bars.
+      ctx.fillStyle = '#1a1a1f';
+      ctx.fillRect(prop.x + 44,  prop.y + 30, 140, 8);
+      ctx.fillRect(prop.x + 44,  prop.y + 44, 110, 8);
+      ctx.fillRect(prop.x + 44,  prop.y + 58, 154, 8);
+      ctx.fillRect(prop.x + 44,  prop.y + 72,  60, 8);
+
+      // Faint footer (like comment likes/reply)
+      ctx.fillStyle = '#8a8170';
+      ctx.font = '10px ui-monospace, monospace';
+      ctx.fillText('👍 ███   👎   reply', prop.x + 44, prop.y + 92);
+
+      // Drag hint at the start — small, in the bottom corner of the block
+      if (!prop.dragging && !state.intelRevealed && state.time < 8) {
+        const pulse = 0.5 + Math.sin(state.time * 4) * 0.3;
+        ctx.fillStyle = 'rgba(230, 57, 70, ' + pulse + ')';
+        ctx.font = 'bold 9px ui-monospace, monospace';
         ctx.fillText('▸ drag me', prop.x + 16, prop.y + prop.h - 14);
       }
       ctx.restore();
@@ -904,6 +1301,9 @@ export default class GameScene extends Phaser.Scene {
       ctx.restore();
     }
 
+    // End-sequence electrical arcs (drawn last so they overlay everything in world space)
+    if (this.endSeq) drawArcs(ctx, this.endSeq, state);
+
     ctx.restore();
   }
 
@@ -923,15 +1323,15 @@ export default class GameScene extends Phaser.Scene {
     this.hud.zoom.textContent = Math.round((state.cam.zoom / state.cam.baseZoom) * 100) + '%';
 
     const gun = state.agents.gunShooter;
-    if (gun.state === 'aiming') this.hud.hint.textContent = '⚠ GUN AIMING — close distance now!';
-    else if (gun.state === 'awakening') this.hud.hint.textContent = '⚠ AGENT DEPLOYING';
-    else if (state.cursor) this.hud.hint.textContent = 'cursor active — break sight';
-    else if (state.gaze > 60) this.hud.hint.textContent = 'gaze rising — cover the truth';
+    if (gun.state === 'aiming') this.hud.hint.textContent = '⚠ the avatar has a gun. of course it does. RUN AT IT';
+    else if (gun.state === 'awakening') this.hud.hint.textContent = '⚠ avatar waking up. this is bad';
+    else if (state.cursor) this.hud.hint.textContent = 'cursor is on you. break line of sight';
+    else if (state.gaze > 60) this.hud.hint.textContent = 'page is suspicious. cover the red bit';
     else if (state.docsCollected === state.docs.length && !state.cookieCollected)
-      this.hud.hint.textContent = 'all docs · grab the cookie jar';
+      this.hud.hint.textContent = 'docs got. now the cookies';
     else if (state.docsCollected === state.docs.length && state.cookieCollected)
-      this.hud.hint.textContent = 'subscribe to exfiltrate';
-    else this.hud.hint.textContent = (state.docs.length - state.docsCollected) + ' more docs';
+      this.hud.hint.textContent = 'subscribe. plant the malware. leave.';
+    else this.hud.hint.textContent = (state.docs.length - state.docsCollected) + ' more docs to grab';
   }
 
 }

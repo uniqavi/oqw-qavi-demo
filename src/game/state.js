@@ -109,6 +109,12 @@ export function createState() {
       gazeMaxed: false,
       endedAt: 0,
     },
+    // First-time intel reveal: when the player drags the propaganda off the
+    // CLASSIFIED memo, an in-game dialog plays once and pauses gameplay.
+    intelRevealed: false,
+    intelDialog: null,   // { idx, charT, typing } when active
+    truthExposedT: 0,    // seconds of continuous uncovered truth (debounce trigger)
+    gunGraceUntil: 6,    // gun shooter doesn't fire before this game-time (set per difficulty in GameScene)
     agents: createAgents(),
     layout: createLayout(),
     docs: createDocs(),
@@ -152,6 +158,10 @@ export function resetState(state) {
   state.stats.hitsReceived = 0;
   state.stats.gazeMaxed = false;
   state.stats.endedAt = 0;
+
+  state.intelRevealed = false;
+  state.intelDialog = null;
+  state.truthExposedT = 0;
 
   // Agents back to idle
   state.agents.chasingRecs.forEach(a => {

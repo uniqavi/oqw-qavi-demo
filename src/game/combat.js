@@ -1,12 +1,14 @@
 // Player damage helper. Phaser-free — agents and projectile loops can import this.
 
-import { PLAYER } from '../config.js';
+import { PLAYER, getDifficulty } from '../config.js';
 import { beep, noise } from './audio.js';
 
 export function damagePlayer(state, amount, knockX, knockY) {
   const p = state.player;
   if (p.invuln > 0) return;
-  p.size = Math.max(0, p.size - amount);
+  // Apply difficulty modifier so EASY hits land softer, HARD lands harder.
+  const dmg = amount * getDifficulty().agentDamage;
+  p.size = Math.max(0, p.size - dmg);
   p.invuln = PLAYER.invulnDuration;
   p.hitFlash = PLAYER.hitFlashDuration;
   if (knockX !== undefined) {
@@ -14,7 +16,7 @@ export function damagePlayer(state, amount, knockX, knockY) {
     p.y += knockY;
   }
   // Track for results screen
-  state.stats.damageTaken += amount;
+  state.stats.damageTaken += dmg;
   state.stats.hitsReceived++;
 
   noise(0.12, 0.14);

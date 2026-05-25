@@ -76,8 +76,36 @@ export function drawButton(ctx, agent, state) {
   const charging = agent.state === 'charging';
   const exploded = agent.state === 'exploded';
   const pulse = charging ? 1 + Math.sin(state.time * 30) * 0.05 : 1;
+  const cx = lb.x + lb.w / 2;
+  const cy = lb.y + lb.h / 2;
+
+  // TELEGRAPH: visible charge ring that fills as the button approaches detonation.
+  // Outer radius grows + thickens; gives the player a clear "back off NOW" cue.
+  if (charging) {
+    const T = 0.6; // charge duration from AGENTS.explodingLike.chargeDuration
+    const progress = Math.min(1, agent.charge / T);
+    const outerR = 22 + progress * 50;
+    ctx.save();
+    // Outer warning ring
+    ctx.strokeStyle = 'rgba(230, 57, 70, ' + (0.35 + progress * 0.5) + ')';
+    ctx.lineWidth = 2 + progress * 3;
+    ctx.setLineDash([6, 4]);
+    ctx.lineDashOffset = state.time * -30;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Filled progress arc (top, clockwise)
+    ctx.strokeStyle = 'rgba(255, 220, 60, 0.85)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR - 8, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   ctx.save();
-  ctx.translate(lb.x + lb.w / 2, lb.y + lb.h / 2);
+  ctx.translate(cx, cy);
   ctx.scale(pulse, pulse);
   ctx.fillStyle = exploded ? '#888' : (charging ? '#E63946' : '#fff');
   ctx.strokeStyle = '#1a1a1f';

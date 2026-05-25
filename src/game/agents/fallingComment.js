@@ -57,7 +57,38 @@ export function isAgentSlot(agent, idx) {
 }
 
 // Draw the agent comment at its current x/y with state-aware styling.
-export function drawAgent(ctx, agent) {
+// During 'rumbling', also draws a warning shadow at the projected impact
+// zone below it so the player knows where it will hit.
+export function drawAgent(ctx, agent, state) {
   const slot = commentSlots[agent.commentIdx];
+
+  // TELEGRAPH: red flashing border + impact shadow during rumble phase
+  if (agent.state === 'rumbling') {
+    const T = AGENTS.fallingComment.rumbleDuration;
+    const progress = Math.min(1, agent.life / T);
+    // Impact shadow on the floor where it will land (below the player area).
+    // We don't know exact landing y, so we project it 200px below current.
+    if (state) {
+      const shadowY = agent.y + slot.h + 60;
+      const flash = 0.3 + Math.sin(state.time * 22) * 0.2;
+      ctx.save();
+      ctx.fillStyle = 'rgba(230, 57, 70, ' + (flash * progress) + ')';
+      ctx.fillRect(agent.x, shadowY, slot.w, 14);
+      ctx.strokeStyle = 'rgba(255, 220, 60, ' + (0.6 * progress) + ')';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(agent.x, shadowY, slot.w, 14);
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+    // Pulsing red border on the comment itself
+    const borderFlash = 0.5 + Math.sin(state ? state.time * 30 : 0) * 0.5;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(230, 57, 70, ' + borderFlash + ')';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(agent.x - 2, agent.y - 2, slot.w + 4, slot.h + 4);
+    ctx.restore();
+  }
+
   drawComment(ctx, agent.x, agent.y, slot.w, slot.h, agent.commentIdx, true, agent.state);
 }

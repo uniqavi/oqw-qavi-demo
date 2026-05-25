@@ -42,6 +42,32 @@ export function update(agent, dt, state) {
 export function drawBanner(ctx, agent, state) {
   const cb = state.layout.cookie;
   const crushing = agent.state === 'crushing' || agent.state === 'returning';
+  const p = state.player;
+  // Telegraph: when player is close to the trigger but not yet crushing,
+  // a warning shadow appears on the floor under the banner. Gives the
+  // player a visible "back away or face the wall" signal.
+  if (agent.state === 'idle') {
+    const distFromBottom = (PH - p.y);
+    const proximity = 1 - Math.min(1, distFromBottom / agent.triggerR);
+    if (proximity > 0.05) {
+      const flash = 0.35 + Math.sin(state.time * 14) * 0.15 * proximity;
+      ctx.save();
+      ctx.fillStyle = 'rgba(230, 57, 70, ' + (flash * proximity) + ')';
+      // Striped warning hatch above the banner
+      const stripeH = 14;
+      const stripeY = cb.y - stripeH;
+      ctx.fillRect(cb.x, stripeY, cb.w, stripeH);
+      ctx.strokeStyle = 'rgba(255, 220, 60, ' + (0.6 * proximity) + ')';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(cb.x, cb.y - 1);
+      ctx.lineTo(cb.x + cb.w, cb.y - 1);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
   ctx.fillStyle = crushing ? '#E63946' : '#1a1a1f';
   ctx.fillRect(cb.x, cb.y, cb.w, cb.h);
   ctx.fillStyle = '#fff';

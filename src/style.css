@@ -1,6 +1,9 @@
 :root {
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, 'Cascadia Code', Consolas, 'Courier New', monospace;
+  /* All-mono UI for the cyber/spy aesthetic. Major Mono Display on big titles
+     for impact, Space Mono everywhere else for readable distinctive body. */
+  --font-display: 'Major Mono Display', 'Space Mono', ui-monospace, monospace;
+  --font-mono:    'Space Mono', ui-monospace, 'Courier New', monospace;
+  --font-sans:    'Space Mono', ui-monospace, 'Courier New', monospace;
   --red: #E63946;
   --green: #2D8659;
   --yellow: #F4D35E;
@@ -41,10 +44,42 @@ body.menu-mode .instr { display: none; }
 .frame { display: flex; flex-direction: column; width: 100%; height: 100%; }
 
 .tabs { display: flex; align-items: center; gap: 0; height: 30px; background: #1a1a1d; padding: 6px 8px 0; flex-shrink: 0; }
-.tab { background: #0c0c0e; color: #9a9a9f; padding: 6px 12px 8px; font-size: 11px; font-family: var(--font-mono); border-radius: 6px 6px 0 0; margin-right: 2px; max-width: 360px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0.5px solid #2a2a2e; border-bottom: none; }
+.tab { background: #0c0c0e; color: #9a9a9f; padding: 6px 12px 8px; font-size: 11px; font-family: var(--font-mono); border-radius: 6px 6px 0 0; margin-right: 2px; max-width: 360px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0.5px solid #2a2a2e; border-bottom: none; position: relative; cursor: pointer; transition: background 0.2s, color 0.2s; }
 .tab.active { background: #f5f5f5; color: #1a1a1f; }
 .tab .dot { color: var(--red); margin-right: 6px; }
 .tab .x { color: #888; margin-left: 8px; }
+.tab.plus { cursor: default; }
+
+/* Locked tabs (L2/L3 pre-unlock) — grayed, padlock, hover tooltip.
+   overflow:visible so the ::after tooltip isn't clipped by the parent. */
+.tab.locked { background: #07070a; color: #44464d; cursor: not-allowed; border-color: #1a1a1e; overflow: visible; }
+.tab.locked .lock { margin-right: 6px; opacity: 0.6; }
+.tab.locked .x { color: #2a2a2e; }
+.tab.locked:hover { background: #0a0a0d; color: #6a6a72; }
+.tab.locked[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: #0c0c0e; color: var(--red);
+  padding: 6px 10px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px;
+  border: 1px solid var(--red);
+  border-radius: 2px;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+/* Tab unlocking — used when L2 becomes available */
+.tab.unlocking {
+  animation: tab-unlock-pulse 1.6s ease-out;
+}
+@keyframes tab-unlock-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(230,57,70,0.0); background: #07070a; color: #44464d; }
+  20%  { box-shadow: 0 0 18px 4px rgba(230,57,70,0.7); background: #2a0a0e; color: #ffaab0; }
+  60%  { box-shadow: 0 0 12px 2px rgba(230,57,70,0.4); background: #1a1a1d; color: #c0c0c5; }
+  100% { box-shadow: 0 0 0 0 rgba(230,57,70,0.0); background: #1a1a1d; color: #c0c0c5; }
+}
 
 .urlbar { display: flex; align-items: center; gap: 6px; background: #f5f5f5; padding: 6px 10px; border-bottom: 1px solid #2a2a2e; font-family: var(--font-mono); font-size: 11px; flex-shrink: 0; }
 .nav { color: #888; padding: 0 4px; }
@@ -82,7 +117,7 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   gap: 4px;
 }
 .grade-letter {
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
   font-size: 96px;
   font-weight: 700;
   letter-spacing: 4px;
@@ -253,71 +288,116 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   mix-blend-mode: overlay;
 }
 
-/* ===== Main menu UI ===== */
+/* ===== Main menu UI — left-aligned (Ghost-of-Tsushima-style) ===== */
 .main-menu {
   position: absolute;
   inset: 0;
   z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
+/* Shift the dark-room visuals (monitor + silhouette) right so they sit
+   on the right side; menu lives on the left. */
+.main-menu .monitor { left: 64%; }
+.main-menu .silhouette { left: 64%; }
+
 .menu-overlay {
-  position: relative;
+  position: absolute;
+  left: 110px;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 2;
-  text-align: center;
-  padding: 36px 48px;
-  background: rgba(8, 10, 16, 0.55);
-  border: 1px solid rgba(230, 57, 70, 0.3);
-  border-radius: 4px;
-  backdrop-filter: blur(2px);
-  width: 480px;
+  text-align: left;
+  width: 460px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
 }
-.menu-tag { font-family: var(--font-mono); font-size: 11px; letter-spacing: 4px; color: var(--red); margin-bottom: 18px; opacity: 0.9; }
-.menu-title {
+.menu-tag {
   font-family: var(--font-mono);
-  font-size: 46px;
-  font-weight: 500;
+  font-size: 11px;
   letter-spacing: 5px;
-  margin: 0 0 12px;
-  color: #fff;
-  line-height: 1.1;
-  text-shadow: 0 0 20px rgba(230, 57, 70, 0.4);
+  color: var(--red);
+  margin-bottom: 22px;
+  opacity: 0.9;
 }
-.menu-sub { font-family: var(--font-mono); font-size: 12px; color: #9a9aa0; letter-spacing: 3px; margin-bottom: 30px; }
-.menu-buttons { display: flex; flex-direction: column; gap: 12px; }
+.menu-title {
+  font-family: var(--font-display);
+  font-size: 56px;
+  font-weight: 400;
+  letter-spacing: 4px;
+  margin: 0 0 14px;
+  color: #fff;
+  line-height: 1.05;
+  text-shadow: 0 0 30px rgba(230, 57, 70, 0.35);
+}
+.menu-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #9a9aa0;
+  letter-spacing: 4px;
+  margin-bottom: 36px;
+}
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 0;
+}
+/* Left-aligned line buttons with a sliding chevron — no boxed border. */
 .menu-btn {
+  position: relative;
   background: transparent;
   color: #f5f5f5;
-  border: 1px solid rgba(230, 57, 70, 0.5);
-  padding: 14px 28px;
+  border: none;
+  border-left: 2px solid transparent;
+  padding: 12px 18px 12px 22px;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
-  border-radius: 3px;
-  letter-spacing: 2px;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  border-radius: 0;
+  letter-spacing: 3px;
+  text-align: left;
+  transition: border-color 0.18s, padding-left 0.18s, color 0.18s, background 0.18s;
+}
+.menu-btn::before {
+  content: '▸';
+  color: var(--red);
+  display: inline-block;
+  margin-right: 14px;
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.18s, transform 0.18s;
 }
 .menu-btn:hover:not([disabled]) {
-  background: rgba(230, 57, 70, 0.15);
-  border-color: var(--red);
+  background: linear-gradient(90deg, rgba(230,57,70,0.12) 0%, transparent 70%);
+  border-left-color: var(--red);
+  padding-left: 30px;
+  color: #fff;
+}
+.menu-btn:hover:not([disabled])::before {
+  opacity: 1;
+  transform: translateX(0);
 }
 .menu-btn[disabled] {
   color: #555;
-  border-color: #2a2a2e;
   cursor: not-allowed;
 }
-.menu-btn.ghost {
-  border-color: #444;
-  color: #9a9aa0;
-}
+.menu-btn[disabled]::before { display: none; }
+.menu-btn.ghost { color: #9a9aa0; }
 .menu-btn.ghost:hover {
   background: rgba(255,255,255,0.05);
-  border-color: #777;
+  border-left-color: #777;
   color: #fff;
 }
-.btn-note { font-size: 9px; opacity: 0.6; margin-left: 8px; letter-spacing: 1px; }
-.menu-foot { margin-top: 22px; font-family: var(--font-mono); font-size: 11px; color: #555; letter-spacing: 2px; }
+.btn-note { font-size: 9px; opacity: 0.6; margin-left: 8px; letter-spacing: 1px; font-weight: 400; }
+.menu-foot {
+  margin-top: 36px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #555;
+  letter-spacing: 3px;
+}
 
 /* ===== Difficulty select (after START) ===== */
 .diff-menu {
@@ -340,10 +420,10 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   width: 920px;
 }
 .diff-title {
-  font-family: var(--font-mono);
-  font-size: 38px;
-  font-weight: 500;
-  letter-spacing: 6px;
+  font-family: var(--font-display);
+  font-size: 42px;
+  font-weight: 400;
+  letter-spacing: 5px;
   margin: 0 0 8px;
   color: #fff;
   text-shadow: 0 0 20px rgba(230, 57, 70, 0.4);
@@ -402,14 +482,34 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   bottom: 36px;
   left: 50%;
   transform: translateX(-50%);
-  width: 760px;
+  width: 880px;
   background: rgba(8, 10, 16, 0.92);
   border: 1px solid rgba(230, 57, 70, 0.4);
   border-radius: 6px;
   padding: 22px 28px 20px;
   z-index: 4;
   box-shadow: 0 0 40px rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  gap: 22px;
 }
+/* Portrait shows on the left of the dialogue. Hides if src is missing or
+   empty (so the cutscene works fine even before the art is dropped in). */
+.dialogue-portrait {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid rgba(230, 57, 70, 0.5);
+  box-shadow: 0 0 14px rgba(230, 57, 70, 0.25);
+  background: rgba(20, 22, 30, 0.6);
+  transition: opacity 0.25s ease;
+}
+.dialogue-portrait:not([src]),
+.dialogue-portrait[src=""] { display: none; }
+.dialogue-portrait.missing { display: none; }
+.dialogue-body { flex: 1; min-width: 0; }
 .dialogue-speaker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; color: var(--red); margin-bottom: 10px; }
 .dialogue-line { font-family: var(--font-mono); font-size: 16px; line-height: 1.6; color: #f5f5f5; min-height: 3em; white-space: pre-wrap; }
 .dialogue-hint { margin-top: 14px; font-family: var(--font-mono); font-size: 11px; color: #6b6b73; letter-spacing: 1px; opacity: 0; transition: opacity 0.2s; }
@@ -485,3 +585,223 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 .help-list kbd { background: #1a1a1f; border: 1px solid #2a2a2e; padding: 1px 6px; border-radius: 3px; font-family: var(--font-mono); font-size: 12px; color: #ccc; }
 .help-list .hl { color: var(--yellow); font-weight: bold; }
 .help-list em { color: #9a9aa0; font-style: normal; }
+
+/* ========================================================================== */
+/* ONBOARDING TOOLTIPS — first-time tips, fade in/out                          */
+/* ========================================================================== */
+.onboarding-tip {
+  position: absolute;
+  top: 30px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(12, 12, 14, 0.92);
+  color: #f5f5f5;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  padding: 10px 22px;
+  border: 1px solid var(--red);
+  border-radius: 2px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(230, 57, 70, 0.25);
+  z-index: 50;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.onboarding-tip.show { opacity: 1; }
+.onboarding-tip.hidden { display: none; }
+.onboarding-tip .tip-arrow { color: var(--red); font-size: 16px; }
+.onboarding-tip .tip-text { color: #f5f5f5; }
+.onboarding-tip .tip-text .hl { color: var(--yellow); font-weight: bold; }
+
+/* ========================================================================== */
+/* MALWARE INSTALL + SHORT-CIRCUIT END SEQUENCE                                */
+/* ========================================================================== */
+.end-sequence { position: absolute; inset: 0; pointer-events: none; z-index: 60; }
+.end-sequence.hidden { display: none; }
+
+.malware-install {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.malware-install.show { opacity: 1; }
+.malware-frame {
+  background: rgba(12, 12, 14, 0.96);
+  border: 1px solid var(--red);
+  padding: 22px 32px;
+  font-family: var(--font-mono);
+  color: #f5f5f5;
+  min-width: 380px;
+  box-shadow: 0 0 30px rgba(230, 57, 70, 0.35);
+}
+.malware-tag {
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: var(--red);
+  margin-bottom: 14px;
+}
+.malware-line {
+  font-size: 12px;
+  color: #cccccf;
+  margin-bottom: 16px;
+  letter-spacing: 1px;
+}
+.malware-bar {
+  width: 100%;
+  height: 6px;
+  background: #1a1a1f;
+  border: 1px solid #2a2a2e;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.malware-fill {
+  width: 0%;
+  height: 100%;
+  background: var(--red);
+  box-shadow: 0 0 8px var(--red);
+  transition: width 0.1s linear;
+}
+.malware-pct {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--red);
+  text-align: right;
+}
+
+/* Glitch wipe scanline — sweeps top→bottom on short-circuit completion */
+.glitch-sweep {
+  position: absolute;
+  left: 0; right: 0;
+  top: -8%;
+  height: 8%;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.0)  0%,
+    rgba(230, 57, 70, 0.25)   40%,
+    rgba(255, 255, 255, 0.85) 50%,
+    rgba(74, 123, 200, 0.25)  60%,
+    rgba(255, 255, 255, 0.0)  100%
+  );
+  mix-blend-mode: screen;
+  opacity: 0;
+  pointer-events: none;
+}
+.glitch-sweep.run { animation: glitch-wipe 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) forwards; }
+@keyframes glitch-wipe {
+  0%   { top: -10%; opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { top: 108%; opacity: 0; }
+}
+
+/* Post-mission L1 — dimmed, desaturated, marked SECURED.
+   Applied to .canvas-wrap when state.mission === 'secured'. */
+.canvas-wrap.post-mission #oqw {
+  filter: saturate(0.45) brightness(0.7) contrast(0.9);
+  transition: filter 1.2s ease;
+}
+.canvas-wrap.post-mission::after {
+  content: '[ SECURED ]';
+  position: absolute;
+  top: 18px; right: 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 4px;
+  color: var(--green);
+  border: 1px solid var(--green);
+  padding: 5px 10px;
+  background: rgba(12, 12, 14, 0.7);
+  pointer-events: none;
+  z-index: 40;
+  opacity: 0.85;
+}
+
+/* ========================================================================== */
+/* INTEL DIALOG — in-game popup when player uncovers a hidden memo            */
+/* ========================================================================== */
+.intel-dialog {
+  position: absolute;
+  left: 50%;
+  bottom: 8%;
+  transform: translateX(-50%);
+  z-index: 70;
+  opacity: 0;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  pointer-events: none;
+  width: min(720px, 80%);
+}
+.intel-dialog.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.intel-dialog.hidden { display: none; }
+.intel-frame {
+  background: rgba(8, 8, 10, 0.93);
+  border: 1px solid var(--red);
+  border-left: 4px solid var(--red);
+  padding: 18px 26px 16px;
+  font-family: var(--font-mono);
+  color: #f5f5f5;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 18px rgba(230, 57, 70, 0.18);
+}
+.intel-tag {
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: var(--red);
+  margin-bottom: 10px;
+}
+.intel-line {
+  font-size: 16px;
+  letter-spacing: 0.5px;
+  line-height: 1.55;
+  color: #f0f0f4;
+  min-height: 50px;
+}
+.intel-hint {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #9a9aa0;
+  margin-top: 14px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.intel-hint.show { opacity: 0.7; }
+
+/* ========================================================================== */
+/* POST-MISSION BANNER — minimal toast after L1 win (replaces results screen)  */
+/* ========================================================================== */
+.post-mission-banner {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  background: rgba(8, 8, 10, 0.9);
+  border: 1px solid var(--green);
+  padding: 8px 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: #cccccf;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  z-index: 45;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.post-mission-banner.show { opacity: 1; }
+.post-mission-banner.hidden { display: none; }
+.post-mission-banner .pm-tag { color: var(--green); letter-spacing: 3px; }
+.post-mission-banner .pm-tab { color: var(--red); font-weight: bold; }
+.post-mission-banner .pm-hint { color: #6a6a72; font-size: 10px; }
+.post-mission-banner kbd {
+  background: #1a1a1f;
+  border: 1px solid #2a2a2e;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  color: #ccc;
+}
