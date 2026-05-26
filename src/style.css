@@ -208,85 +208,111 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 
 .hidden { display: none !important; }
 
-/* Dark room placeholder. Stack: bg gradient + monitor glow + monitor frame
-   + silhouette + scanlines. Sized in fixed px (parent is fixed 1920x{rest}). */
+/* Background scene — uses the menu-bg.png illustration as full-cover bg.
+   Old placeholder children (.monitor, .silhouette, .room-vignette, .scanlines)
+   are kept hidden for backward compat with existing HTML, since some other
+   screens still mention them. */
 .dark-room {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 50% 38%, #1a2538 0%, #0a0e18 40%, #050508 100%);
+  background: #050508 url('/menu-bg.png') center / cover no-repeat;
   overflow: hidden;
   z-index: 1;
 }
-.room-vignette {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.85) 100%);
-  pointer-events: none;
-}
-.monitor {
-  position: absolute;
-  left: 50%;
-  top: 36%;
-  transform: translate(-50%, -50%);
-  width: 460px;
-  height: 290px;
-  background: #0a1626;
-  border: 4px solid #1a2030;
-  border-radius: 6px;
-  box-shadow:
-    0 0 80px rgba(80, 130, 220, 0.18),
-    inset 0 0 40px rgba(40, 80, 140, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.monitor::after {
-  /* monitor stand */
+/* Subtle film grain / scanline overlay on top of the image — keeps the
+   moody indie-game feel and ties the static image into the rest of the
+   game's CRT aesthetic. */
+.dark-room::after {
   content: '';
   position: absolute;
-  left: 50%;
-  bottom: -32px;
-  transform: translateX(-50%);
-  width: 30%;
-  height: 28px;
-  background: linear-gradient(180deg, #1a2030 0%, #0a0e18 100%);
-  border-radius: 0 0 6px 6px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.6);
-}
-.monitor-screen {
-  font-family: var(--font-mono);
-  font-size: 16px;
-  color: #4a7bc8;
-  letter-spacing: 4px;
-  opacity: 0.6;
-  animation: monitor-flicker 4s infinite;
-}
-@keyframes monitor-flicker {
-  0%, 96%, 100% { opacity: 0.6; }
-  97% { opacity: 0.3; }
-  98% { opacity: 0.7; }
-  99% { opacity: 0.4; }
-}
-.silhouette {
-  /* Over-the-shoulder silhouette: head + shoulders shape */
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  transform: translateX(-50%);
-  width: 900px;
-  height: 60%;
-  background:
-    radial-gradient(ellipse 18% 14% at 50% 22%, #000 70%, transparent 72%),
-    radial-gradient(ellipse 50% 60% at 50% 100%, #000 60%, transparent 65%);
-  pointer-events: none;
-}
-.scanlines {
-  position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0px, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 3px);
   pointer-events: none;
   mix-blend-mode: overlay;
 }
+/* Effects canvas — sits on top of the bg image, below the menu UI.
+   Draws particles (dust in projector beam, steam from mug, rain on
+   window, city light twinkles). See src/game/menuEffects.js */
+.menu-fx-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+/* CSS-driven light pulses anchored to specific positions in the image.
+   Coordinates are eyeballed to the 16:9 source — tweak as needed. */
+/* Subtle glow overlays — positions matched to menu-bg.png landmarks.
+   All percentages of canvas-wrap. Tweak if image art changes. */
+.fx-monitor-glow {
+  position: absolute;
+  left: 73%; top: 45%;
+  width: 11%; height: 18%;
+  background: radial-gradient(ellipse, rgba(180, 220, 255, 0.25) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: 2;
+  animation: fx-breathe 5s ease-in-out infinite;
+  mix-blend-mode: screen;
+}
+.fx-lamp-glow {
+  position: absolute;
+  left: 88%; top: 38%;
+  width: 13%; height: 18%;
+  background: radial-gradient(ellipse, rgba(255, 175, 80, 0.30) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 2;
+  animation: fx-lamp-flicker 6.4s ease-in-out infinite;
+  mix-blend-mode: screen;
+}
+.fx-led {
+  position: absolute;
+  left: 93.5%; top: 87.5%;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #E63946;
+  box-shadow: 0 0 6px #E63946, 0 0 10px rgba(230, 57, 70, 0.5);
+  pointer-events: none;
+  z-index: 3;
+  animation: fx-led-pulse 1.8s ease-in-out infinite;
+}
+.fx-projection-flicker {
+  position: absolute;
+  left: 3%; top: 3%;
+  width: 43%; height: 66%;
+  background: rgba(180, 220, 255, 0.03);
+  pointer-events: none;
+  z-index: 2;
+  mix-blend-mode: screen;
+  animation: fx-projection 7s ease-in-out infinite;
+}
+@keyframes fx-breathe {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50%      { opacity: 1.0; transform: scale(1.04); }
+}
+@keyframes fx-lamp-flicker {
+  0%, 92%, 100% { opacity: 0.9; }
+  94% { opacity: 0.6; }
+  95% { opacity: 1.0; }
+  96% { opacity: 0.5; }
+  97% { opacity: 0.95; }
+}
+@keyframes fx-led-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1.0; transform: scale(1.25); }
+}
+@keyframes fx-projection {
+  0%, 100% { opacity: 0; }
+  48% { opacity: 0; }
+  50% { opacity: 0.6; }
+  52% { opacity: 0; }
+}
+/* Hide the old placeholder children — kept in HTML for backward compat
+   but no longer rendered. */
+.room-vignette,
+.monitor,
+.monitor::after,
+.monitor-screen,
+.silhouette,
+.scanlines { display: none; }
 
 /* ===== Main menu UI — left-aligned (Ghost-of-Tsushima-style) ===== */
 .main-menu {
@@ -294,173 +320,382 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   inset: 0;
   z-index: 10;
 }
-/* Shift the dark-room visuals (monitor + silhouette) right so they sit
-   on the right side; menu lives on the left. */
-.main-menu .monitor { left: 64%; }
-.main-menu .silhouette { left: 64%; }
+/* (legacy placeholder shifts removed — bg image now lives in .dark-room) */
 
-.menu-overlay {
+/* ──────────────────────────────────────────────────────────────────────
+   INK-LAYER MAIN MENU — terminal-panel design.
+   Color palette tuned for "projected on a wall" feel: muted teal-blue
+   inks (matches the cold projector light), more transparency so the
+   wall texture shows through, cyan accent for hover (no red).
+   ────────────────────────────────────────────────────────────────────── */
+:root {
+  /* All ink colors use rgba so the wall texture bleeds through naturally */
+  --ink:        rgba(32, 52, 64, 0.82);       /* primary text — muted teal-navy */
+  --ink-soft:   rgba(32, 52, 64, 0.56);       /* secondary text */
+  --ink-faint:  rgba(32, 52, 64, 0.40);       /* tertiary / disabled */
+  --paper:      #e9ecec;                       /* projected light cream */
+  --red-hover:  rgba(70, 135, 158, 0.88);     /* hover/accent — cool teal-cyan */
+  --rule:       rgba(32, 52, 64, 0.32);       /* divider lines */
+  --rule-soft:  rgba(32, 52, 64, 0.16);       /* secondary dividers */
+}
+
+.ink-layer {
   position: absolute;
-  left: 110px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 2;
+  /* Cover the FULL wall-projection rectangle. Source width is intentionally
+     larger than the visible target width because rotateY(23deg) foreshortens
+     the right side significantly — extra source width compensates so the
+     post-transform panel actually fills the projection. Applies to main
+     menu (.menu-overlay.ink-layer), diff menu (.diff-overlay.ink-layer),
+     and modals (.modal-panel.ink-layer). */
+  left: 6%;
+  top: 3.5%;
+  width: 54%;
+  height: 70%;
+  /* Multiply blend — ink darkens the wall texture beneath, making the panel
+     read as if it's actually inked/projected ON the wall rather than
+     layered above it. The wall's color cast tints everything subtly. */
+  mix-blend-mode: multiply;
+  z-index: 10;
+  box-sizing: border-box;
+  padding: 1.6% 2%;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
   text-align: left;
-  width: 460px;
-  padding: 0;
   background: transparent;
   border: none;
   backdrop-filter: none;
+  /* Subtle scanlines across the projected panel */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(17, 36, 44, 0.05) 0px,
+    rgba(17, 36, 44, 0.05) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  /* Perspective tilt — panel looks projected on an angled wall. The right
+     side recedes (smaller) with a subtle forward lean. Hinge is the LEFT
+     edge since that side of the wall is closer to camera in menu-bg.png. */
+  transform: perspective(1800px) rotateY(24deg) rotateX(-1.5deg);
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  /* Slight depth shadow on the wall side to sell the projection */
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.25));
 }
-.menu-tag {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 5px;
-  color: var(--red);
-  margin-bottom: 22px;
-  opacity: 0.9;
-}
-.menu-title {
-  font-family: var(--font-display);
-  font-size: 56px;
-  font-weight: 400;
-  letter-spacing: 4px;
-  margin: 0 0 14px;
-  color: #fff;
-  line-height: 1.05;
-  text-shadow: 0 0 30px rgba(230, 57, 70, 0.35);
-}
-.menu-sub {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: #9a9aa0;
-  letter-spacing: 4px;
-  margin-bottom: 36px;
-}
-.menu-buttons {
+/* Status bar at top of the panel — operational status + date */
+.ink-layer .status {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 0;
-}
-/* Left-aligned line buttons with a sliding chevron — no boxed border. */
-.menu-btn {
-  position: relative;
-  background: transparent;
-  color: #f5f5f5;
-  border: none;
-  border-left: 2px solid transparent;
-  padding: 12px 18px 12px 22px;
-  font-family: var(--font-mono);
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: 'Share Tech Mono', monospace;
   font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  border-radius: 0;
-  letter-spacing: 3px;
-  text-align: left;
-  transition: border-color 0.18s, padding-left 0.18s, color 0.18s, background 0.18s;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+  position: relative;
 }
-.menu-btn::before {
-  content: '▸';
-  color: var(--red);
+.ink-layer .status::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  bottom: -4px;
+  height: 1px;
+  background: var(--rule-soft);
+}
+.ink-layer .status-right { text-align: right; }
+
+/* Title — heavy italic condensed sans (Saira Condensed Black) */
+.ink-layer .menu-title {
+  font-family: 'Saira Condensed', 'Oswald', 'Impact', sans-serif;
+  font-weight: 800;
+  font-style: italic;
+  font-size: 84px;
+  line-height: 0.92;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 18px 0 10px 0;
+  text-transform: uppercase;
+}
+.ink-layer .menu-title .row { display: block; }
+
+/* Classification tagline with [chip] highlights */
+.ink-layer .tagline {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  margin: 6px 0 22px 0;
+  text-transform: uppercase;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.ink-layer .tag-chip {
   display: inline-block;
-  margin-right: 14px;
-  opacity: 0;
-  transform: translateX(-6px);
-  transition: opacity 0.18s, transform 0.18s;
-}
-.menu-btn:hover:not([disabled]) {
-  background: linear-gradient(90deg, rgba(230,57,70,0.12) 0%, transparent 70%);
-  border-left-color: var(--red);
-  padding-left: 30px;
-  color: #fff;
-}
-.menu-btn:hover:not([disabled])::before {
-  opacity: 1;
-  transform: translateX(0);
-}
-.menu-btn[disabled] {
-  color: #555;
-  cursor: not-allowed;
-}
-.menu-btn[disabled]::before { display: none; }
-.menu-btn.ghost { color: #9a9aa0; }
-.menu-btn.ghost:hover {
-  background: rgba(255,255,255,0.05);
-  border-left-color: #777;
-  color: #fff;
-}
-.btn-note { font-size: 9px; opacity: 0.6; margin-left: 8px; letter-spacing: 1px; font-weight: 400; }
-.menu-foot {
-  margin-top: 36px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: #555;
-  letter-spacing: 3px;
+  padding: 2px 6px;
+  background: rgba(17, 36, 44, 0.10);
+  border: 1px solid rgba(17, 36, 44, 0.20);
+  color: var(--ink);
+  font-weight: 700;
 }
 
-/* ===== Difficulty select (after START) ===== */
+/* Legacy classes hidden — replaced by the new ink-layer structure */
+.menu-tag, .menu-sub, .menu-foot { display: none; }
+/* Buttons — notched-corner outlined cells with bracketed label + icon */
+.ink-layer .menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+.ink-layer .menu-btn {
+  --b: 1.6px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: stretch;
+  height: 56px;
+  background: transparent;
+  color: var(--ink);
+  border: var(--b) solid var(--ink);
+  cursor: pointer;
+  /* Thicker font that mirrors the title family but stays non-italic and a
+     weight lighter so it doesn't compete with the headline. */
+  font-family: 'Saira Condensed', 'Oswald', 'Impact', sans-serif;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* Notched corners — clip-path produces small chamfer at all 4 corners */
+  clip-path: polygon(
+    0 8px, 8px 0,
+    calc(100% - 8px) 0, 100% 8px,
+    100% calc(100% - 8px), calc(100% - 8px) 100%,
+    8px 100%, 0 calc(100% - 8px)
+  );
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  padding: 0;
+  text-align: left;
+}
+.ink-layer .menu-btn .label {
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+}
+.ink-layer .menu-btn .label .br {
+  opacity: 0.7;
+  padding: 0 6px;
+  font-weight: 500;
+  /* Brackets in a more neutral mono so they don't fight the heavy label */
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 20px;
+}
+.ink-layer .menu-btn .chev {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 22px;
+  color: var(--ink);
+  opacity: 0.85;
+}
+.ink-layer .menu-btn .icon {
+  width: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: var(--b) solid var(--ink);
+  color: var(--ink);
+  background: transparent;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.ink-layer .menu-btn .icon svg { width: 24px; height: 24px; display: block; }
+
+/* Hover: red outline + red text + filled icon panel */
+.ink-layer .menu-btn:hover:not([disabled]),
+.ink-layer .menu-btn:focus-visible:not([disabled]) {
+  color: var(--red-hover);
+  border-color: var(--red-hover);
+  outline: none;
+}
+.ink-layer .menu-btn:hover:not([disabled]) .chev,
+.ink-layer .menu-btn:focus-visible:not([disabled]) .chev { color: var(--red-hover); }
+.ink-layer .menu-btn:hover:not([disabled]) .icon,
+.ink-layer .menu-btn:focus-visible:not([disabled]) .icon {
+  background: var(--red-hover);
+  color: var(--paper);
+  border-left-color: var(--red-hover);
+}
+.ink-layer .menu-btn:active { transform: translateY(1px); }
+
+.ink-layer .menu-btn[disabled] {
+  color: rgba(17, 36, 44, 0.4);
+  border-color: rgba(17, 36, 44, 0.4);
+  cursor: not-allowed;
+}
+.ink-layer .menu-btn[disabled] .icon {
+  color: rgba(17, 36, 44, 0.4);
+  border-left-color: rgba(17, 36, 44, 0.4);
+}
+
+/* Ghost variant kept for the difficulty back button — simplified to fit ink-layer */
+.ink-layer .menu-btn.ghost { color: var(--ink-faint); border-color: var(--ink-faint); }
+.ink-layer .menu-btn.ghost .icon { display: none; }
+.ink-layer .menu-btn.ghost:hover { color: var(--ink); border-color: var(--ink); }
+
+/* Footer — version string in bottom-right of the panel */
+.ink-layer .ink-footer {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+  letter-spacing: 0.10em;
+  color: var(--ink);
+  padding-top: 14px;
+}
+
+/* Small glyphs bottom-left (the "…" mark from the reference) */
+.ink-layer .ink-glyphs {
+  position: absolute;
+  left: 22px;
+  bottom: 14px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  color: var(--ink);
+  opacity: 0.6;
+}
+.btn-note { font-size: 9px; opacity: 0.6; margin-left: 8px; letter-spacing: 1px; font-weight: 400; }
+/* In-projection footer text — hidden in favor of the corner version badge
+   (which sits OUTSIDE the projection area, on the dark wall). */
+.menu-foot { display: none; }
+/* (version badge moved INSIDE the projection panel — see .ink-footer) */
+
+/* ===== Difficulty select — ink-layer projected panel ===== */
 .diff-menu {
   position: absolute;
   inset: 0;
   z-index: 10;
+}
+/* The .diff-overlay re-uses all .menu-overlay.ink-layer geometry +
+   perspective transform by being given the .ink-layer class in HTML.
+   Only override the bits that differ (text-align, no center). */
+.diff-overlay.ink-layer {
+  text-align: left;
+}
+
+/* Difficulty cards — 3 outlined cells with notched corners, same ink
+   aesthetic as menu-btn. Stack horizontally so it reads as a selector. */
+.ink-layer .diff-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin: 8px 0 18px;
+}
+.ink-layer .diff-card {
+  --b: 1.6px;
   display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.diff-overlay {
-  position: relative;
-  z-index: 2;
-  text-align: center;
-  padding: 36px 56px;
-  background: rgba(8, 10, 16, 0.6);
-  border: 1px solid rgba(230, 57, 70, 0.3);
-  border-radius: 4px;
-  backdrop-filter: blur(2px);
-  width: 920px;
-}
-.diff-title {
-  font-family: var(--font-display);
-  font-size: 42px;
-  font-weight: 400;
-  letter-spacing: 5px;
-  margin: 0 0 8px;
-  color: #fff;
-  text-shadow: 0 0 20px rgba(230, 57, 70, 0.4);
-}
-.diff-cards {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-  margin: 28px 0 24px;
-}
-.diff-card {
-  flex: 1;
-  background: rgba(8, 10, 16, 0.6);
-  color: #f5f5f5;
-  border: 1px solid rgba(230, 57, 70, 0.3);
-  border-radius: 4px;
-  padding: 22px 18px;
-  font-family: var(--font-mono);
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 14px 14px;
+  background: transparent;
+  color: var(--ink);
+  border: var(--b) solid var(--ink);
   cursor: pointer;
-  text-align: center;
-  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  font-family: 'Share Tech Mono', monospace;
+  text-align: left;
+  /* Same notched-corner clip-path as the menu buttons */
+  clip-path: polygon(
+    0 8px, 8px 0,
+    calc(100% - 8px) 0, 100% 8px,
+    100% calc(100% - 8px), calc(100% - 8px) 100%,
+    8px 100%, 0 calc(100% - 8px)
+  );
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
-.diff-card:hover {
-  background: rgba(230, 57, 70, 0.12);
-  border-color: var(--red);
-  transform: translateY(-2px);
+.ink-layer .diff-card .diff-level {
+  font-family: 'Saira Condensed', 'Oswald', 'Impact', sans-serif;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  display: inline-block;
 }
-.diff-card.selected {
-  background: rgba(230, 57, 70, 0.25);
-  border-color: var(--red);
-  box-shadow: 0 0 24px rgba(230, 57, 70, 0.3);
+.ink-layer .diff-card .diff-level .br {
+  font-family: 'Share Tech Mono', monospace;
+  font-weight: 500;
+  font-size: 18px;
+  opacity: 0.7;
+  padding: 0 4px;
 }
-.diff-name { font-size: 22px; letter-spacing: 4px; font-weight: 500; margin-bottom: 10px; color: var(--red); }
-.diff-card.selected .diff-name { color: #fff; }
-.diff-desc { font-size: 11px; line-height: 1.6; color: #9a9aa0; letter-spacing: 1px; }
-.diff-actions { display: flex; gap: 12px; justify-content: center; margin-top: 8px; }
-.diff-actions .menu-btn { padding: 12px 26px; min-width: 200px; }
+.ink-layer .diff-card .diff-stars {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 16px;
+  letter-spacing: 0.2em;
+  color: var(--ink-soft);
+  opacity: 0.85;
+}
+.ink-layer .diff-card .diff-desc {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+/* Hover state — red border + red text + red stars */
+.ink-layer .diff-card:hover {
+  color: var(--red-hover);
+  border-color: var(--red-hover);
+}
+.ink-layer .diff-card:hover .diff-level,
+.ink-layer .diff-card:hover .diff-stars,
+.ink-layer .diff-card:hover .diff-desc {
+  color: var(--red-hover);
+}
+/* Selected state — filled red bg + paper text */
+.ink-layer .diff-card.selected {
+  background: var(--red-hover);
+  border-color: var(--red-hover);
+  color: var(--paper);
+}
+.ink-layer .diff-card.selected .diff-level,
+.ink-layer .diff-card.selected .diff-stars,
+.ink-layer .diff-card.selected .diff-desc {
+  color: var(--paper);
+}
+.ink-layer .diff-card.selected .diff-level .br {
+  opacity: 0.9;
+}
+
+/* Action buttons (back + confirm) — flex row at the bottom */
+.ink-layer .diff-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+}
+.ink-layer .diff-actions .menu-btn {
+  height: 52px;
+}
+.ink-layer .diff-actions .menu-btn.ghost {
+  flex: 0 0 32%;
+  /* Override grid since ghost has no chev/icon */
+  grid-template-columns: 1fr;
+}
+.ink-layer .diff-actions .menu-btn:not(.ghost) {
+  flex: 1;
+}
+.ink-layer .diff-actions .menu-btn[disabled] {
+  opacity: 0.6;
+}
+
+/* Hide legacy .diff-title since we now use .menu-title in the ink-layer */
+.diff-title { display: none; }
 
 /* ===== Intro cutscene ===== */
 .intro { position: absolute; inset: 0; z-index: 10; }
@@ -477,34 +712,47 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   0% { transform: rotate(-12deg) translateY(0); }
   100% { transform: rotate(12deg) translateY(-4px); }
 }
+/* Bottom strip overlay — background scene stays visible above; dialogue
+   only occupies the bottom ~28% of the frame. Fades up from below. */
 .dialogue {
   position: absolute;
-  bottom: 36px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 880px;
-  background: rgba(8, 10, 16, 0.92);
-  border: 1px solid rgba(230, 57, 70, 0.4);
-  border-radius: 6px;
-  padding: 22px 28px 20px;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 28%;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 10, 16, 0) 0%,
+    rgba(8, 10, 16, 0.85) 25%,
+    rgba(8, 10, 16, 0.97) 100%
+  );
+  border-top: 1px solid rgba(230, 57, 70, 0.35);
+  border-radius: 0;
+  padding: 38px 8% 24px 6%;
   z-index: 4;
-  box-shadow: 0 0 40px rgba(0,0,0,0.6);
+  box-shadow: 0 -20px 40px rgba(0,0,0,0.4);
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 36px;
+  transform: none;
 }
 /* Portrait shows on the left of the dialogue. Hides if src is missing or
    empty (so the cutscene works fine even before the art is dropped in). */
 .dialogue-portrait {
-  width: 110px;
-  height: 110px;
+  width: 140px;
+  height: 140px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
   border: 2px solid rgba(230, 57, 70, 0.5);
-  box-shadow: 0 0 14px rgba(230, 57, 70, 0.25);
+  box-shadow: 0 0 18px rgba(230, 57, 70, 0.3);
   background: rgba(20, 22, 30, 0.6);
-  transition: opacity 0.25s ease;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.dialogue-portrait.hidden-portrait {
+  opacity: 0;
+  transform: scale(0.85);
 }
 .dialogue-portrait:not([src]),
 .dialogue-portrait[src=""] { display: none; }
@@ -526,96 +774,217 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 }
 .cutscene-flash.active { opacity: 1; }
 
-/* ===== Modals (settings, help) ===== */
+/* ===== Modals (settings, help) — ink-layer projection panels ===== */
+/* The .modal element is a transparent wrapper. The modal-panel.ink-layer
+   inside it picks up the same positioning + transform as the main menu,
+   so the modal looks like the projector switched to a different slide. */
 .modal {
   position: absolute;
   inset: 0;
   z-index: 30;
+  display: block;
+  background: transparent;
+  backdrop-filter: none;
+}
+/* Hide main menu / diff menu content when ANY modal is open so the two
+   ink-layer projections don't stack on the same wall area. */
+.canvas-wrap:has(.modal:not(.hidden)) #main-menu .menu-overlay,
+.canvas-wrap:has(.modal:not(.hidden)) #diff-menu .diff-overlay {
+  visibility: hidden;
+}
+.modal-panel { /* legacy panel hidden — replaced by .modal-panel.ink-layer */ }
+.modal-panel:not(.ink-layer) { display: none; }
+.modal-tag { display: none; }
+.modal-panel h2 { display: none; }
+
+/* Settings rows inside the ink-layer */
+.ink-layer .settings-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 6px 0 18px;
+}
+.ink-layer .setting-row {
+  --b: 1.6px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: rgba(8, 10, 16, 0.88);
-  backdrop-filter: blur(3px);
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+  border: var(--b) solid var(--ink);
+  /* Same notched corners as menu buttons */
+  clip-path: polygon(
+    0 8px, 8px 0,
+    calc(100% - 8px) 0, 100% 8px,
+    100% calc(100% - 8px), calc(100% - 8px) 100%,
+    8px 100%, 0 calc(100% - 8px)
+  );
 }
-.modal-panel {
-  background: #0c0c0e;
-  border: 1px solid rgba(230, 57, 70, 0.4);
-  border-radius: 6px;
-  padding: 30px 40px;
-  min-width: 420px;
-  max-width: 560px;
-  text-align: left;
+.ink-layer .setting-label {
+  font-family: 'Saira Condensed', 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  text-transform: uppercase;
 }
-.modal-tag { font-family: var(--font-mono); font-size: 11px; letter-spacing: 4px; color: var(--red); margin-bottom: 8px; }
-.modal-panel h2 { font-family: var(--font-mono); font-size: 24px; letter-spacing: 3px; margin: 0 0 24px; font-weight: 500; }
-.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-.setting-label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; color: #9a9aa0; }
-.diff-options { display: flex; gap: 6px; }
-.diff-btn {
+.ink-layer .diff-options {
+  display: flex;
+  gap: 8px;
+}
+.ink-layer .diff-btn {
+  --b: 1.4px;
   background: transparent;
-  color: #9a9aa0;
-  border: 1px solid #2a2a2e;
-  padding: 7px 14px;
-  font-family: var(--font-mono);
-  font-size: 12px;
+  color: var(--ink);
+  border: var(--b) solid var(--ink);
+  padding: 8px 18px;
+  font-family: 'Saira Condensed', 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.06em;
   cursor: pointer;
-  border-radius: 3px;
-  letter-spacing: 1px;
-  transition: all 0.15s;
+  border-radius: 0;
+  text-transform: uppercase;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  clip-path: polygon(
+    0 4px, 4px 0,
+    calc(100% - 4px) 0, 100% 4px,
+    100% calc(100% - 4px), calc(100% - 4px) 100%,
+    4px 100%, 0 calc(100% - 4px)
+  );
 }
-.diff-btn:hover { color: #f5f5f5; border-color: var(--red); }
-.diff-btn.active { background: var(--red); color: #fff; border-color: var(--red); }
-.modal-close-btn {
-  margin-top: 24px;
-  background: transparent;
-  color: #f5f5f5;
-  border: 1px solid var(--red);
-  padding: 11px 30px;
-  font-family: var(--font-mono);
+.ink-layer .diff-btn:hover {
+  color: var(--red-hover);
+  border-color: var(--red-hover);
+}
+.ink-layer .diff-btn.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+/* Help list inside the ink-layer */
+.ink-layer .help-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 18px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+.ink-layer .help-list li {
+  padding-left: 22px;
+  position: relative;
+  margin-bottom: 8px;
+}
+.ink-layer .help-list li::before {
+  content: '▸';
+  color: var(--red-hover);
+  position: absolute;
+  left: 4px;
+  font-size: 14px;
+  top: 1px;
+}
+.ink-layer .help-list kbd {
+  background: rgba(17, 36, 44, 0.10);
+  border: 1px solid rgba(17, 36, 44, 0.45);
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-family: 'Share Tech Mono', monospace;
   font-size: 13px;
-  cursor: pointer;
-  border-radius: 3px;
-  letter-spacing: 2px;
-  width: 100%;
+  color: var(--ink);
 }
-.modal-close-btn:hover { background: var(--red); }
-.help-list { list-style: none; padding: 0; margin: 0; font-size: 14px; line-height: 1.9; color: #cccccf; }
-.help-list li { padding-left: 18px; position: relative; }
-.help-list li::before { content: '▸'; color: var(--red); position: absolute; left: 0; }
-.help-list kbd { background: #1a1a1f; border: 1px solid #2a2a2e; padding: 1px 6px; border-radius: 3px; font-family: var(--font-mono); font-size: 12px; color: #ccc; }
-.help-list .hl { color: var(--yellow); font-weight: bold; }
-.help-list em { color: #9a9aa0; font-style: normal; }
+.ink-layer .help-list .hl {
+  color: var(--red-hover);
+  font-weight: 700;
+}
+.ink-layer .help-list em {
+  color: var(--ink-faint);
+  font-style: normal;
+}
+
+/* Legacy close button hidden — replaced by ink-layer .menu-btn */
+.modal-close-btn { display: none; }
 
 /* ========================================================================== */
-/* ONBOARDING TOOLTIPS — first-time tips, fade in/out                          */
+/* ONBOARDING TOOLTIPS — centered modal with dim backdrop; pauses gameplay     */
 /* ========================================================================== */
 .onboarding-tip {
   position: absolute;
-  top: 30px; left: 50%;
-  transform: translateX(-50%);
-  background: rgba(12, 12, 14, 0.92);
-  color: #f5f5f5;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  letter-spacing: 1.5px;
-  padding: 10px 22px;
-  border: 1px solid var(--red);
-  border-radius: 2px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(230, 57, 70, 0.25);
-  z-index: 50;
-  opacity: 0;
-  transition: opacity 0.35s ease;
-  pointer-events: none;
+  inset: 0;                              /* covers the entire canvas-wrap */
+  background: rgba(0, 0, 0, 0.65);       /* dim the game behind */
   display: flex;
   align-items: center;
-  gap: 10px;
-  white-space: nowrap;
+  justify-content: center;
+  z-index: 70;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  cursor: pointer;
 }
-.onboarding-tip.show { opacity: 1; }
+.onboarding-tip.show {
+  opacity: 1;
+  pointer-events: auto;
+}
 .onboarding-tip.hidden { display: none; }
-.onboarding-tip .tip-arrow { color: var(--red); font-size: 16px; }
-.onboarding-tip .tip-text { color: #f5f5f5; }
-.onboarding-tip .tip-text .hl { color: var(--yellow); font-weight: bold; }
+.tip-card {
+  background: rgba(10, 12, 18, 0.97);
+  border: 2px solid var(--red);
+  border-left: 6px solid var(--red);
+  padding: 32px 48px 24px;
+  font-family: var(--font-mono);
+  color: #f5f5f5;
+  max-width: 720px;
+  min-width: 420px;
+  box-shadow:
+    0 0 60px rgba(230, 57, 70, 0.35),
+    0 12px 50px rgba(0, 0, 0, 0.7);
+  transform: scale(0.92);
+  transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  border-radius: 4px;
+  position: relative;
+  text-align: left;
+}
+.onboarding-tip.show .tip-card { transform: scale(1); }
+.tip-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+.tip-card .tip-arrow {
+  color: var(--red);
+  font-size: 28px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.tip-card .tip-text {
+  color: #f0f2f5;
+  font-size: 19px;
+  line-height: 1.55;
+  letter-spacing: 0.3px;
+}
+.tip-card .tip-text .hl {
+  color: var(--yellow);
+  font-weight: bold;
+}
+.tip-card .tip-hint {
+  margin-top: 22px;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: #6a6a72;
+  text-align: center;
+  text-transform: uppercase;
+  border-top: 1px solid rgba(230, 57, 70, 0.15);
+  padding-top: 14px;
+  animation: tip-hint-pulse 1.8s ease-in-out infinite;
+}
+@keyframes tip-hint-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.95; }
+}
 
 /* ========================================================================== */
 /* MALWARE INSTALL + SHORT-CIRCUIT END SEQUENCE                                */

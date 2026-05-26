@@ -17,7 +17,7 @@
 const TRACKS = {
   menu:    '/music/menu.mp3',          // main menu theme
   level1:  '/music/level1.mp3',        // L1 in-game loop
-  level2:  '/music/level2.mp3',        // L2 Lattice loop
+  level2:  '/music/level2.mp3',        // L2 SPYGRAM loop
   hale:    '/music/hale.mp3',          // L2 boss encounter sting/loop
   tension: '/music/tension.mp3',       // brief sting when enemy active
 };

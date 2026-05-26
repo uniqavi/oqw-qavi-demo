@@ -177,6 +177,12 @@ export default class GameScene extends Phaser.Scene {
     // Keys: ESC → main menu, R → replay. Active in any non-playing state
     // (post-mission, intel dialog, or loss). Avoids needing a results screen.
     this.onKey = (e) => {
+      // Onboarding tip takes priority — SPACE/Enter dismisses
+      if (this.state.tipShowing && (e.key === ' ' || e.key === 'Enter')) {
+        e.preventDefault();
+        this.hideTip();
+        return;
+      }
       if (this.state.intelDialog && (e.key === ' ' || e.key === 'Enter')) {
         e.preventDefault();
         this.advanceIntel();
@@ -191,14 +197,21 @@ export default class GameScene extends Phaser.Scene {
     };
     document.addEventListener('keydown', this.onKey);
 
-    // Onboarding tooltip DOM
+    // Onboarding tooltip DOM + click-to-dismiss anywhere on the backdrop
     this.tipEl     = document.getElementById('onboarding-tip');
     this.tipTextEl = document.getElementById('onboarding-tip-text');
     this.currentTip = null;
     this.tipTimer = null;
     this.firstAdDragged = false;
+    this.onTipClick = (e) => {
+      if (this.state.tipShowing) {
+        e.stopPropagation();
+        this.hideTip();
+      }
+    };
+    this.tipEl?.addEventListener('click', this.onTipClick);
 
-    // Tab system — locked tabs no-op until L1 ends. lattice.veil tab swaps
+    // Tab system — locked tabs no-op until L1 ends. spygram.hush tab swaps
     // into Level 2 after the post-mission state begins.
     this.tabEls = document.querySelectorAll('#browser-tabs .tab');
     this.onTabClick = (e) => {
@@ -225,6 +238,7 @@ export default class GameScene extends Phaser.Scene {
       this.restartBtn?.removeEventListener('click', this.onRestart);
       this.backMenuBtn?.removeEventListener('click', this.onBackMenu);
       this.intelDom?.wrap?.removeEventListener('click', this.onIntelClick);
+      this.tipEl?.removeEventListener('click', this.onTipClick);
       this.tabEls?.forEach((el) => el.removeEventListener('click', this.onTabClick));
       if (this.revealTimers) this.revealTimers.forEach(clearTimeout);
       if (this.tipTimer) clearTimeout(this.tipTimer);
@@ -370,7 +384,7 @@ export default class GameScene extends Phaser.Scene {
   markTipDone(key) {
     localStorage.setItem('oqw-tip-' + key, 'done');
   }
-  showTip(tip, dwellMs = 5500) {
+  showTip(tip) {
     if (!this.tipEl || !this.tipTextEl) return;
     if (this.currentTip === tip.key) return;
     if (!this.shouldShowTip(tip.key)) return;
@@ -378,14 +392,20 @@ export default class GameScene extends Phaser.Scene {
     this.tipTextEl.innerHTML = tip.text;
     this.tipEl.classList.remove('hidden');
     requestAnimationFrame(() => this.tipEl.classList.add('show'));
+    // Pause gameplay while tip is on-screen (centered modal style — player
+    // can't see game behind it so freezing is the correct UX)
+    this.state.tipShowing = true;
+    // Long max-duration fallback in case player walks away — 30s
     if (this.tipTimer) clearTimeout(this.tipTimer);
-    this.tipTimer = setTimeout(() => this.hideTip(), dwellMs);
+    this.tipTimer = setTimeout(() => this.hideTip(), 30000);
   }
   hideTip(markDone = true) {
     if (!this.tipEl) return;
+    if (this.tipTimer) { clearTimeout(this.tipTimer); this.tipTimer = null; }
     if (markDone && this.currentTip) this.markTipDone(this.currentTip);
     this.tipEl.classList.remove('show');
     this.currentTip = null;
+    this.state.tipShowing = false;
     setTimeout(() => this.tipEl?.classList.add('hidden'), 400);
   }
 
@@ -424,13 +444,48 @@ export default class GameScene extends Phaser.Scene {
       const pct = Math.min(100, Math.round((es.t / PHASE_DURATIONS.install) * 100));
       if (this.endDom.fill) this.endDom.fill.style.width = pct + '%';
       if (this.endDom.pct) this.endDom.pct.textContent = pct + '%';
-    } else if (es.phase === 'arcing') {
-      // Install bar done — hide it
+    } else if (es.phase === 'sweep') {
+      // Install bar done — hide it so the canvas sweep takes the stage
       this.endDom.install?.classList.remove('show');
-    } else if (es.phase === 'wipe' && !this.sweepRun) {
-      this.sweepRun = true;
-      this.endDom.sweep?.classList.add('run');
     }
+  }
+
+  // Cinematic camera driver — runs during state.status === 'ending'.
+  // Install phase: smoothly pan from player position up to the top of the page.
+  // Sweep phase: keep the descending sweep line at ~30% of the viewport so
+  // the player sees enemies above (about to die) and below (already dead).
+  updateCinematicCamera(dt) {
+    const es = this.endSeq;
+    if (!es) return;
+    const cam = this.state.cam;
+
+    // Lock zoom to baseZoom (full-page-width fit) so framing is predictable
+    cam.targetZoom = cam.baseZoom;
+
+    const viewW = this.VW / cam.zoom;
+    const viewH = this.VH / cam.zoom;
+    const maxCamY = Math.max(0, PH - viewH);
+    const targetX = (PW - viewW) / 2;
+
+    let targetY = cam.y;
+    if (es.phase === 'install') {
+      // Save the camera's starting position once, then ease it toward 0
+      if (es.camStartY === undefined) es.camStartY = cam.y;
+      const tRaw = Math.min(1, es.t / PHASE_DURATIONS.install);
+      const eased = tRaw < 0.5
+        ? 2 * tRaw * tRaw
+        : 1 - Math.pow(-2 * tRaw + 2, 2) / 2;
+      targetY = es.camStartY * (1 - eased);
+    } else if (es.phase === 'sweep') {
+      // Position the sweep line ~30% from the top of the viewport so the
+      // player sees the kill happen with breathing room around it.
+      targetY = es.sweepY - viewH * 0.3;
+      targetY = Math.max(0, Math.min(maxCamY, targetY));
+    }
+
+    // Smooth follow — fairly tight so the camera doesn't lag behind the sweep
+    cam.y += (targetY - cam.y) * Math.min(1, dt * 5);
+    cam.x += (targetX - cam.x) * Math.min(1, dt * 3);
   }
   finishEndSequence() {
     // Hide overlays + apply post-mission dim
@@ -667,9 +722,9 @@ export default class GameScene extends Phaser.Scene {
   // ===== Per-frame =====
   update(_time, deltaMs) {
     const dt = Math.min(0.05, deltaMs / 1000);
-    // Don't accrue game time while the intel memo is on-screen; the player's
-    // run-time stat shouldn't be punished for reading lore.
-    if (!this.state.intelDialog) this.state.time += dt;
+    // Don't accrue game time while a tip or the intel memo is on-screen.
+    // The run-time stat shouldn't punish players for reading.
+    if (!this.state.intelDialog && !this.state.tipShowing) this.state.time += dt;
 
     // Smooth zoom toward target
     const c = this.state.cam;
@@ -692,13 +747,21 @@ export default class GameScene extends Phaser.Scene {
       return cr.life > 0;
     });
 
-    if (this.state.status === 'playing' && !this.state.intelDialog) {
+    if (this.state.status === 'playing' && !this.state.intelDialog && !this.state.tipShowing) {
       this.runGameLogic(dt);
       this.updateOnboardingTips();
+    } else if (this.state.status === 'playing' && !this.state.intelDialog && this.state.tipShowing) {
+      // Tip is up — game paused. Still check if a new tip should show
+      // (e.g. on first frame after game starts, before tipShowing was set).
+      // Skip in normal cases since tipShowing is true.
     } else if (this.state.intelDialog) {
       // Game paused while reading the intel memo — only typewriter ticks
       // run (driven by its own setTimeout). Don't advance time/gaze/agents.
     } else if (this.state.status === 'ending') {
+      // Cinematic camera during the end sequence:
+      //   install phase → pan from player position up to the top of the page
+      //   sweep phase   → follow the descending sweep line down to the bottom
+      this.updateCinematicCamera(dt);
       const done = updateEndSequence(this.endSeq, dt, this.state);
       this.tickEndSequenceDom();
       if (done) this.finishEndSequence();

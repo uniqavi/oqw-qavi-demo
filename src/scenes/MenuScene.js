@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { initAudio, beep } from '../game/audio.js';
 import { loadMusic, playMusic, setMusicMuted } from '../game/music.js';
 import { playVoice, stopVoice, setVoiceMuted } from '../game/voice.js';
+import { MenuEffects } from '../game/menuEffects.js';
 
 // Intro phone call. Direction A — absurdist, self-aware. Toto is tired and
 // dry; YOU is deadpan. Each line has a `voiceId` that maps to a drop-in
@@ -112,6 +113,19 @@ export default class MenuScene extends Phaser.Scene {
     setVoiceMuted(savedAudio === 'off');
     playMusic('menu', { fadeMs: 1200 });
 
+    // Menu background effects — dust in projector beam, rain, steam,
+    // city twinkles. One MenuEffects per dark-room canvas (main / diff /
+    // intro all share the same image so all three get the same ambience).
+    this.fx = [];
+    const fxCanvasIds = ['menu-fx-canvas-main', 'menu-fx-canvas-diff', 'menu-fx-canvas-intro'];
+    for (const id of fxCanvasIds) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      const fx = new MenuEffects(el);
+      fx.start();
+      this.fx.push(fx);
+    }
+
     // Single AbortController removes all DOM listeners on shutdown — safe to
     // re-create MenuScene multiple times (e.g. via "MAIN MENU" from results).
     this.abort = new AbortController();
@@ -155,6 +169,8 @@ export default class MenuScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.abort.abort();
       if (this.typewriterTimer) clearTimeout(this.typewriterTimer);
+      // Stop all running effect canvases to release rAF + listeners
+      if (this.fx) this.fx.forEach((fx) => fx.stop());
     });
   }
 

@@ -115,6 +115,7 @@ export function createState() {
     intelDialog: null,   // { idx, charT, typing } when active
     truthExposedT: 0,    // seconds of continuous uncovered truth (debounce trigger)
     gunGraceUntil: 6,    // gun shooter doesn't fire before this game-time (set per difficulty in GameScene)
+    tipShowing: false,   // true while an onboarding tip modal is on-screen (pauses game)
     agents: createAgents(),
     layout: createLayout(),
     docs: createDocs(),
@@ -162,6 +163,7 @@ export function resetState(state) {
   state.intelRevealed = false;
   state.intelDialog = null;
   state.truthExposedT = 0;
+  state.tipShowing = false;
 
   // Agents back to idle
   state.agents.chasingRecs.forEach(a => {

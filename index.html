@@ -6,7 +6,7 @@
     <title>Operation Quiet Window</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Saira+Condensed:ital,wght@0,500;0,700;0,800;0,900;1,800;1,900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body class="menu-mode">
@@ -28,10 +28,15 @@
           <div id="game"></div>
           <canvas id="oqw"></canvas>
 
-          <!-- ===== ONBOARDING TOOLTIP (first-time tips, fade in/out) ===== -->
+          <!-- ===== ONBOARDING TOOLTIP (centered modal, pauses game) ===== -->
           <div class="onboarding-tip hidden" id="onboarding-tip">
-            <span class="tip-arrow">▸</span>
-            <span class="tip-text" id="onboarding-tip-text"></span>
+            <div class="tip-card">
+              <div class="tip-row">
+                <span class="tip-arrow">▸</span>
+                <span class="tip-text" id="onboarding-tip-text"></span>
+              </div>
+              <div class="tip-hint">click anywhere or press SPACE to continue</div>
+            </div>
           </div>
 
           <!-- ===== MALWARE INSTALL / SHORT-CIRCUIT SEQUENCE ===== -->
@@ -39,7 +44,7 @@
             <div class="malware-install" id="malware-install">
               <div class="malware-frame">
                 <div class="malware-tag">[ MALWARE.exe — SILENT INSTALL ]</div>
-                <div class="malware-line">Injecting payload into VEIL pipeline...</div>
+                <div class="malware-line">Injecting payload into HUSH pipeline...</div>
                 <div class="malware-bar"><div class="malware-fill" id="malware-fill"></div></div>
                 <div class="malware-pct" id="malware-pct">0%</div>
               </div>
@@ -66,72 +71,153 @@
           <!-- ===== MAIN MENU ===== -->
           <div class="main-menu" id="main-menu">
             <div class="dark-room">
-              <div class="room-vignette"></div>
-              <div class="monitor">
-                <div class="monitor-screen" id="menu-monitor-screen">STANDBY...</div>
-              </div>
-              <div class="silhouette"></div>
-              <div class="scanlines"></div>
+              <canvas class="menu-fx-canvas" id="menu-fx-canvas-main"></canvas>
+              <div class="fx-projection-flicker"></div>
+              <div class="fx-monitor-glow"></div>
+              <div class="fx-lamp-glow"></div>
+              <div class="fx-led"></div>
             </div>
-            <div class="menu-overlay">
-              <div class="menu-tag">[ DEEP-COVER OPS · TIER-IV CLEARANCE ]</div>
-              <h1 class="menu-title">OPERATION<br/>QUIET WINDOW</h1>
-              <div class="menu-sub">2039 &nbsp;·&nbsp; UNDER VEIL</div>
-              <div class="menu-buttons">
-                <button class="menu-btn" id="btn-start">START NEW MISSION</button>
-                <button class="menu-btn" id="btn-load" disabled>LOAD GAME <span class="btn-note">(no saves yet)</span></button>
-                <button class="menu-btn" id="btn-settings">SETTINGS</button>
-                <button class="menu-btn" id="btn-help">HELP</button>
+            <div class="menu-overlay ink-layer" role="region" aria-label="Main menu">
+              <!-- Status bar at the top of the projection -->
+              <div class="status">
+                <div class="status-left">[OPERATIONAL STATUS: STANDBY]</div>
+                <div class="status-right">[DATE: 03.11.2039]</div>
               </div>
-              <div class="menu-foot">v0.5 · placeholder art</div>
+
+              <!-- Title -->
+              <h1 class="menu-title">
+                <span class="row">Operation</span>
+                <span class="row">Quiet Window</span>
+              </h1>
+
+              <!-- Classification tagline -->
+              <div class="tagline">
+                <span class="tag-chip">[DEEP-COVER OPS]</span>
+                <span>TIER-IV CLEARANCE /</span>
+                <span class="tag-chip">[ACTIVE HUSH PROTOCOL]</span>
+              </div>
+
+              <!-- Buttons -->
+              <nav class="menu-buttons" aria-label="Main">
+                <button class="menu-btn" type="button" id="btn-start">
+                  <span class="label"><span class="br">[</span>START NEW MISSION<span class="br">]</span></span>
+                  <span class="chev">&rsaquo;</span>
+                  <span class="icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                      <circle cx="12" cy="12" r="7" />
+                      <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+                      <path d="M12 2v4 M12 18v4 M2 12h4 M18 12h4" />
+                    </svg>
+                  </span>
+                </button>
+
+                <button class="menu-btn" type="button" id="btn-settings">
+                  <span class="label"><span class="br">[</span>SYSTEM SETTINGS / PROTOCOLS<span class="br">]</span></span>
+                  <span class="chev" style="visibility:hidden">&rsaquo;</span>
+                  <span class="icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19.43 12.98a7.9 7.9 0 0 0 0-1.96l2.02-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a8.06 8.06 0 0 0-1.7-.98l-.36-2.54A.5.5 0 0 0 14.1 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.6.24-1.17.57-1.7.98l-2.39-.96a.5.5 0 0 0-.6.22L2.79 8.52a.5.5 0 0 0 .12.64l2.02 1.58a7.9 7.9 0 0 0 0 1.96L2.91 14.28a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.42.34.66.22l2.39-.96c.53.41 1.1.74 1.7.98l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.6-.24 1.17-.57 1.7-.98l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.02-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
+                    </svg>
+                  </span>
+                </button>
+
+                <button class="menu-btn" type="button" id="btn-help">
+                  <span class="label"><span class="br">[</span>OPERATIONAL HELP / INTEL<span class="br">]</span></span>
+                  <span class="chev" style="visibility:hidden">&rsaquo;</span>
+                  <span class="icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2 4 5v6c0 5 3.5 9.3 8 11 4.5-1.7 8-6 8-11V5l-8-3z"/>
+                      <text x="12" y="15.5" text-anchor="middle" font-family="Saira Condensed, sans-serif" font-weight="800" font-size="11" fill="#e9ecec">?</text>
+                    </svg>
+                  </span>
+                </button>
+              </nav>
+
+              <!-- Footer -->
+              <div class="ink-footer">OPS-TERM v1.4</div>
+              <div class="ink-glyphs">. . .</div>
             </div>
           </div>
 
           <!-- ===== DIFFICULTY SELECT (after pressing START) ===== -->
           <div class="diff-menu hidden" id="diff-menu">
             <div class="dark-room">
-              <div class="room-vignette"></div>
-              <div class="monitor">
-                <div class="monitor-screen">SELECT THREAT LEVEL</div>
-              </div>
-              <div class="silhouette"></div>
-              <div class="scanlines"></div>
+              <canvas class="menu-fx-canvas" id="menu-fx-canvas-diff"></canvas>
+              <div class="fx-projection-flicker"></div>
+              <div class="fx-monitor-glow"></div>
+              <div class="fx-lamp-glow"></div>
+              <div class="fx-led"></div>
             </div>
-            <div class="diff-overlay">
-              <div class="menu-tag">[ MISSION CONFIG ]</div>
-              <h2 class="diff-title">DIFFICULTY</h2>
-              <div class="menu-sub">PICK YOUR THREAT LEVEL</div>
+            <div class="diff-overlay ink-layer" role="region" aria-label="Mission configuration">
+              <!-- Status bar -->
+              <div class="status">
+                <div class="status-left">[MISSION CONFIG: PENDING]</div>
+                <div class="status-right">[CLEARANCE: TIER-IV]</div>
+              </div>
+
+              <!-- Title -->
+              <h1 class="menu-title">
+                <span class="row">Threat</span>
+                <span class="row">Profile</span>
+              </h1>
+
+              <!-- Tagline -->
+              <div class="tagline">
+                <span class="tag-chip">[CALIBRATION REQUIRED]</span>
+                <span>SELECT MISSION PARAMETERS</span>
+              </div>
+
+              <!-- Three difficulty cards -->
               <div class="diff-cards">
                 <button class="diff-card" data-diff="easy">
-                  <div class="diff-name">EASY</div>
-                  <div class="diff-desc">Slow agents, gentle damage. For first runs.</div>
+                  <span class="diff-level"><span class="br">[</span>EASY<span class="br">]</span></span>
+                  <span class="diff-stars">▸</span>
+                  <span class="diff-desc">Slow agents. Gentle damage. For first runs.</span>
                 </button>
                 <button class="diff-card" data-diff="normal">
-                  <div class="diff-name">NORMAL</div>
-                  <div class="diff-desc">As designed. Recommended.</div>
+                  <span class="diff-level"><span class="br">[</span>NORMAL<span class="br">]</span></span>
+                  <span class="diff-stars">▸▸</span>
+                  <span class="diff-desc">As designed. Recommended.</span>
                 </button>
                 <button class="diff-card" data-diff="hard">
-                  <div class="diff-name">HARD</div>
-                  <div class="diff-desc">Faster, deadlier. For the practiced infiltrator.</div>
+                  <span class="diff-level"><span class="br">[</span>HARD<span class="br">]</span></span>
+                  <span class="diff-stars">▸▸▸</span>
+                  <span class="diff-desc">Faster. Deadlier. For practiced infiltrators.</span>
                 </button>
               </div>
+
+              <!-- Action buttons -->
               <div class="diff-actions">
-                <button class="menu-btn ghost" id="diff-back">◀ BACK</button>
-                <button class="menu-btn" id="diff-confirm" disabled>BEGIN INFILTRATION ▶</button>
+                <button class="menu-btn ghost" type="button" id="diff-back">
+                  <span class="label"><span class="br">[</span>◀ BACK<span class="br">]</span></span>
+                </button>
+                <button class="menu-btn" type="button" id="diff-confirm" disabled>
+                  <span class="label"><span class="br">[</span>BEGIN INFILTRATION<span class="br">]</span></span>
+                  <span class="chev">&rsaquo;</span>
+                  <span class="icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="5" y1="12" x2="19" y2="12"/>
+                      <polyline points="12 5 19 12 12 19"/>
+                    </svg>
+                  </span>
+                </button>
               </div>
+
+              <!-- Footer -->
+              <div class="ink-footer">OPS-TERM v1.4 · DIFF.SEL</div>
+              <div class="ink-glyphs">. . .</div>
             </div>
           </div>
 
           <!-- ===== INTRO CUTSCENE ===== -->
           <div class="intro hidden" id="intro">
             <div class="dark-room">
-              <div class="room-vignette"></div>
-              <div class="monitor">
-                <div class="monitor-screen" id="intro-monitor-screen">STANDBY...</div>
-              </div>
-              <div class="silhouette"></div>
+              <canvas class="menu-fx-canvas" id="menu-fx-canvas-intro"></canvas>
+              <div class="fx-projection-flicker"></div>
+              <div class="fx-monitor-glow"></div>
+              <div class="fx-lamp-glow"></div>
+              <div class="fx-led"></div>
               <div class="phone" id="intro-phone">📞</div>
-              <div class="scanlines"></div>
             </div>
             <div class="dialogue">
               <img class="dialogue-portrait" id="dialogue-portrait" alt="" />
@@ -143,36 +229,106 @@
             </div>
           </div>
 
-          <!-- ===== SETTINGS MODAL (audio only — difficulty moved to start flow) ===== -->
+          <!-- ===== SETTINGS MODAL ===== -->
           <div class="modal hidden" id="settings-modal">
-            <div class="modal-panel">
-              <div class="modal-tag">[ SETTINGS ]</div>
-              <h2>CONFIG</h2>
-              <div class="setting-row">
-                <span class="setting-label">AUDIO</span>
-                <div class="diff-options">
-                  <button class="diff-btn" data-audio="on">ON</button>
-                  <button class="diff-btn" data-audio="off">MUTE</button>
+            <div class="modal-panel ink-layer" role="dialog" aria-label="Settings">
+              <!-- Status bar -->
+              <div class="status">
+                <div class="status-left">[CONFIG: SYSTEM]</div>
+                <div class="status-right">[USER PREFERENCES]</div>
+              </div>
+
+              <!-- Title -->
+              <h1 class="menu-title">
+                <span class="row">System</span>
+                <span class="row">Config</span>
+              </h1>
+
+              <!-- Tagline -->
+              <div class="tagline">
+                <span class="tag-chip">[LOCAL SETTINGS]</span>
+                <span>SET PARAMETERS</span>
+              </div>
+
+              <!-- Settings rows -->
+              <div class="settings-rows">
+                <div class="setting-row">
+                  <span class="setting-label">[ AUDIO ]</span>
+                  <div class="diff-options">
+                    <button class="diff-btn" data-audio="on">[ ON ]</button>
+                    <button class="diff-btn" data-audio="off">[ MUTE ]</button>
+                  </div>
                 </div>
               </div>
-              <button class="modal-close-btn" id="settings-close">CLOSE</button>
+
+              <!-- Close button -->
+              <div class="diff-actions">
+                <button class="menu-btn" type="button" id="settings-close">
+                  <span class="label"><span class="br">[</span>RETURN<span class="br">]</span></span>
+                  <span class="chev">&rsaquo;</span>
+                  <span class="icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="19" y1="12" x2="5" y2="12"/>
+                      <polyline points="12 19 5 12 12 5"/>
+                    </svg>
+                  </span>
+                </button>
+              </div>
+
+              <!-- Footer -->
+              <div class="ink-footer">OPS-TERM v1.4 · CFG</div>
+              <div class="ink-glyphs">. . .</div>
             </div>
           </div>
 
           <!-- ===== HELP MODAL ===== -->
           <div class="modal hidden" id="help-modal">
-            <div class="modal-panel">
-              <div class="modal-tag">[ FIELD MANUAL ]</div>
-              <h2>HOW TO PLAY</h2>
+            <div class="modal-panel ink-layer" role="dialog" aria-label="Field manual">
+              <!-- Status bar -->
+              <div class="status">
+                <div class="status-left">[FIELD MANUAL: ACTIVE]</div>
+                <div class="status-right">[TIER-IV OPS GUIDE]</div>
+              </div>
+
+              <!-- Title -->
+              <h1 class="menu-title">
+                <span class="row">Field</span>
+                <span class="row">Manual</span>
+              </h1>
+
+              <!-- Tagline -->
+              <div class="tagline">
+                <span class="tag-chip">[OPERATIONS BRIEFING]</span>
+                <span>HOW TO STAY ALIVE</span>
+              </div>
+
+              <!-- Help list -->
               <ul class="help-list">
                 <li><kbd>WASD</kbd> / <kbd>↑↓←→</kbd> — move</li>
                 <li><kbd>+</kbd>/<kbd>-</kbd> or <kbd>scroll</kbd> — zoom in / out</li>
                 <li><kbd>click + drag</kbd> — pick up ad banners; cover the <span class="hl">CLASSIFIED</span> doc to keep your gaze low</li>
                 <li>Collect <span class="hl">docs</span> (yellow), then accept the <span class="hl">cookie jar</span>, then reach <span class="hl">SUBSCRIBE</span> to exfiltrate</li>
-                <li>Watch out for: <em>chasing recs · search shrapnel · falling comments · exploding likes · crushing cookie banner</em></li>
-                <li>The <span class="hl">account avatar</span> pulls a gun. One shot is lethal at distance — rush it to break the aim.</li>
+                <li>Watch for: <em>chasing recs · search shrapnel · falling comments · exploding likes · crushing cookie banner</em></li>
+                <li>The <span class="hl">account avatar</span> pulls a gun. One shot is lethal — rush it to break the aim.</li>
               </ul>
-              <button class="modal-close-btn" id="help-close">CLOSE</button>
+
+              <!-- Close button -->
+              <div class="diff-actions">
+                <button class="menu-btn" type="button" id="help-close">
+                  <span class="label"><span class="br">[</span>RETURN<span class="br">]</span></span>
+                  <span class="chev">&rsaquo;</span>
+                  <span class="icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="19" y1="12" x2="5" y2="12"/>
+                      <polyline points="12 19 5 12 12 5"/>
+                    </svg>
+                  </span>
+                </button>
+              </div>
+
+              <!-- Footer -->
+              <div class="ink-footer">OPS-TERM v1.4 · MANUAL</div>
+              <div class="ink-glyphs">. . .</div>
             </div>
           </div>
 

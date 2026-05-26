@@ -195,7 +195,7 @@ export default class Level2Scene extends Phaser.Scene {
     const { VW, VH } = this;
     if (!VW || !VH) return;
 
-    // World-space scale: fit Lattice's 1920×1080 logical layout to the canvas
+    // World-space scale: fit SPYGRAM's 1920×1080 logical layout to the canvas
     const sX = VW / 1920;
     const sY = VH / 1080;
     const s = Math.min(sX, sY);
