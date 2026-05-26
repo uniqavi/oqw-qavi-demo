@@ -156,6 +156,12 @@ export default class MenuScene extends Phaser.Scene {
       }, { signal });
     });
 
+    // Intro skip button
+    this.bindClick('intro-skip', (e) => {
+      e.stopPropagation();
+      this.endCutscene();
+    }, signal);
+
     // Cutscene advance — click anywhere on .intro OR Space/Enter
     this.advanceFn = (e) => {
       if (this.dom.intro.classList.contains('hidden')) return;

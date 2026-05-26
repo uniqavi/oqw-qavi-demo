@@ -169,7 +169,7 @@ export default class GameScene extends Phaser.Scene {
         this.advanceIntel();
       }
     };
-    this.intelDom.wrap?.addEventListener('click', this.onIntelClick);
+    document.addEventListener('click', this.onIntelClick);
 
     // Post-mission banner DOM ref
     this.postMissionEl = document.getElementById('post-mission-banner');
@@ -237,7 +237,7 @@ export default class GameScene extends Phaser.Scene {
       document.removeEventListener('keydown', this.onKey);
       this.restartBtn?.removeEventListener('click', this.onRestart);
       this.backMenuBtn?.removeEventListener('click', this.onBackMenu);
-      this.intelDom?.wrap?.removeEventListener('click', this.onIntelClick);
+      document.removeEventListener('click', this.onIntelClick);
       this.tipEl?.removeEventListener('click', this.onTipClick);
       this.tabEls?.forEach((el) => el.removeEventListener('click', this.onTabClick));
       if (this.revealTimers) this.revealTimers.forEach(clearTimeout);
@@ -1149,74 +1149,6 @@ export default class GameScene extends Phaser.Scene {
     // cookie banner (driven by CrushingCookie agent state)
     CrushingCookie.drawBanner(ctx, state.agents.crushingCookie, state);
 
-    // cookie jar
-    const cj = state.cookieJar;
-    if (!cj.taken) {
-      const pulse = 1 + Math.sin(state.time * 3) * 0.06;
-      ctx.save();
-      ctx.translate(cj.x, cj.y);
-      ctx.scale(pulse, pulse);
-      ctx.fillStyle = 'rgba(244,211,94,0.35)';
-      ctx.beginPath();
-      ctx.arc(0, 0, cj.r + 14, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#e8e2c8';
-      ctx.strokeStyle = '#1a1a1f';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(-cj.r, -cj.r * 0.6);
-      ctx.lineTo(-cj.r, cj.r * 0.9);
-      ctx.quadraticCurveTo(-cj.r, cj.r * 1.05, -cj.r * 0.85, cj.r * 1.05);
-      ctx.lineTo(cj.r * 0.85, cj.r * 1.05);
-      ctx.quadraticCurveTo(cj.r, cj.r * 1.05, cj.r, cj.r * 0.9);
-      ctx.lineTo(cj.r, -cj.r * 0.6);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#E63946';
-      ctx.fillRect(-cj.r - 2, -cj.r * 0.95, cj.r * 2 + 4, cj.r * 0.4);
-      ctx.strokeRect(-cj.r - 2, -cj.r * 0.95, cj.r * 2 + 4, cj.r * 0.4);
-      const cookieColors = ['#A0522D', '#8B5A2B', '#C68642'];
-      for (let i = 0; i < 6; i++) {
-        const ccx = -cj.r * 0.6 + (i % 3) * cj.r * 0.55;
-        const ccy = -cj.r * 0.3 + Math.floor(i / 3) * cj.r * 0.55;
-        ctx.fillStyle = cookieColors[i % 3];
-        ctx.beginPath();
-        ctx.arc(ccx, ccy, cj.r * 0.22, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#3a1a05';
-        ctx.beginPath();
-        ctx.arc(ccx - 1, ccy - 1, 1, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(ccx + 2, ccy + 1, 1, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(-cj.r * 0.85, cj.r * 0.4, cj.r * 1.7, cj.r * 0.45);
-      ctx.strokeRect(-cj.r * 0.85, cj.r * 0.4, cj.r * 1.7, cj.r * 0.45);
-      ctx.fillStyle = '#1a1a1f';
-      ctx.font = 'bold 10px Georgia, serif';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      ctx.fillText('COOKIES', 0, cj.r * 0.62);
-      ctx.textAlign = 'left';
-      ctx.restore();
-      const bobY = Math.sin(state.time * 2) * 4;
-      ctx.fillStyle = '#1a1a1f';
-      ctx.font = 'bold 10px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      ctx.fillText('↓ accept these to subscribe ↓', cj.x, cj.y - cj.r - 22 + bobY);
-      ctx.textAlign = 'left';
-    } else if (state.time - cj.takeT < 0.4) {
-      const a = state.time - cj.takeT;
-      ctx.strokeStyle = 'rgba(244,211,94,' + (1 - a / 0.4) + ')';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(cj.x, cj.y, cj.r + a * 80, 0, Math.PI * 2);
-      ctx.stroke();
-    }
 
     // crumbs
     for (const cr of state.crumbs) {
@@ -1256,40 +1188,7 @@ export default class GameScene extends Phaser.Scene {
       ctx.restore();
     }
 
-    // docs
-    for (const d of state.docs) {
-      if (d.taken) {
-        if (state.time - d.takeT < 0.4) {
-          const a = state.time - d.takeT;
-          ctx.strokeStyle = 'rgba(244,211,94,' + (1 - a / 0.4) + ')';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(d.x, d.y, d.r + a * 50, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        continue;
-      }
-      const pulse = 1 + Math.sin(state.time * 4) * 0.12;
-      ctx.save();
-      ctx.translate(d.x, d.y);
-      ctx.scale(pulse, pulse);
-      ctx.fillStyle = 'rgba(244,211,94,0.45)';
-      ctx.beginPath();
-      ctx.arc(0, 0, d.r + 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#F4D35E';
-      ctx.strokeStyle = '#1a1a1f';
-      ctx.lineWidth = 1.2;
-      ctx.fillRect(-d.r, -d.r * 0.7, d.r * 2, d.r * 1.5);
-      ctx.strokeRect(-d.r, -d.r * 0.7, d.r * 2, d.r * 1.5);
-      ctx.fillRect(-d.r, -d.r * 0.95, d.r * 0.9, d.r * 0.3);
-      ctx.strokeRect(-d.r, -d.r * 0.95, d.r * 0.9, d.r * 0.3);
-      ctx.fillStyle = '#1a1a1f';
-      ctx.font = 'bold 6px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('DOC', -7, 2);
-      ctx.restore();
-    }
+
 
     // bullets (gunShooter), search projectiles, debris (explodingLike)
     GunShooter.drawProjectiles(ctx, state);
@@ -1307,6 +1206,129 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
+    // ===== HIDDEN UNDER-LAYER =====
+    {
+      const p = state.player;
+      const s = p.size;
+      const ph = s * 0.75;
+      const px = p.x - s / 2, py = p.y - ph / 2;
+      
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(px, py, s, ph);
+      ctx.clip();
+
+      // under-layer background
+      ctx.fillStyle = '#110214'; // dark purple-ish
+      ctx.fillRect(px, py, s, ph);
+
+      // cookie jar
+      const cj = state.cookieJar;
+      if (!cj.taken) {
+        const pulse = 1 + Math.sin(state.time * 3) * 0.06;
+        ctx.save();
+        ctx.translate(cj.x, cj.y);
+        ctx.scale(pulse, pulse);
+        ctx.fillStyle = 'rgba(244,211,94,0.35)';
+        ctx.beginPath();
+        ctx.arc(0, 0, cj.r + 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#e8e2c8';
+        ctx.strokeStyle = '#1a1a1f';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-cj.r, -cj.r * 0.6);
+        ctx.lineTo(-cj.r, cj.r * 0.9);
+        ctx.quadraticCurveTo(-cj.r, cj.r * 1.05, -cj.r * 0.85, cj.r * 1.05);
+        ctx.lineTo(cj.r * 0.85, cj.r * 1.05);
+        ctx.quadraticCurveTo(cj.r, cj.r * 1.05, cj.r, cj.r * 0.9);
+        ctx.lineTo(cj.r, -cj.r * 0.6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#E63946';
+        ctx.fillRect(-cj.r - 2, -cj.r * 0.95, cj.r * 2 + 4, cj.r * 0.4);
+        ctx.strokeRect(-cj.r - 2, -cj.r * 0.95, cj.r * 2 + 4, cj.r * 0.4);
+        const cookieColors = ['#A0522D', '#8B5A2B', '#C68642'];
+        for (let i = 0; i < 6; i++) {
+          const ccx = -cj.r * 0.6 + (i % 3) * cj.r * 0.55;
+          const ccy = -cj.r * 0.3 + Math.floor(i / 3) * cj.r * 0.55;
+          ctx.fillStyle = cookieColors[i % 3];
+          ctx.beginPath();
+          ctx.arc(ccx, ccy, cj.r * 0.22, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#3a1a05';
+          ctx.beginPath();
+          ctx.arc(ccx - 1, ccy - 1, 1, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(ccx + 2, ccy + 1, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(-cj.r * 0.85, cj.r * 0.4, cj.r * 1.7, cj.r * 0.45);
+        ctx.strokeRect(-cj.r * 0.85, cj.r * 0.4, cj.r * 1.7, cj.r * 0.45);
+        ctx.fillStyle = '#1a1a1f';
+        ctx.font = 'bold 10px Georgia, serif';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.fillText('COOKIES', 0, cj.r * 0.62);
+        ctx.textAlign = 'left';
+        ctx.restore();
+        const bobY = Math.sin(state.time * 2) * 4;
+        ctx.fillStyle = '#1a1a1f';
+        ctx.font = 'bold 10px ui-monospace, monospace';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.fillText('↓ accept these to subscribe ↓', cj.x, cj.y - cj.r - 22 + bobY);
+        ctx.textAlign = 'left';
+      } else if (state.time - cj.takeT < 0.4) {
+        const a = state.time - cj.takeT;
+        ctx.strokeStyle = 'rgba(244,211,94,' + (1 - a / 0.4) + ')';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(cj.x, cj.y, cj.r + a * 80, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // docs
+      for (const d of state.docs) {
+        if (d.taken) {
+          if (state.time - d.takeT < 0.4) {
+            const a = state.time - d.takeT;
+            ctx.strokeStyle = 'rgba(244,211,94,' + (1 - a / 0.4) + ')';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, d.r + a * 50, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          continue;
+        }
+        const pulse = 1 + Math.sin(state.time * 4) * 0.12;
+        ctx.save();
+        ctx.translate(d.x, d.y);
+        ctx.scale(pulse, pulse);
+        ctx.fillStyle = 'rgba(244,211,94,0.45)';
+        ctx.beginPath();
+        ctx.arc(0, 0, d.r + 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#F4D35E';
+        ctx.strokeStyle = '#1a1a1f';
+        ctx.lineWidth = 1.2;
+        ctx.fillRect(-d.r, -d.r * 0.7, d.r * 2, d.r * 1.5);
+        ctx.strokeRect(-d.r, -d.r * 0.7, d.r * 2, d.r * 1.5);
+        ctx.fillRect(-d.r, -d.r * 0.95, d.r * 0.9, d.r * 0.3);
+        ctx.strokeRect(-d.r, -d.r * 0.95, d.r * 0.9, d.r * 0.3);
+        ctx.fillStyle = '#1a1a1f';
+        ctx.font = 'bold 6px ui-monospace, monospace';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('DOC', -7, 2);
+        ctx.restore();
+      }
+
+      ctx.restore();
+    }
+
     // player
     {
       const p = state.player;
@@ -1315,7 +1337,7 @@ export default class GameScene extends Phaser.Scene {
       const px = p.x - s / 2, py = p.y - ph / 2;
       ctx.save();
       if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.45;
-      drawHandRect(ctx, px, py, s, ph, p.hitFlash > 0 ? '#fff' : '#E63946', '#1a1a1f', 50);
+      drawHandRect(ctx, px, py, s, ph, p.hitFlash > 0 ? '#fff' : 'transparent', '#1a1a1f', 50);
       ctx.fillStyle = '#1a1a1f';
       ctx.fillRect(px + 1, py + 1, s - 2, 14);
       ctx.fillStyle = '#fff';
