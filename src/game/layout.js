@@ -53,3 +53,23 @@ export function createPropaganda() {
 export function createTruth() {
   return [{ x: 80, y: 880, w: 160, h: 90 }];
 }
+
+export function createLooseCookies() {
+  return [
+    { x: 100, y: 160, r: 6, taken: false, takeT: 0 },
+    { x: 130, y: 180, r: 6, taken: false, takeT: 0 },
+    { x: 160, y: 200, r: 6, taken: false, takeT: 0 },
+    
+    { x: 520, y: 300, r: 6, taken: false, takeT: 0 },
+    { x: 540, y: 330, r: 6, taken: false, takeT: 0 },
+    { x: 560, y: 360, r: 6, taken: false, takeT: 0 },
+
+    { x: 200, y: 550, r: 6, taken: false, takeT: 0 },
+    { x: 230, y: 580, r: 6, taken: false, takeT: 0 },
+    { x: 260, y: 610, r: 6, taken: false, takeT: 0 },
+
+    { x: 800, y: 100, r: 6, taken: false, takeT: 0 },
+    { x: 830, y: 120, r: 6, taken: false, takeT: 0 },
+    { x: 860, y: 140, r: 6, taken: false, takeT: 0 }
+  ];
+}

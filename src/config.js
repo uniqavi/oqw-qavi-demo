@@ -129,6 +129,7 @@ export const PICKUPS = {
   cookieGrowth: 120,
   cookieGrowDuration: 0.8,
   pickRadiusMult: 0.32,
+  crumbGrowth: 5,
 };
 
 // Visual atmospherics

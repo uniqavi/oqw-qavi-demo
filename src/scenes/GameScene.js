@@ -888,6 +888,16 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
+    // Surface Pickups
+    for (const d of state.looseCookies) {
+      if (d.taken) continue;
+      if (dist(p.x, p.y, d.x, d.y) < d.r + p.size * PICKUPS.pickRadiusMult) {
+        d.taken = true;
+        d.takeT = state.time;
+        p.size = Math.min(PLAYER.maxSize, p.size + PICKUPS.crumbGrowth);
+      }
+    }
+
     // Cookie jar
     const cj = state.cookieJar;
     if (!cj.taken && dist(p.x, p.y, cj.x, cj.y) < cj.r + p.size * PICKUPS.pickRadiusMult) {
@@ -1204,6 +1214,20 @@ export default class GameScene extends Phaser.Scene {
         ctx.fillStyle = 'rgba(0,0,0,' + (s.life * 0.15) + ')';
         ctx.fillRect(s.x, s.y, 1, 1);
       }
+    }
+
+    // surface pickups
+    for (const c of state.looseCookies) {
+      if (c.taken) continue;
+      ctx.fillStyle = '#C68642';
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#3a1a05';
+      ctx.beginPath();
+      ctx.arc(c.x - 2, c.y - 1, 1, 0, Math.PI * 2);
+      ctx.arc(c.x + 2, c.y + 2, 1, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     // ===== HIDDEN UNDER-LAYER =====

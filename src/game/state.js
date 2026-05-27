@@ -7,6 +7,7 @@ import {
   createCookieJar,
   createPropaganda,
   createTruth,
+  createLooseCookies,
 } from './layout.js';
 
 // Initial agent data. Each agent's update logic will live in src/game/agents/<name>.js
@@ -122,6 +123,7 @@ export function createState() {
     cookieJar: createCookieJar(),
     propaganda: createPropaganda(),
     truth: createTruth(),
+    looseCookies: createLooseCookies(),
   };
 }
 
@@ -132,6 +134,7 @@ export function resetState(state) {
   p.invuln = 0; p.hitFlash = 0; p.growT = 0;
 
   state.docs.forEach(d => { d.taken = false; d.takeT = 0; });
+  state.looseCookies.forEach(d => { d.taken = false; d.takeT = 0; });
   state.cookieJar.taken = false;
   state.cookieJar.takeT = 0;
   state.cookieCollected = false;
