@@ -781,6 +781,68 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   background: rgba(230, 57, 70, 0.1);
 }
 
+/* ===== Tutorial dialogue (Toto) — bottom strip over the wireframe page ===== */
+.tutorial-dialog {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 24%;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 24px 7% 20px 5%;
+  background: linear-gradient(180deg,
+    rgba(8,10,16,0) 0%,
+    rgba(8,10,16,0.85) 30%,
+    rgba(8,10,16,0.97) 100%);
+  border-top: 1px solid rgba(230, 57, 70, 0.35);
+}
+.tutorial-dialog.hidden { display: none; }
+.tutorial-portrait {
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid rgba(230, 57, 70, 0.5);
+  box-shadow: 0 0 16px rgba(230, 57, 70, 0.28);
+  background: rgba(20, 22, 30, 0.6);
+}
+.tutorial-body { flex: 1; min-width: 0; }
+.tutorial-speaker {
+  font-family: var(--font-mono);
+  font-size: 12px; letter-spacing: 4px;
+  color: var(--red); margin-bottom: 10px;
+}
+.tutorial-line {
+  font-family: var(--font-mono);
+  font-size: 18px; line-height: 1.5;
+  color: #f5f5f5; min-height: 2.5em;
+}
+.tutorial-hint {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 1px;
+  color: #6b6b73;
+  opacity: 0; transition: opacity 0.25s;
+}
+.tutorial-skip {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px solid rgba(230, 57, 70, 0.25);
+  color: #6b6b73;
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 1px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.tutorial-skip:hover {
+  color: #f5f5f5;
+  border-color: rgba(230, 57, 70, 0.8);
+  background: rgba(230, 57, 70, 0.1);
+}
+
 /* Cutscene fade-to-white transition into Level 1 (covers full browser) */
 .cutscene-flash {
   position: fixed;

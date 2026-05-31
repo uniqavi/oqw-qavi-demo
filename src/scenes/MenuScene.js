@@ -315,8 +315,10 @@ export default class MenuScene extends Phaser.Scene {
     setTimeout(() => {
       this.hide(this.dom.intro);
       document.body.classList.remove('menu-mode');
-      this.scene.start('GameScene', { difficulty: this.selectedDiff });
-      this.scene.launch('HUDScene');
+      // Route through the tutorial first. (During the build phase we always
+      // show it; later we can gate on localStorage 'oqw-tutorial-done' so
+      // repeat players skip straight to GameScene.)
+      this.scene.start('TutorialScene', { difficulty: this.selectedDiff });
       setTimeout(() => {
         flash.classList.remove('active');
         setTimeout(() => flash.remove(), 700);
