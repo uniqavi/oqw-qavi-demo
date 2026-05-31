@@ -10,15 +10,33 @@ export const PH = 1200;
 // the most lethal agent (gun shooter) won't trigger for N seconds — see
 // AGENTS.gunShooter.startGracePeriod below.
 export const DIFFICULTY = {
-  easy:   { agentSpeed: 0.75, agentDamage: 0.7,  triggerRange: 0.85, gunGrace: 12 },
-  normal: { agentSpeed: 1.0,  agentDamage: 1.0,  triggerRange: 1.0,  gunGrace: 6  },
-  hard:   { agentSpeed: 1.25, agentDamage: 1.15, triggerRange: 1.15, gunGrace: 3  },
+  // EASY is the default and is tuned to be genuinely gentle — this is a
+  // discovery game first, a reflex game a distant second (see docs/LEVEL1.md).
+  easy:   { agentSpeed: 0.55, agentDamage: 0.45, triggerRange: 0.65, gunGrace: 16 },
+  normal: { agentSpeed: 0.85, agentDamage: 0.8,  triggerRange: 0.9,  gunGrace: 8  },
+  hard:   { agentSpeed: 1.15, agentDamage: 1.1,  triggerRange: 1.1,  gunGrace: 4  },
 };
 
 export function getDifficulty() {
-  const key = (typeof localStorage !== 'undefined' && localStorage.getItem('oqw-difficulty')) || 'normal';
-  return DIFFICULTY[key] || DIFFICULTY.normal;
+  const key = (typeof localStorage !== 'undefined' && localStorage.getItem('oqw-difficulty')) || 'easy';
+  return DIFFICULTY[key] || DIFFICULTY.easy;
 }
+
+// ── Level 1 accessibility pass (see docs/LEVEL1.md §8) ──────────────────────
+// L1 runs a REDUCED enemy set so first-time / non-gamer players can learn the
+// core scanning loop without being overwhelmed. "Disabled" enemies aren't
+// removed — they simply never leave idle state, so they still render as normal
+// harmless page components (the search bar still shows, it just won't shoot).
+// Later levels re-enable more of them for escalating difficulty.
+export const L1 = {
+  activeChasingRecs: 1,    // 0..2 — how many sidebar cards actually chase
+  gunShooter:     true,    // the signature threat — kept
+  shootingSearch: false,   // deferred to later levels
+  fallingComment: false,   // deferred
+  explodingLike:  false,   // deferred
+  crushingCookie: false,   // deferred
+  gazeEnforcer:   false,   // the lethal cursor hunter — debuts in L2, off in L1
+};
 
 // Player
 export const PLAYER = {

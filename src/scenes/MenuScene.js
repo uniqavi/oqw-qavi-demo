@@ -100,7 +100,7 @@ export default class MenuScene extends Phaser.Scene {
     this.hide(this.dom.help);
 
     // Restore saved settings
-    this.selectedDiff = localStorage.getItem('oqw-difficulty') || 'normal';
+    this.selectedDiff = localStorage.getItem('oqw-difficulty') || 'easy';
     this.markDiffCard(this.selectedDiff);
     this.dom.diffConfirm.disabled = false;
     const savedAudio = localStorage.getItem('oqw-audio') || 'on';

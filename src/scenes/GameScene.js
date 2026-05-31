@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PW, PH, PLAYER, CAMERA, GAZE, PICKUPS, RENDER, DIFFICULTY } from '../config.js';
+import { PW, PH, PLAYER, CAMERA, GAZE, PICKUPS, RENDER, DIFFICULTY, L1 } from '../config.js';
 import { createState, resetState } from '../game/state.js';
 import { recSlots, commentSlots } from '../game/layout.js';
 import { dist } from '../game/physics.js';
@@ -58,8 +58,8 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create(data) {
-    this.difficulty = data?.difficulty || localStorage.getItem('oqw-difficulty') || 'normal';
-    this.diffMod = DIFFICULTY[this.difficulty] || DIFFICULTY.normal;
+    this.difficulty = data?.difficulty || localStorage.getItem('oqw-difficulty') || 'easy';
+    this.diffMod = DIFFICULTY[this.difficulty] || DIFFICULTY.easy;
     this.state = createState();
     this.state.status = 'playing';
     // Bump every agent's trigger range by the difficulty modifier. Doing it
@@ -848,8 +848,10 @@ export default class GameScene extends Phaser.Scene {
       state.truthExposedT = 0;
     }
 
-    // Cursor (gaze enforcer)
-    if (state.gaze >= GAZE.threshold && !state.cursor) {
+    // Cursor (gaze enforcer) — disabled in L1 for accessibility (config L1).
+    // The lethal hunter debuts in L2. Gaze can still rise/fall as feedback,
+    // it just never spawns the cursor here.
+    if (L1.gazeEnforcer && state.gaze >= GAZE.threshold && !state.cursor) {
       state.cursor = { x: -40, y: 50, vx: 0, vy: 0, born: 0 };
       state.stats.gazeMaxed = true;
       noise(0.35, 0.16);
@@ -923,18 +925,20 @@ export default class GameScene extends Phaser.Scene {
       setTimeout(() => beep(1320, 0.25, 'sine', 0.12), 320);
     }
 
-    // Agents
-    ChasingRecs.updateAll(state.agents.chasingRecs, dt, state);
-    ShootingSearch.update(state.agents.shootingSearch, dt, state);
+    // Agents — Level 1 runs a REDUCED set for accessibility (see config L1).
+    // Disabled agents are simply never updated, so they stay idle and render
+    // as harmless page components. Projectile-cleanup loops always run so any
+    // in-flight projectiles still despawn cleanly.
+    ChasingRecs.updateAll(state.agents.chasingRecs.slice(0, L1.activeChasingRecs), dt, state);
+    if (L1.shootingSearch) ShootingSearch.update(state.agents.shootingSearch, dt, state);
     ShootingSearch.updateProjectiles(state, dt);
-    FallingComment.update(state.agents.fallingComment, dt, state);
-    ExplodingLike.update(state.agents.explodingLike, dt, state);
+    if (L1.fallingComment) FallingComment.update(state.agents.fallingComment, dt, state);
+    if (L1.explodingLike) ExplodingLike.update(state.agents.explodingLike, dt, state);
     ExplodingLike.updateProjectiles(state, dt);
-    CrushingCookie.update(state.agents.crushingCookie, dt, state);
-    // Gun shooter — gated by the difficulty grace period so new players
-    // get a chance to figure out controls before getting one-shot. After
-    // the window expires, runs as normal.
-    if (state.time >= state.gunGraceUntil) {
+    if (L1.crushingCookie) CrushingCookie.update(state.agents.crushingCookie, dt, state);
+    // Gun shooter — gated by the difficulty grace period so new players get a
+    // chance to learn the controls before it can fire.
+    if (L1.gunShooter && state.time >= state.gunGraceUntil) {
       GunShooter.update(state.agents.gunShooter, dt, state);
     }
     GunShooter.updateProjectiles(state, dt);
