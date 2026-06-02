@@ -26,9 +26,10 @@ export function createLayout() {
     likeBtn:     { x: 24,       y: 462,      w: 80,  h: 30  },
     dislikeBtn:  { x: 110,      y: 462,      w: 60,  h: 30  },
     shareBtn:    { x: 178,      y: 462,      w: 80,  h: 30  },
+    bellBtn:     { x: 374,      y: 462,      w: 34,  h: 30  },
     description: { x: 24,       y: 504,      w: 580, h: 100 },
     cookie:      { x: 0,        y: PH - 40,  w: PW,  h: 40  },
-    subscribe:   { x: PW - 180, y: PH - 130, w: 160, h: 50  },
+    subscribe:   { x: 266,      y: 462,      w: 100, h: 30  },
   };
 }
 

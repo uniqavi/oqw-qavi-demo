@@ -80,6 +80,14 @@ export default class GameScene extends Phaser.Scene {
     // Swap menu music → L1 theme. Crossfade so it feels continuous.
     crossfadeTo('level1', { fadeMs: 1500 });
 
+    // Art-matched hole image (drawn behind the suspicious comment when the
+    // passage is revealed). Loads async; drawHole falls back to a dark rect
+    // until it's ready.
+    this.holeImg = new Image();
+    this.holeImgLoaded = false;
+    this.holeImg.onload = () => { this.holeImgLoaded = true; };
+    this.holeImg.src = '/hole.png';
+
     // Hidden Phaser canvas children that aren't used — we draw to #oqw instead.
     this.cameras.main.setBackgroundColor(0x181818);
 
@@ -950,67 +958,35 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  // Broken-wall hole behind the suspicious comment — a dark passage with
-  // jagged torn edges, cracks spidering into the wall, and stripped colored
-  // wires sparking at the rim. This is the level's escape route.
+  // Broken-wall hole behind the suspicious comment — the level's escape
+  // route. Uses the art-matched hole.png, with a subtle live flicker + a few
+  // animated sparks layered on top so it still feels electrical/alive, plus
+  // the exit prompt once everything's collected.
   drawHole(ctx, r, ready) {
     const t = this.state.time;
     const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
 
-    // Cracks spidering out into the surrounding "wall"
-    ctx.strokeStyle = 'rgba(20, 20, 26, 0.5)';
-    ctx.lineWidth = 1.5;
-    const cracks = [[-1, -0.4], [1, -0.5], [-0.85, 0.6], [1, 0.5], [0.1, -1], [-0.2, 1]];
-    for (const [dx, dy] of cracks) {
-      const tx = cx + dx * r.w * 0.55, ty = cy + dy * r.h * 0.8;
-      let x = cx, y = cy;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      const steps = 4;
-      for (let s = 1; s <= steps; s++) {
-        x += (tx - cx) / steps + Math.sin(s * 9 + dx * 3) * 6;
-        y += (ty - cy) / steps + Math.cos(s * 7 + dy * 3) * 6;
-        ctx.lineTo(x, y);
-      }
-      ctx.stroke();
+    if (this.holeImgLoaded) {
+      // Subtle "unstable connection" opacity flicker
+      const flicker = 0.94 + Math.sin(t * 13) * 0.03 + (Math.random() < 0.06 ? -0.12 : 0);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0.7, flicker);
+      ctx.drawImage(this.holeImg, r.x, r.y, r.w, r.h);
+      ctx.restore();
+    } else {
+      // Fallback while the image loads — plain dark gap (no ugly placeholder)
+      ctx.fillStyle = '#08080c';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
     }
 
-    // Dark opening with depth + jagged rim
-    const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, r.w * 0.55);
-    g.addColorStop(0, '#000000');
-    g.addColorStop(0.6, '#0a0a12');
-    g.addColorStop(1, '#16161e');
-    ctx.beginPath();
-    const pts = 24;
-    for (let i = 0; i <= pts; i++) {
-      const ang = (i / pts) * Math.PI * 2;
-      const jag = 1 - (i % 2) * 0.16 - Math.abs(Math.sin(i * 3.1)) * 0.07;
-      const rx = r.w * 0.5 * jag, ry = r.h * 0.66 * jag;
-      const x = cx + Math.cos(ang) * rx, y = cy + Math.sin(ang) * ry;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    ctx.fillStyle = g; ctx.fill();
-    ctx.strokeStyle = 'rgba(44, 44, 52, 0.9)'; ctx.lineWidth = 2; ctx.stroke();
-
-    // Stripped colored wires poking in from the torn edges, sparking
-    const wires = [
-      { x: r.x + 46,        y: r.y + 12,        a: Math.PI * 0.75, c: '#E63946' },
-      { x: r.x + r.w - 60,  y: r.y + 10,        a: Math.PI * 0.28, c: '#4A7BC8' },
-      { x: r.x + 110,       y: r.y + r.h - 10,  a: -Math.PI * 0.7, c: '#2D8659' },
-      { x: r.x + r.w - 130, y: r.y + r.h - 8,   a: -Math.PI * 0.3, c: '#F4D35E' },
-    ];
-    for (const w of wires) {
-      const mx = w.x + Math.cos(w.a) * 16 + 3, my = w.y + Math.sin(w.a) * 16;
-      const ex = w.x + Math.cos(w.a) * 32, ey = w.y + Math.sin(w.a) * 32;
-      ctx.strokeStyle = w.c; ctx.lineWidth = 3; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.lineTo(mx, my); ctx.lineTo(ex, ey); ctx.stroke();
-      ctx.fillStyle = '#d9a066'; // stripped copper end
-      ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, Math.PI * 2); ctx.fill();
-      if (Math.random() < 0.14) { // intermittent spark
-        ctx.fillStyle = 'rgba(255, 240, 150, 0.95)';
+    // A few live sparks near the rim so the wires in the art look energized
+    for (let i = 0; i < 3; i++) {
+      if (Math.random() < 0.12) {
+        const sx = r.x + 20 + Math.random() * (r.w - 40);
+        const sy = r.y + 6 + Math.random() * (r.h - 12);
+        ctx.fillStyle = 'rgba(255, 240, 150, 0.9)';
         ctx.beginPath();
-        ctx.arc(ex + (Math.random() - 0.5) * 7, ey + (Math.random() - 0.5) * 7, 1.6, 0, Math.PI * 2);
+        ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -1243,18 +1219,36 @@ export default class GameScene extends Phaser.Scene {
       ctx.restore();
     }
 
-    // subscribe — now purely decorative page chrome (the real exit is the
-    // hidden hole). Styled like a normal red subscribe button.
+    // subscribe — decorative page chrome (the real exit is the hidden hole),
+    // now sitting in the action row beside SHARE, with a bell next to it.
     {
       const ex = layout.subscribe;
       ctx.save();
       ctx.fillStyle = '#E63946';
       ctx.fillRect(ex.x, ex.y, ex.w, ex.h);
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px ui-monospace, monospace';
+      ctx.font = 'bold 12px ui-monospace, monospace';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
       ctx.fillText('SUBSCRIBE', ex.x + ex.w / 2, ex.y + ex.h / 2);
+      ctx.textAlign = 'left';
+      ctx.restore();
+    }
+
+    // bell (notifications) — sits beside SUBSCRIBE, like a real video page
+    {
+      const bl = layout.bellBtn;
+      ctx.save();
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = '#1a1a1f';
+      ctx.lineWidth = 1;
+      ctx.fillRect(bl.x, bl.y, bl.w, bl.h);
+      ctx.strokeRect(bl.x, bl.y, bl.w, bl.h);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.font = '14px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.fillText('🔔', bl.x + bl.w / 2, bl.y + bl.h / 2 + 1);
       ctx.textAlign = 'left';
       ctx.restore();
     }
