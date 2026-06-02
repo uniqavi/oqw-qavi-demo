@@ -8,6 +8,7 @@ import {
   createPropaganda,
   createTruth,
   createLooseCookies,
+  createScanFragments,
 } from './layout.js';
 
 // Initial agent data. Each agent's update logic will live in src/game/agents/<name>.js
@@ -124,6 +125,7 @@ export function createState() {
     propaganda: createPropaganda(),
     truth: createTruth(),
     looseCookies: createLooseCookies(),
+    scanFragments: createScanFragments(),
   };
 }
 
@@ -168,6 +170,9 @@ export function resetState(state) {
   state.intelDialog = null;
   state.truthExposedT = 0;
   state.tipShowing = false;
+
+  // X-ray scan fragments back to un-revealed
+  state.scanFragments.forEach(f => { f.progress = 0; f.scanned = false; });
 
   // Agents back to idle
   state.agents.chasingRecs.forEach(a => {

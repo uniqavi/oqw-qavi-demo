@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PW, PH, PLAYER, CAMERA, GAZE, PICKUPS, RENDER, DIFFICULTY, L1 } from '../config.js';
+import { PW, PH, PLAYER, CAMERA, GAZE, PICKUPS, RENDER, DIFFICULTY, L1, SCAN } from '../config.js';
 import { createState, resetState } from '../game/state.js';
 import { recSlots, commentSlots } from '../game/layout.js';
 import { dist } from '../game/physics.js';
@@ -920,6 +920,22 @@ export default class GameScene extends Phaser.Scene {
       setTimeout(() => beep(1320, 0.25, 'sine', 0.12), 320);
     }
 
+    // X-ray scanning — slide the window over a fragment to fill its scan;
+    // at 100% the reveal latches and the truth stays on the page for good
+    // (persistent, not live-only). Free + optional — does not gate the win.
+    for (const f of state.scanFragments) {
+      if (f.scanned) continue;
+      if (this.windowOverlaps(f)) {
+        f.progress = Math.min(1, f.progress + dt * SCAN.fillPerSec);
+        if (Math.random() < 0.25) beep(1500 + Math.random() * 600, 0.004, 'square', 0.012);
+        if (f.progress >= 1) {
+          f.scanned = true;
+          beep(880, 0.08, 'sine', 0.1);
+          setTimeout(() => beep(1320, 0.1, 'sine', 0.08), 70);
+        }
+      }
+    }
+
     // Agents — Level 1 runs a REDUCED set for accessibility (see config L1).
     // Disabled agents are simply never updated, so they stay idle and render
     // as harmless page components. Projectile-cleanup loops always run so any
@@ -1002,6 +1018,67 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  // ===== X-ray scan fragments =====
+  // Window/fragment overlap test (window is size × size*0.75, centered on x/y).
+  windowOverlaps(r) {
+    const p = this.state.player, s = p.size, ph = s * 0.75;
+    const px = p.x - s / 2, py = p.y - ph / 2;
+    return px < r.x + r.w && px + s > r.x && py < r.y + r.h && py + ph > r.y;
+  }
+
+  // Hidden text shown only inside the window's rect — the live X-ray look.
+  // `progress` controls how much of the truth has decoded so far.
+  drawXrayReveal(ctx, f) {
+    const p = this.state.player, s = p.size, ph = s * 0.75;
+    const px = p.x - s / 2, py = p.y - ph / 2;
+    const shown = f.hidden.slice(0, Math.max(1, Math.ceil(f.hidden.length * f.progress)));
+    ctx.save();
+    ctx.beginPath(); ctx.rect(px, py, s, ph); ctx.clip();
+    ctx.fillStyle = SCAN.xrayBg;
+    ctx.fillRect(f.x - 2, f.y - 2, f.w + 4, f.h + 4);
+    ctx.fillStyle = SCAN.xrayColor;
+    ctx.font = f.font; ctx.textBaseline = 'top';
+    ctx.fillText(shown, f.tx, f.ty);
+    ctx.restore();
+  }
+
+  // Page-level fragment visuals (visible "lie", persistent revealed truth, and
+  // the "something here" glow). The live in-window decode is a SEPARATE later
+  // pass (drawScanXray) so the hidden-under-layer fill can't paint over it.
+  drawScanFragment(ctx, f) {
+    if (f.scanned) {
+      ctx.fillStyle = SCAN.revealColor;
+      ctx.font = f.font; ctx.textBaseline = 'top';
+      ctx.fillText(f.hidden, f.tx, f.ty);
+      return;
+    }
+    if (f.style === 'redaction') {
+      ctx.fillStyle = '#3a3a3a';
+      ctx.fillRect(f.x, f.y, f.w, f.h);
+    } else {
+      ctx.fillStyle = f.color; ctx.font = f.font; ctx.textBaseline = 'top';
+      ctx.fillText(f.visible, f.tx, f.ty);
+    }
+    if (this.windowOverlaps(f)) {
+      const pulse = 0.5 + Math.sin(this.state.time * 6) * 0.5;
+      ctx.strokeStyle = 'rgba(' + SCAN.glowColor + ',' + (0.35 + pulse * 0.4) + ')';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(f.x - 3, f.y - 3, f.w + 6, f.h + 6);
+    }
+  }
+
+  drawScanFragments(ctx) {
+    for (const f of this.state.scanFragments) this.drawScanFragment(ctx, f);
+  }
+
+  // Live in-window decode for any un-scanned fragment under the window. Drawn
+  // after the hidden under-layer so it reads as the truth seen through the glass.
+  drawScanXray(ctx) {
+    for (const f of this.state.scanFragments) {
+      if (!f.scanned && this.windowOverlaps(f)) this.drawXrayReveal(ctx, f);
+    }
+  }
+
   // ===== Render =====
   render() {
     const ctx = this.ctx;
@@ -1075,10 +1152,8 @@ export default class GameScene extends Phaser.Scene {
       ctx.fillText('▶  3:14 / ??:??', v.x + 10, v.y + v.h - 9);
       ctx.fillText('⚙ ⛶', v.x + v.w - 40, v.y + v.h - 9);
     }
-    ctx.fillStyle = '#1a1a1f';
-    ctx.font = 'bold 16px sans-serif';
-    ctx.textBaseline = 'top';
-    ctx.fillText("What They Don't Want You To See (full doc)", layout.title.x, layout.title.y);
+    // video title — drawn by the scan-fragment layer below (it's a hidden-
+    // truth fragment now: the visible headline hides "PROJECT WHITEWASH").
 
     // like button (driven by ExplodingLike agent state)
     ExplodingLike.drawButton(ctx, state.agents.explodingLike, state);
@@ -1104,16 +1179,18 @@ export default class GameScene extends Phaser.Scene {
     {
       const d = layout.description;
       ctx.fillStyle = '#eee'; ctx.fillRect(d.x, d.y, d.w, d.h);
-      ctx.fillStyle = '#1a1a1f';
-      ctx.font = '11px sans-serif';
-      ctx.textBaseline = 'top';
-      ctx.fillText('UnknownUploader  •  847K views  •  posted ████████', d.x + 10, d.y + 10);
+      // uploader line + the "memo" redaction bar are hidden-truth scan
+      // fragments now — drawn by the scan layer below. Keep a couple of
+      // plain filler bars for texture.
       ctx.fillStyle = '#666';
       ctx.fillRect(d.x + 10, d.y + 30, 540, 4);
       ctx.fillRect(d.x + 10, d.y + 42, 480, 4);
       ctx.fillRect(d.x + 10, d.y + 54, 510, 4);
-      ctx.fillRect(d.x + 10, d.y + 66, 300, 4);
     }
+
+    // X-ray scan-fragment layer — visible "lies" + persistent revealed truths
+    // (and the live in-window decode while the player hovers a fragment).
+    this.drawScanFragments(ctx);
 
     // sidebar recs — empty slot if a chasing rec is currently away from it
     for (let i = 0; i < recSlots.length; i++) {
@@ -1408,6 +1485,10 @@ export default class GameScene extends Phaser.Scene {
       ctx.restore();
     }
 
+    // Live X-ray decode of scan fragments — on top of the under-layer fill,
+    // under the player chrome, so it reads as truth seen through the window.
+    this.drawScanXray(ctx);
+
     // player
     {
       const p = state.player;
@@ -1416,6 +1497,15 @@ export default class GameScene extends Phaser.Scene {
       const px = p.x - s / 2, py = p.y - ph / 2;
       ctx.save();
       if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.45;
+      // Window-border glow when hovering un-scanned hidden content (§1 cue).
+      if (state.scanFragments.some(f => !f.scanned && this.windowOverlaps(f))) {
+        const pulse = 0.5 + Math.sin(state.time * 6) * 0.5;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(' + SCAN.glowColor + ',' + (0.45 + pulse * 0.45) + ')';
+        ctx.lineWidth = 3; ctx.shadowColor = 'rgba(' + SCAN.glowColor + ',0.9)'; ctx.shadowBlur = 12;
+        ctx.strokeRect(px - 1, py - 1, s + 2, ph + 2);
+        ctx.restore();
+      }
       drawHandRect(ctx, px, py, s, ph, p.hitFlash > 0 ? '#fff' : 'transparent', '#1a1a1f', 50);
       // title bar
       ctx.fillStyle = '#1a1a1f';

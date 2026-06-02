@@ -141,6 +141,19 @@ export const AGENTS = {
   },
 };
 
+// X-ray scanning — persistent reveal of the hidden truth under page text.
+// While the window covers a fragment, `progress` fills; at 1 the reveal
+// latches `scanned` and the truth stays on the page even after the window
+// moves away (see docs/LEVEL1.md §1). Currently a free, optional discovery
+// layer — it does not gate the win yet (that's the dossier/follow-lead step).
+export const SCAN = {
+  fillPerSec:  0.7,        // scan speed while the window overlaps a fragment
+  revealColor: '#E63946',  // persistent truth text, drawn on the page
+  xrayColor:   '#7ad0eb',  // in-window decode text (the live X-ray look)
+  xrayBg:      '#110214',  // dark backdrop behind the in-window reveal
+  glowColor:   '122,208,235', // rgb for the "something here" fragment glow
+};
+
 // Pickups
 export const PICKUPS = {
   docGrowth: 3,

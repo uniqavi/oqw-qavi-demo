@@ -66,6 +66,41 @@ export function createTruth() {
   return [{ x: slot.x, y: slot.y, w: slot.w, h: slot.h }];
 }
 
+// Hidden-truth fragments for the X-ray scan mechanic (see docs/LEVEL1.md §2).
+// Each fragment has an anchor rect (for the window-overlap test + the glow),
+// a text origin (tx/ty, top-baseline), the visible "lie" and the hidden
+// "truth". `style: 'text'` draws the lie as page text; `style: 'redaction'`
+// draws it as a censored bar (no visible text until scanned). Coordinates
+// match the page chrome drawn in GameScene.render().
+export function createScanFragments() {
+  return [
+    {
+      id: 'title', style: 'text',
+      x: 24, y: 420, w: 440, h: 26, tx: 24, ty: 422,
+      font: 'bold 16px sans-serif', color: '#1a1a1f',
+      visible: "What They Don't Want You To See (full doc)",
+      hidden:  'PROJECT WHITEWASH — [CLASSIFIED]',
+      progress: 0, scanned: false,
+    },
+    {
+      id: 'uploader', style: 'text',
+      x: 34, y: 512, w: 380, h: 16, tx: 34, ty: 514,
+      font: '11px sans-serif', color: '#1a1a1f',
+      visible: 'UnknownUploader  •  847K views  •  posted ████████',
+      hidden:  'authorized by MAX  •  [BOT TRAFFIC]  •  metrics FALSIFIED',
+      progress: 0, scanned: false,
+    },
+    {
+      id: 'memo', style: 'redaction',
+      x: 34, y: 582, w: 430, h: 14, tx: 36, ty: 583,
+      font: '11px sans-serif', color: '#1a1a1f',
+      visible: '',
+      hidden:  'the public stays bored. bored stays quiet.',
+      progress: 0, scanned: false,
+    },
+  ];
+}
+
 export function createLooseCookies() {
   return [
     { x: 100, y: 160, r: 6, taken: false, takeT: 0 },
