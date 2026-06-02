@@ -11,51 +11,35 @@ import { MenuEffects } from '../game/menuEffects.js';
 //
 // Lines are written for clean TTS delivery (full sentences, natural
 // punctuation, no inline SFX markers).
+// Trimmed for pace (playtest: the original was too long). Keeps the plot
+// beats + the best jokes, and the closing SYSTEM line bridges narratively
+// into the tutorial sandbox. Press SPACE / the SKIP button to fast-forward.
 const CUTSCENE = [
-  { speaker: 'PHONE',  text: '*BRRRT.*  *BRRRT.*  *BRRRT.*' /* SFX, not voiced */ },
-  { speaker: 'TOTO',   text: "Hey. Don't hang up.",
+  { speaker: 'PHONE',  text: '*BRRRT.*  *BRRRT.*' /* SFX, not voiced */ },
+  { speaker: 'TOTO',   text: "Hey. Don't hang up. Heard of HUSH?",
     voiceId: 'intro-toto-01' },
-  { speaker: 'YOU',    text: "I literally just opened my browser.",
-    voiceId: 'intro-you-01' },
-  { speaker: 'TOTO',   text: "Yeah. That's why I'm calling. Heard of HUSH?",
-    voiceId: 'intro-toto-02' },
   { speaker: 'YOU',    text: 'The company whose slogan is just "shh"?',
-    voiceId: 'intro-you-02' },
-  { speaker: 'TOTO',   text: "That's the one. Search, social, every video site you've ever visited. All theirs.",
-    voiceId: 'intro-toto-03' },
-  { speaker: 'TOTO',   text: "They're hiding something. We want it.",
-    voiceId: 'intro-toto-04' },
+    voiceId: 'intro-you-01' },
+  { speaker: 'TOTO',   text: "That's the one. They buried a file on their own video site. We want it.",
+    voiceId: 'intro-toto-02' },
   { speaker: 'YOU',    text: 'Define "we."',
-    voiceId: 'intro-you-03' },
-  { speaker: 'TOTO',   text: "People who'd rather not have one company telling the entire internet to shut up. Name's Toto, by the way.",
-    voiceId: 'intro-toto-05' },
+    voiceId: 'intro-you-02' },
+  { speaker: 'TOTO',   text: "People who'd rather one company didn't run the whole internet. Name's Toto, by the way.",
+    voiceId: 'intro-toto-03' },
   { speaker: 'YOU',    text: '...like the dog?',
+    voiceId: 'intro-you-03' },
+  { speaker: 'TOTO',   text: "Like the band. Anyway — get in, grab the file, plant something so we can get back later. Don't get noticed.",
+    voiceId: 'intro-toto-04' },
+  { speaker: 'YOU',    text: "And if I do get noticed?",
     voiceId: 'intro-you-04' },
-  { speaker: 'TOTO',   text: 'Like the band. But yes, also the dog.',
-    voiceId: 'intro-toto-06' },
-  { speaker: 'TOTO',   text: "There's a file. They buried it on their own video site. A whole document, hidden in a youtube page. They thought that was clever.",
-    voiceId: 'intro-toto-07' },
-  { speaker: 'YOU',    text: 'It is a little clever.',
+  { speaker: 'TOTO',   text: "The page fights back. Ads, comments, the algorithm — all HUSH.",
+    voiceId: 'intro-toto-05' },
+  { speaker: 'YOU',    text: "I'm a 75-pixel rectangle. Unnoticed is the one thing I'm good at.",
     voiceId: 'intro-you-05' },
-  { speaker: 'TOTO',   text: "Get in, find the file, plant something so we can get back in later, get out. Don't get noticed. The page will fight you.",
-    voiceId: 'intro-toto-08' },
-  { speaker: 'YOU',    text: 'The page will fight me.',
-    voiceId: 'intro-you-06' },
-  { speaker: 'TOTO',   text: "Ads, comments, the recommendation algorithm. They're all HUSH.",
-    voiceId: 'intro-toto-09' },
-  { speaker: 'YOU',    text: "I'm a 75-pixel rectangle. Watching me back is the only thing I do.",
-    voiceId: 'intro-you-07' },
-  { speaker: 'TOTO',   text: "That's the spirit.",
-    voiceId: 'intro-toto-10' },
-  { speaker: 'YOU',    text: 'Pay?',
-    voiceId: 'intro-you-08' },
-  { speaker: 'TOTO',   text: 'Enough to upgrade you to 200 pixels.',
-    voiceId: 'intro-toto-11' },
-  { speaker: 'YOU',    text: 'Send the address.',
-    voiceId: 'intro-you-09' },
-  { speaker: 'SYSTEM', text: '> spoofing user agent...' },
-  { speaker: 'SYSTEM', text: "> you are now: 'NormalBrowser/1.0'" },
-  { speaker: 'SYSTEM', text: '> connecting to totallynormaltube.gov.??' },
+  { speaker: 'TOTO',   text: "That's the spirit. Sending the address now.",
+    voiceId: 'intro-toto-06' },
+  { speaker: 'SYSTEM', text: "> spoofing user agent — you are 'NormalBrowser/1.0'" },
+  { speaker: 'SYSTEM', text: '> deploying to a sandbox for calibration...' },
 ];
 
 const SPEAKER_COLORS = {
@@ -275,7 +259,7 @@ export default class MenuScene extends Phaser.Scene {
         if (text[i - 1] !== ' ' && Math.random() < 0.25) {
           beep(1700 + Math.random() * 500, 0.005, 'square', 0.012);
         }
-        this.typewriterTimer = setTimeout(tick, 26);
+        this.typewriterTimer = setTimeout(tick, 18);
       } else {
         this.typingActive = false;
         this.dom.dialogueHint.style.opacity = '0.7';

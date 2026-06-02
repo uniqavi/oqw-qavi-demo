@@ -91,6 +91,20 @@ export default class TutorialScene extends Phaser.Scene {
     // Exit confirmation (Toto's farewell before leaving the tutorial)
     this.atExit = false;
 
+    // Doc as INSTANCE state — TUT.doc is module-level, so mutating its
+    // `.taken` directly softlocked the COLLECT step on a replay (the doc
+    // stayed "taken" and never reappeared). Copy it fresh each run.
+    this.doc = { ...TUT.doc };
+
+    // Anti-softlock failsafe: tracks time on the current step so we can
+    // escalate the hint and, if truly stuck, auto-complete the objective.
+    this._lastStep = -1;
+    this.stepT = 0;
+    this._escalated = false;
+
+    // Fade-from-black on entry (smooths the menu → tutorial transition)
+    this.introFade = 1;
+
     // Input
     this.cursors = this.input.keyboard.createCursorKeys();
     this.wasd = this.input.keyboard.addKeys({
@@ -128,7 +142,7 @@ export default class TutorialScene extends Phaser.Scene {
     window.addEventListener('resize', this.handleResize);
 
     initAudio();
-    this.say('TOTO', "Before you go live — let's check you work. Use WASD. Walk down.", 'WASD to move');
+    this.say('TOTO', "Easy — this is just a sandbox. A blank test page, no eyes on you. Let's calibrate before you go live. Use WASD, walk down.", 'WASD to move');
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       window.removeEventListener('resize', this.handleResize);
@@ -179,6 +193,7 @@ export default class TutorialScene extends Phaser.Scene {
   update(_time, deltaMs) {
     const dt = Math.min(0.05, deltaMs / 1000);
     this.time += dt;
+    if (this.introFade > 0) this.introFade = Math.max(0, this.introFade - dt * 1.4);
     if (this.player.invuln > 0) this.player.invuln -= dt;
     if (this.player.hitFlash > 0) this.player.hitFlash -= dt;
 
@@ -253,6 +268,11 @@ export default class TutorialScene extends Phaser.Scene {
     const p = this.player;
     const st = this.scanTarget;
 
+    // Anti-softlock failsafe — escalate hints, then auto-complete if stuck
+    if (this.step !== this._lastStep) { this._lastStep = this.step; this.stepT = 0; this._escalated = false; }
+    else { this.stepT += dt; }
+    this.checkStuck();
+
     if (this.step === STEP.MOVE) {
       if (this.movedDistance > 160) {
         this.step = STEP.SCAN;
@@ -273,7 +293,7 @@ export default class TutorialScene extends Phaser.Scene {
         }
       }
     } else if (this.step === STEP.COLLECT) {
-      const d = TUT.doc;
+      const d = this.doc;
       if (!d.taken && Math.hypot(p.x - d.x, p.y - d.y) < d.r + p.size * 0.32) {
         d.taken = true; d.takeT = this.time;
         beep(880, 0.08, 'sine', 0.13); beep(1320, 0.12, 'sine', 0.1);
@@ -315,6 +335,28 @@ export default class TutorialScene extends Phaser.Scene {
       this.atExit = true;
       this.say('TOTO', "This is where I leave you. The next page is the real thing — I won't be on the line. Good luck.", 'press SPACE or click to go in');
       beep(440, 0.12, 'sine', 0.08);
+    }
+  }
+
+  // Anti-softlock: if the player lingers on a step, escalate the hint, then
+  // auto-complete the objective so the tutorial can NEVER permanently block.
+  checkStuck() {
+    if (this.spot.active) return;            // don't count time during a pause
+    const st = this.scanTarget;
+    if (!this._escalated && this.stepT > 10) {
+      this._escalated = true;
+      if (this.step === STEP.MOVE)      this.say('TOTO', "Use WASD or the arrow keys — walk down the page.", 'WASD to move');
+      else if (this.step === STEP.SCAN) this.say('TOTO', "Put your red window right on top of that banner near the top, and hold it there.", 'hold over the banner');
+      else if (this.step === STEP.COLLECT) this.say('TOTO', "The glowing yellow file — just walk into it.", 'touch the yellow file');
+    }
+    if (this.stepT > 20) {
+      if (this.step === STEP.SCAN && !st.scanned) {
+        st.progress = 1; st.scanned = true; this.step = STEP.COLLECT;
+        this.say('TOTO', "...there, I pulled it for you. Now grab that yellow file.", 'grab the file');
+      } else if (this.step === STEP.COLLECT && !this.doc.taken) {
+        this.doc.taken = true; this.step = STEP.CHASER;
+        this.say('TOTO', "Got it for you. Keep heading down.", 'keep going down');
+      }
     }
   }
 
@@ -413,8 +455,9 @@ export default class TutorialScene extends Phaser.Scene {
     ctx.scale(c.zoom, c.zoom);
     ctx.translate(-c.x, -c.y);
 
-    // Page bg + grid
-    ctx.fillStyle = '#f0f0f0';
+    // Page bg + grid — soft warm off-white (less of a harsh bright slab
+    // right after the dark menu room, eases the transition)
+    ctx.fillStyle = '#e8e6e1';
     ctx.fillRect(0, 0, W, H);
     ctx.strokeStyle = 'rgba(0,0,0,0.03)';
     ctx.lineWidth = 1; ctx.beginPath();
@@ -442,6 +485,12 @@ export default class TutorialScene extends Phaser.Scene {
       g.addColorStop(0, 'rgba(0,0,0,0)');
       g.addColorStop(1, 'rgba(0,0,0,0.82)');
       ctx.fillStyle = g;
+      ctx.fillRect(0, 0, VW, VH);
+    }
+
+    // Fade-from-black on entry (smooths the menu → tutorial cut)
+    if (this.introFade > 0) {
+      ctx.fillStyle = 'rgba(8, 8, 10, ' + this.introFade + ')';
       ctx.fillRect(0, 0, VW, VH);
     }
   }
@@ -525,7 +574,7 @@ export default class TutorialScene extends Phaser.Scene {
   }
 
   drawDoc(ctx) {
-    const d = TUT.doc;
+    const d = this.doc;
     if (d.taken) return;
     const pulse = 1 + Math.sin(this.time * 4) * 0.12;
     ctx.save(); ctx.translate(d.x, d.y); ctx.scale(pulse, pulse);
@@ -604,8 +653,12 @@ export default class TutorialScene extends Phaser.Scene {
     if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.45;
     drawHandRect(ctx, px, py, s, ph, p.hitFlash > 0 ? '#fff' : '#E63946', '#1a1a1f', 50);
     ctx.fillStyle = '#1a1a1f'; ctx.fillRect(px + 1, py + 1, s - 2, 14);
+    // title text — clipped to the title bar so it can't overflow the window
+    ctx.save();
+    ctx.beginPath(); ctx.rect(px + 4, py + 1, s - 8, 13); ctx.clip();
     ctx.fillStyle = '#fff'; ctx.font = '8px ui-monospace, monospace'; ctx.textBaseline = 'middle';
-    ctx.fillText('NormalBrowser/1.0', px + 5, py + 8);
+    ctx.fillText(s > 70 ? 'NormalBrowser/1.0' : 'NB/1.0', px + 5, py + 8);
+    ctx.restore();
     ctx.restore();
   }
 
