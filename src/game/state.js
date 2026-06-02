@@ -140,9 +140,10 @@ export function resetState(state) {
   state.cookieCollected = false;
 
   const prop = state.propaganda[0];
-  prop.x = 50; prop.y = 850;
+  prop.x = prop.homeX; prop.y = prop.homeY;
   prop.dragging = false;
   prop.dox = 0; prop.doy = 0;
+  prop.revealed = false;
 
   state.cursor = null;
   state.gaze = 0;

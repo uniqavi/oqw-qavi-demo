@@ -46,12 +46,23 @@ export function createCookieJar() {
   return { x: 460, y: 1050, r: 24, taken: false, takeT: 0 };
 }
 
+// The suspicious comment — sits INLINE in the comment column (slot 2),
+// sized exactly like a real comment. It looks normal but greyer ("fishy").
+// Dragging it off its home spot reveals the hidden passage (the hole) behind.
 export function createPropaganda() {
-  return [{ x: 50, y: 850, w: 220, h: 130, dragging: false, dox: 0, doy: 0 }];
+  const slot = commentSlots[2]; // { x:24, y:820, w:580, h:88 }
+  return [{
+    x: slot.x, y: slot.y, w: slot.w, h: slot.h,
+    homeX: slot.x, homeY: slot.y,
+    dragging: false, dox: 0, doy: 0, revealed: false,
+  }];
 }
 
+// The hidden passage (hole), occupying the same slot — revealed when the
+// suspicious comment is dragged away. This is the level's escape route.
 export function createTruth() {
-  return [{ x: 80, y: 880, w: 160, h: 90 }];
+  const slot = commentSlots[2];
+  return [{ x: slot.x, y: slot.y, w: slot.w, h: slot.h }];
 }
 
 export function createLooseCookies() {

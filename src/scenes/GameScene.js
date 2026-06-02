@@ -820,32 +820,19 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Truth coverage → gaze
-    let exposed = 0;
-    for (const t of state.truth) {
-      let covered = false;
-      const cx = t.x + t.w / 2, cy = t.y + t.h / 2;
-      for (const prop of state.propaganda) {
-        if (cx >= prop.x && cx <= prop.x + prop.w && cy >= prop.y && cy <= prop.y + prop.h) {
-          covered = true;
-          break;
-        }
+    // Reveal the hidden passage: once the suspicious comment is dragged far
+    // enough off its home spot, the hole behind it is uncovered. Latches, and
+    // plays the intel memo once (you read what they were hiding as you open
+    // the passage). Gaze/cursor is disabled in L1, so no gaze accumulation.
+    {
+      const prop = state.propaganda[0];
+      const movedAway = Math.hypot(prop.x - prop.homeX, prop.y - prop.homeY) > 70;
+      if (movedAway && !prop.revealed) {
+        prop.revealed = true;
+        noise(0.3, 0.14);
+        beep(90, 0.45, 'sawtooth', 0.09);   // wall cracking open
+        this.startIntel();                   // self-guards against re-trigger
       }
-      if (!covered) exposed++;
-    }
-    if (exposed > 0) {
-      state.gaze = Math.min(GAZE.threshold, state.gaze + GAZE.raisePerSec * exposed * dt);
-      if (Math.random() < 0.04) beep(180 + state.gaze * 5, 0.06, 'triangle', 0.018);
-      // First-time intel reveal: if the player has had the memo uncovered
-      // for ~0.4s (debounce so they don't trigger by brushing it), play the
-      // dialog. Only fires once per run.
-      if (!state.intelRevealed) {
-        state.truthExposedT += dt;
-        if (state.truthExposedT >= 0.4) this.startIntel();
-      }
-    } else {
-      state.gaze = Math.max(0, state.gaze - GAZE.fallPerSec * dt);
-      state.truthExposedT = 0;
     }
 
     // Cursor (gaze enforcer) — disabled in L1 for accessibility (config L1).
@@ -943,12 +930,16 @@ export default class GameScene extends Phaser.Scene {
     }
     GunShooter.updateProjectiles(state, dt);
 
-    // Win trigger — instead of jumping straight to 'won', start the malware
-    // install → short-circuit → glitch-wipe sequence. The sequence then sets
-    // state.status to 'won' which lets the existing results overlay run.
+    // Win trigger — slip through the revealed hole once everything's
+    // collected. Replaces the old "reach SUBSCRIBE" exit. Starts the malware
+    // install → short-circuit → glitch-wipe sequence, which flips status to
+    // 'won' and runs the results overlay.
     if (state.docsCollected === state.docs.length && state.cookieCollected) {
-      const ex = state.layout.subscribe;
-      if (p.x > ex.x - 10 && p.x < ex.x + ex.w + 10 && p.y > ex.y - 10 && p.y < ex.y + ex.h + 10) {
+      const prop = state.propaganda[0];
+      const hole = state.truth[0];
+      if (prop.revealed &&
+          p.x > hole.x && p.x < hole.x + hole.w &&
+          p.y > hole.y - 12 && p.y < hole.y + hole.h + 12) {
         state.stats.endedAt = state.time;
         beep(523, 0.1, 'sine', 0.1);
         setTimeout(() => beep(659, 0.1, 'sine', 0.1), 80);
@@ -956,6 +947,82 @@ export default class GameScene extends Phaser.Scene {
         setTimeout(() => beep(1047, 0.25, 'sine', 0.1), 320);
         this.beginEndSequence();
       }
+    }
+  }
+
+  // Broken-wall hole behind the suspicious comment — a dark passage with
+  // jagged torn edges, cracks spidering into the wall, and stripped colored
+  // wires sparking at the rim. This is the level's escape route.
+  drawHole(ctx, r, ready) {
+    const t = this.state.time;
+    const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+
+    // Cracks spidering out into the surrounding "wall"
+    ctx.strokeStyle = 'rgba(20, 20, 26, 0.5)';
+    ctx.lineWidth = 1.5;
+    const cracks = [[-1, -0.4], [1, -0.5], [-0.85, 0.6], [1, 0.5], [0.1, -1], [-0.2, 1]];
+    for (const [dx, dy] of cracks) {
+      const tx = cx + dx * r.w * 0.55, ty = cy + dy * r.h * 0.8;
+      let x = cx, y = cy;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      const steps = 4;
+      for (let s = 1; s <= steps; s++) {
+        x += (tx - cx) / steps + Math.sin(s * 9 + dx * 3) * 6;
+        y += (ty - cy) / steps + Math.cos(s * 7 + dy * 3) * 6;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    // Dark opening with depth + jagged rim
+    const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, r.w * 0.55);
+    g.addColorStop(0, '#000000');
+    g.addColorStop(0.6, '#0a0a12');
+    g.addColorStop(1, '#16161e');
+    ctx.beginPath();
+    const pts = 24;
+    for (let i = 0; i <= pts; i++) {
+      const ang = (i / pts) * Math.PI * 2;
+      const jag = 1 - (i % 2) * 0.16 - Math.abs(Math.sin(i * 3.1)) * 0.07;
+      const rx = r.w * 0.5 * jag, ry = r.h * 0.66 * jag;
+      const x = cx + Math.cos(ang) * rx, y = cy + Math.sin(ang) * ry;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = 'rgba(44, 44, 52, 0.9)'; ctx.lineWidth = 2; ctx.stroke();
+
+    // Stripped colored wires poking in from the torn edges, sparking
+    const wires = [
+      { x: r.x + 46,        y: r.y + 12,        a: Math.PI * 0.75, c: '#E63946' },
+      { x: r.x + r.w - 60,  y: r.y + 10,        a: Math.PI * 0.28, c: '#4A7BC8' },
+      { x: r.x + 110,       y: r.y + r.h - 10,  a: -Math.PI * 0.7, c: '#2D8659' },
+      { x: r.x + r.w - 130, y: r.y + r.h - 8,   a: -Math.PI * 0.3, c: '#F4D35E' },
+    ];
+    for (const w of wires) {
+      const mx = w.x + Math.cos(w.a) * 16 + 3, my = w.y + Math.sin(w.a) * 16;
+      const ex = w.x + Math.cos(w.a) * 32, ey = w.y + Math.sin(w.a) * 32;
+      ctx.strokeStyle = w.c; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.lineTo(mx, my); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = '#d9a066'; // stripped copper end
+      ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, Math.PI * 2); ctx.fill();
+      if (Math.random() < 0.14) { // intermittent spark
+        ctx.fillStyle = 'rgba(255, 240, 150, 0.95)';
+        ctx.beginPath();
+        ctx.arc(ex + (Math.random() - 0.5) * 7, ey + (Math.random() - 0.5) * 7, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Exit cue once everything's collected
+    if (ready) {
+      const pulse = 0.5 + Math.sin(t * 5) * 0.5;
+      ctx.fillStyle = 'rgba(124, 208, 235, ' + (0.55 + pulse * 0.45) + ')';
+      ctx.font = 'bold 12px ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('↳ SLIP THROUGH TO ESCAPE', cx, cy);
+      ctx.textAlign = 'left';
     }
   }
 
@@ -1083,8 +1150,10 @@ export default class GameScene extends Phaser.Scene {
     }
     ChasingRecs.drawAgents(ctx, state.agents.chasingRecs, state);
 
-    // comments — skip the falling-comment slot (drawn separately below)
+    // comments — skip the falling-comment slot (drawn separately below) and
+    // slot 2, which is the suspicious (draggable) comment + hole behind it.
     for (let i = 0; i < commentSlots.length; i++) {
+      if (i === 2) continue;
       if (FallingComment.isAgentSlot(state.agents.fallingComment, i)) continue;
       const slot = commentSlots[i];
       drawComment(ctx, slot.x, slot.y, slot.w, slot.h, i, false, null);
@@ -1093,69 +1162,68 @@ export default class GameScene extends Phaser.Scene {
       FallingComment.drawAgent(ctx, state.agents.fallingComment, state);
     }
 
-    // truth + propaganda
-    for (const t of state.truth) {
-      drawHandRect(ctx, t.x, t.y, t.w, t.h, '#0c0c0e', '#0c0c0e', 100);
-      ctx.fillStyle = '#E63946';
-      ctx.font = 'bold 10px ui-monospace, monospace';
-      ctx.textBaseline = 'top';
-      ctx.fillText('CLASSIFIED // L4', t.x + 8, t.y + 8);
-      ctx.fillStyle = 'rgba(245,245,245,0.85)';
-      const lines = [110, 90, 100, 70];
-      for (let i = 0; i < lines.length; i++) ctx.fillRect(t.x + 8, t.y + 26 + i * 11, lines[i], 5);
+    // The hidden passage (hole) behind the suspicious comment. Only drawn
+    // once the player starts moving the comment, so it stays concealed until
+    // uncovered. The comment is drawn AFTER, so when home it covers the hole.
+    {
+      const prop = state.propaganda[0];
+      const hole = state.truth[0];
+      if (prop.dragging || prop.revealed) {
+        const ready = state.docsCollected === state.docs.length && state.cookieCollected;
+        this.drawHole(ctx, hole, ready);
+      }
     }
-    // Propaganda — redesigned to look like a slightly-off comment (no more
-    // giant "AD / IGNORANCE IS STRENGTH" block). Background is a muted cream
-    // that's just barely different from the page bg so it hints "something
-    // here is hiding intel," but doesn't shout. Still draggable.
+
+    // The suspicious comment — looks like a normal comment but greyer, so the
+    // player senses something's off. Draggable; pulling it aside reveals the
+    // hole behind it.
     for (const prop of state.propaganda) {
       ctx.save();
       if (prop.dragging) {
-        ctx.shadowColor = 'rgba(0,0,0,0.25)';
-        ctx.shadowBlur = 14;
-        ctx.shadowOffsetY = 4;
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowBlur = 16;
+        ctx.shadowOffsetY = 5;
       }
-      // Slightly darker / off-cream background — subtle visual cue
-      drawHandRect(ctx, prop.x, prop.y, prop.w, prop.h, '#e8e2d0', '#9a8f6a', 200, 1.4);
-      ctx.shadowBlur = 0;
+      // Grey card (real-comment layout, just desaturated)
+      drawHandRect(ctx, prop.x, prop.y, prop.w, prop.h, '#d6d6d6', '#b0b0b0', 200, 1.2);
+      ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
-      // Avatar circle (left) — gray "?" to feel anonymized
-      ctx.fillStyle = '#6a6a72';
+      // Avatar
+      ctx.fillStyle = '#9a9a9a';
       ctx.beginPath();
       ctx.arc(prop.x + 22, prop.y + 22, 14, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 13px ui-monospace, monospace';
+      ctx.fillStyle = '#f0f0f0';
+      ctx.font = 'bold 12px ui-monospace, monospace';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
       ctx.fillText('?', prop.x + 22, prop.y + 23);
       ctx.textAlign = 'left';
 
-      // Redacted username + timestamp
-      ctx.fillStyle = '#3a3a3f';
+      // Username + timestamp (looks normal)
+      ctx.fillStyle = '#5a5a5a';
       ctx.font = 'bold 11px sans-serif';
       ctx.textBaseline = 'top';
-      ctx.fillText('@████████  •  █ hours ago', prop.x + 44, prop.y + 8);
+      ctx.fillText('@user_?   •   2 hours ago', prop.x + 44, prop.y + 8);
 
-      // Body — looks like a comment but the lines are abnormally censored,
-      // so a careful player notices something's off. Black "redaction" bars.
-      ctx.fillStyle = '#1a1a1f';
-      ctx.fillRect(prop.x + 44,  prop.y + 30, 140, 8);
-      ctx.fillRect(prop.x + 44,  prop.y + 44, 110, 8);
-      ctx.fillRect(prop.x + 44,  prop.y + 58, 154, 8);
-      ctx.fillRect(prop.x + 44,  prop.y + 72,  60, 8);
+      // Comment text — innocuous but a touch too eager (the "fishy" tell)
+      ctx.fillStyle = '#6a6a6a';
+      ctx.font = '11px sans-serif';
+      ctx.fillText("yeah totally, nothing weird going on here. move along.", prop.x + 44, prop.y + 28);
 
-      // Faint footer (like comment likes/reply)
-      ctx.fillStyle = '#8a8170';
+      // Footer (likes / reply)
+      ctx.fillStyle = '#999999';
       ctx.font = '10px ui-monospace, monospace';
-      ctx.fillText('👍 ███   👎   reply', prop.x + 44, prop.y + 92);
+      ctx.fillText('👍 0   👎   reply', prop.x + 44, prop.y + 56);
 
-      // Drag hint at the start — small, in the bottom corner of the block
-      if (!prop.dragging && !state.intelRevealed && state.time < 8) {
+      // Early drag hint
+      if (!prop.dragging && !prop.revealed && state.time < 12) {
         const pulse = 0.5 + Math.sin(state.time * 4) * 0.3;
         ctx.fillStyle = 'rgba(230, 57, 70, ' + pulse + ')';
         ctx.font = 'bold 9px ui-monospace, monospace';
-        ctx.fillText('▸ drag me', prop.x + 16, prop.y + prop.h - 14);
+        ctx.textAlign = 'right';
+        ctx.fillText('▸ drag this aside', prop.x + prop.w - 12, prop.y + prop.h - 14);
+        ctx.textAlign = 'left';
       }
       ctx.restore();
     }
@@ -1175,29 +1243,18 @@ export default class GameScene extends Phaser.Scene {
       ctx.restore();
     }
 
-    // subscribe
+    // subscribe — now purely decorative page chrome (the real exit is the
+    // hidden hole). Styled like a normal red subscribe button.
     {
       const ex = layout.subscribe;
-      const allDocs = state.docsCollected === state.docs.length;
-      const ready = allDocs && state.cookieCollected;
-      const pulse = ready ? 1 + Math.sin(state.time * 4) * 0.05 : 1;
       ctx.save();
-      ctx.translate(ex.x + ex.w / 2, ex.y + ex.h / 2);
-      ctx.scale(pulse, pulse);
-      ctx.fillStyle = ready ? '#2D8659' : (allDocs ? '#B8860B' : '#666');
-      ctx.fillRect(-ex.w / 2, -ex.h / 2, ex.w, ex.h);
+      ctx.fillStyle = '#E63946';
+      ctx.fillRect(ex.x, ex.y, ex.w, ex.h);
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 14px ui-monospace, monospace';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
-      ctx.fillText(ready ? 'SUBSCRIBE ↗' : 'SUBSCRIBE', 0, -4);
-      ctx.font = '8px ui-monospace, monospace';
-      ctx.fillText(
-        ready ? '(exfiltrate)' :
-          (allDocs ? '(accept cookies first)' :
-            '(need ' + (state.docs.length - state.docsCollected) + ' more docs)'),
-        0, 12,
-      );
+      ctx.fillText('SUBSCRIBE', ex.x + ex.w / 2, ex.y + ex.h / 2);
       ctx.textAlign = 'left';
       ctx.restore();
     }
@@ -1366,16 +1423,28 @@ export default class GameScene extends Phaser.Scene {
       ctx.save();
       if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.45;
       drawHandRect(ctx, px, py, s, ph, p.hitFlash > 0 ? '#fff' : 'transparent', '#1a1a1f', 50);
+      // title bar
       ctx.fillStyle = '#1a1a1f';
       ctx.fillRect(px + 1, py + 1, s - 2, 14);
-      ctx.fillStyle = '#fff';
-      ctx.font = '8px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('PRIMITIVE_ERROR.exe', px + 5, py + 8);
+      // close button (drawn first so the title text can clip up to it)
       ctx.fillStyle = '#E63946';
       ctx.fillRect(px + s - 13, py + 3, 9, 9);
       ctx.fillStyle = '#fff';
+      ctx.font = '8px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
       ctx.fillText('×', px + s - 11, py + 8);
+      // title text — shortens at small sizes AND is clipped to the bar so it
+      // can never overflow the window when the player shrinks from damage.
+      const label = s > 130 ? 'PRIMITIVE_ERROR.exe' : s > 80 ? 'ERROR.exe' : s > 50 ? 'ERR' : '';
+      if (label) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(px + 4, py + 1, s - 19, 13);   // clip region stops before the × button
+        ctx.clip();
+        ctx.fillStyle = '#fff';
+        ctx.fillText(label, px + 5, py + 8);
+        ctx.restore();
+      }
       if (s > 50) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.font = 'bold 10px ui-monospace, monospace';
@@ -1436,14 +1505,15 @@ export default class GameScene extends Phaser.Scene {
     this.hud.zoom.textContent = Math.round((state.cam.zoom / state.cam.baseZoom) * 100) + '%';
 
     const gun = state.agents.gunShooter;
+    const prop = state.propaganda[0];
+    const allDone = state.docsCollected === state.docs.length && state.cookieCollected;
     if (gun.state === 'aiming') this.hud.hint.textContent = '⚠ the avatar has a gun. of course it does. RUN AT IT';
     else if (gun.state === 'awakening') this.hud.hint.textContent = '⚠ avatar waking up. this is bad';
     else if (state.cursor) this.hud.hint.textContent = 'cursor is on you. break line of sight';
-    else if (state.gaze > 60) this.hud.hint.textContent = 'page is suspicious. cover the red bit';
+    else if (allDone && prop.revealed) this.hud.hint.textContent = 'everything\'s yours. slip through the hole to escape.';
+    else if (allDone) this.hud.hint.textContent = 'drag the grey comment aside — there\'s a way out behind it.';
     else if (state.docsCollected === state.docs.length && !state.cookieCollected)
       this.hud.hint.textContent = 'docs got. now the cookies';
-    else if (state.docsCollected === state.docs.length && state.cookieCollected)
-      this.hud.hint.textContent = 'subscribe. plant the malware. leave.';
     else this.hud.hint.textContent = (state.docs.length - state.docsCollected) + ' more docs to grab';
   }
 
