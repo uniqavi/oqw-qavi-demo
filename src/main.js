@@ -18,4 +18,12 @@ const config = {
   },
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+// Dev-only handle so the preview/verification workflow can jump straight to a
+// scene (e.g. window.__game.scene.start('GameScene', { difficulty: 'easy' }))
+// without clicking through the cutscene + tutorial. Vite strips this whole
+// block from production builds (import.meta.env.DEV is statically false).
+if (import.meta.env.DEV) {
+  window.__game = game;
+}
