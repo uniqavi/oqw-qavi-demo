@@ -713,7 +713,9 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
    stays centered + smaller.
    ========================================================================== */
 
-/* ---- Intro cutscene panel (bottom of the menu room) ---- */
+/* ---- Intro cutscene panel (bottom of the menu room) ----
+   The clip-path lives on ::before so the speaker chip and SKIP button can
+   poke above the panel's top edge (otherwise they'd be clipped). */
 .dialogue {
   position: absolute;
   left: 4%; right: 4%;
@@ -724,18 +726,23 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   display: flex;
   align-items: stretch;
   gap: 26px;
-  background:
-    linear-gradient(180deg, rgba(10,12,20,0.92) 0%, rgba(10,12,20,0.97) 100%);
+  transform: none;
+}
+.dialogue::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(10,12,20,0.92) 0%, rgba(10,12,20,0.97) 100%);
   border: 1.5px solid rgba(122, 208, 235, 0.55);
-  /* Angled VN frame — small cuts at each corner */
   clip-path: polygon(
     18px 0%, calc(100% - 18px) 0%, 100% 18px,
     100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%,
     0% calc(100% - 18px), 0% 18px
   );
-  box-shadow: 0 -22px 50px rgba(0,0,0,0.5), 0 0 28px rgba(122, 208, 235, 0.12) inset;
-  transform: none;
+  box-shadow: 0 -22px 50px rgba(0,0,0,0.5);
+  pointer-events: none;
+  z-index: 0;
 }
+.dialogue > * { position: relative; z-index: 1; }
 
 /* Portrait frame on the left (when a portrait is set). Angular cut corners
    like the references — not a circle. */
@@ -761,14 +768,24 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 .dialogue-body {
   flex: 1; min-width: 0;
   position: relative;
-  padding: 6px 76px 28px 8px;   /* right padding leaves room for NEXT */
+  padding: 18px 86px 28px 8px;   /* room for NEXT badge + above-clip speaker */
   display: flex; flex-direction: column;
+  justify-content: center;
 }
+/* Speaker name as an angular chip that pokes above the panel's top-left.
+   Background color is set inline from JS (per speaker: red/blue/green/grey). */
 .dialogue-speaker {
-  font-family: var(--font-mono);
-  font-size: 13px; letter-spacing: 5px; font-weight: 700;
-  color: var(--red);
-  margin-bottom: 14px;
+  position: absolute;
+  top: -26px; left: 6px;
+  background: var(--red);  /* JS overrides per speaker */
+  color: #fff;
+  font-family: 'Saira Condensed', sans-serif;
+  font-size: 22px; font-weight: 800;
+  letter-spacing: 5px;
+  padding: 8px 22px 6px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  clip-path: polygon(0% 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
+  z-index: 3;
 }
 .dialogue-line {
   font-family: 'Saira Condensed', sans-serif;
@@ -778,12 +795,7 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   white-space: pre-wrap;
   text-shadow: 0 1px 2px rgba(0,0,0,0.6);
 }
-.dialogue-hint {
-  font-family: var(--font-mono);
-  font-size: 11px; letter-spacing: 1.5px;
-  color: rgba(122, 208, 235, 0.65);
-  opacity: 0; transition: opacity 0.2s;
-}
+.dialogue-hint { display: none; }  /* small advance-hint removed — NEXT badge IS the affordance */
 /* Bottom-right "MESSAGE" subtitle tag — small typography flourish */
 .dialogue-body::before {
   content: 'MESSAGE';
@@ -846,16 +858,22 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   display: flex;
   align-items: stretch;
   gap: 26px;
-  background:
-    linear-gradient(180deg, rgba(10,12,20,0.92) 0%, rgba(10,12,20,0.97) 100%);
+}
+.tutorial-dialog::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(10,12,20,0.92) 0%, rgba(10,12,20,0.97) 100%);
   border: 1.5px solid rgba(122, 208, 235, 0.55);
   clip-path: polygon(
     18px 0%, calc(100% - 18px) 0%, 100% 18px,
     100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%,
     0% calc(100% - 18px), 0% 18px
   );
-  box-shadow: 0 -22px 50px rgba(0,0,0,0.5), 0 0 28px rgba(122, 208, 235, 0.12) inset;
+  box-shadow: 0 -22px 50px rgba(0,0,0,0.5);
+  pointer-events: none;
+  z-index: 0;
 }
+.tutorial-dialog > * { position: relative; z-index: 1; }
 .tutorial-dialog.hidden { display: none; }
 .tutorial-portrait {
   width: 200px; height: 100%;
@@ -871,14 +889,24 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 .tutorial-body {
   flex: 1; min-width: 0;
   position: relative;
-  padding: 6px 76px 24px 8px;
+  padding: 18px 86px 22px 8px;
   display: flex; flex-direction: column;
+  justify-content: center;
 }
+/* Tutorial only ever shows TOTO — chip is permanently red. Same angular
+   chip shape as the intro panel for visual consistency. */
 .tutorial-speaker {
-  font-family: var(--font-mono);
-  font-size: 13px; letter-spacing: 5px; font-weight: 700;
-  color: var(--red);
-  margin-bottom: 14px;
+  position: absolute;
+  top: -26px; left: 6px;
+  background: var(--red);
+  color: #fff;
+  font-family: 'Saira Condensed', sans-serif;
+  font-size: 22px; font-weight: 800;
+  letter-spacing: 5px;
+  padding: 8px 22px 6px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  clip-path: polygon(0% 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
+  z-index: 3;
 }
 .tutorial-line {
   font-family: 'Saira Condensed', sans-serif;
@@ -887,12 +915,7 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   color: #f0f4f8; flex: 1;
   text-shadow: 0 1px 2px rgba(0,0,0,0.6);
 }
-.tutorial-hint {
-  font-family: var(--font-mono);
-  font-size: 11px; letter-spacing: 1.5px;
-  color: rgba(122, 208, 235, 0.65);
-  opacity: 0; transition: opacity 0.25s;
-}
+.tutorial-hint { display: none; }
 .tutorial-body::before {
   content: 'MESSAGE';
   position: absolute; right: 78px; bottom: 4px;
@@ -1283,6 +1306,13 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 .intel-dialog.hidden { display: none; }
 .intel-frame {
   position: relative;
+  padding: 28px 96px 32px 28px;
+  font-family: var(--font-mono);
+  color: #f0f4f8;
+}
+.intel-frame::before {
+  content: '';
+  position: absolute; inset: 0;
   background: linear-gradient(180deg, rgba(10,12,20,0.94) 0%, rgba(10,12,20,0.98) 100%);
   border: 1.5px solid rgba(122, 208, 235, 0.55);
   clip-path: polygon(
@@ -1290,17 +1320,24 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
     100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%,
     0% calc(100% - 18px), 0% 18px
   );
-  padding: 24px 96px 32px 28px;
-  font-family: var(--font-mono);
-  color: #f0f4f8;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 28px rgba(122, 208, 235, 0.15) inset;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 0;
 }
+.intel-frame > * { position: relative; z-index: 1; }
 .intel-tag {
-  font-size: 12px;
+  position: absolute;
+  top: -22px; left: 6px;
+  background: var(--red);
+  color: #fff;
+  font-family: 'Saira Condensed', sans-serif;
+  font-size: 18px; font-weight: 800;
   letter-spacing: 4px;
-  font-weight: 700;
-  color: var(--red);
-  margin-bottom: 14px;
+  padding: 6px 18px 4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  clip-path: polygon(0% 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  z-index: 3;
+  white-space: nowrap;
 }
 .intel-line {
   font-family: 'Saira Condensed', sans-serif;
@@ -1311,15 +1348,7 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   min-height: 60px;
   text-shadow: 0 1px 2px rgba(0,0,0,0.6);
 }
-.intel-hint {
-  font-size: 10px;
-  letter-spacing: 2px;
-  color: rgba(122, 208, 235, 0.65);
-  margin-top: 14px;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-.intel-hint.show { opacity: 0.7; }
+.intel-hint { display: none; }
 /* Same MESSAGE/NEXT decorations as the main dialog */
 .intel-frame::before {
   content: 'MESSAGE';
@@ -1378,4 +1407,52 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   border-radius: 3px;
   font-size: 9px;
   color: #ccc;
+}
+
+/* ===== Name prompt modal — codename entry between difficulty & cutscene ===== */
+.name-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 30px auto 20px;
+  width: min(560px, 80%);
+}
+#name-input {
+  width: 100%;
+  background: rgba(8, 10, 16, 0.6);
+  border: 1.5px solid rgba(122, 208, 235, 0.5);
+  color: #f0f4f8;
+  font-family: 'Saira Condensed', sans-serif;
+  font-size: 32px; font-weight: 500;
+  letter-spacing: 3px;
+  padding: 14px 22px;
+  outline: none;
+  text-align: center;
+  text-transform: uppercase;
+  clip-path: polygon(
+    12px 0%, calc(100% - 12px) 0%, 100% 12px,
+    100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%,
+    0% calc(100% - 12px), 0% 12px
+  );
+  caret-color: var(--red);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+#name-input::placeholder {
+  color: rgba(122, 208, 235, 0.4);
+  font-weight: 400; letter-spacing: 2px;
+  text-transform: none;
+}
+#name-input:focus {
+  border-color: var(--red);
+  box-shadow: 0 0 18px rgba(230, 57, 70, 0.3);
+}
+.name-note {
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 12px; letter-spacing: 2px;
+  color: rgba(122, 208, 235, 0.7);
+  transition: color 0.2s ease;
+}
+.name-note.ready {
+  color: rgba(45, 134, 89, 0.95);
 }

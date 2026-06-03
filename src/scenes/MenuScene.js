@@ -4,43 +4,45 @@ import { loadMusic, playMusic, setMusicMuted } from '../game/music.js';
 import { playVoice, stopVoice, setVoiceMuted } from '../game/voice.js';
 import { MenuEffects } from '../game/menuEffects.js';
 
-// Intro phone call. Direction A — absurdist, self-aware. Toto is tired and
-// dry; YOU is deadpan. Each line has a `voiceId` that maps to a drop-in
-// audio file at /public/voice/<voiceId>.mp3 — see public/voice/README.md
-// for the AI voice generation guide.
-//
-// Lines are written for clean TTS delivery (full sentences, natural
-// punctuation, no inline SFX markers).
-// Trimmed for pace (playtest: the original was too long). Keeps the plot
-// beats + the best jokes, and the closing SYSTEM line bridges narratively
-// into the tutorial sandbox. Press SPACE / the SKIP button to fast-forward.
+// Intro phone call between Toto and the player — old friends reconnecting.
+// `{name}` is replaced with the codename the player typed in the name-prompt
+// modal (collected after BEGIN INFILTRATION, before this cutscene plays).
+// Each line has a `voiceId` mapping to /public/voice/<id>.mp3 for drop-in TTS.
 const CUTSCENE = [
   { speaker: 'PHONE',  text: '*BRRRT.*  *BRRRT.*' /* SFX, not voiced */ },
-  { speaker: 'TOTO',   text: "Hey. Don't hang up. Heard of HUSH?",
+  { speaker: 'TOTO',   text: "Hey... pick up. It's me.",
     voiceId: 'intro-toto-01' },
-  { speaker: 'YOU',    text: 'The company whose slogan is just "shh"?',
+  { speaker: 'YOU',    text: "Toto? Long time no call. Everything alright?",
     voiceId: 'intro-you-01' },
-  { speaker: 'TOTO',   text: "That's the one. They buried a file on their own video site. We want it.",
+  { speaker: 'TOTO',   text: "...No. Things have gotten bad, {name}. Like — real bad.",
     voiceId: 'intro-toto-02' },
-  { speaker: 'YOU',    text: 'Define "we."',
-    voiceId: 'intro-you-02' },
-  { speaker: 'TOTO',   text: "People who'd rather one company didn't run the whole internet. Name's Toto, by the way.",
+  { speaker: 'TOTO',   text: "HUSH Corp is getting out of hand. We have to do something. Now.",
     voiceId: 'intro-toto-03' },
-  { speaker: 'YOU',    text: '...like the dog?',
+  { speaker: 'YOU',    text: "Yeah... I've been watching it too. The headlines, the cover-ups. I bet what they're hiding is way worse than what's leaked.",
+    voiceId: 'intro-you-02' },
+  { speaker: 'YOU',    text: "I'm not feeling good about this, Toto.",
     voiceId: 'intro-you-03' },
-  { speaker: 'TOTO',   text: "Like the band. Anyway — get in, grab the file, plant something so we can get back later. Don't get noticed.",
+  { speaker: 'TOTO',   text: "Exactly. That's why I called. You're our only shot right now — and I've got a plan.",
     voiceId: 'intro-toto-04' },
-  { speaker: 'YOU',    text: "And if I do get noticed?",
-    voiceId: 'intro-you-04' },
-  { speaker: 'TOTO',   text: "The page fights back. Ads, comments, the algorithm — all HUSH.",
+  { speaker: 'TOTO',   text: "I wrote a stealth agent. It disguises itself as a normal browser window. Just another tab nobody pays attention to.",
     voiceId: 'intro-toto-05' },
-  { speaker: 'YOU',    text: "I'm a 75-pixel rectangle. Unnoticed is the one thing I'm good at.",
-    voiceId: 'intro-you-05' },
-  { speaker: 'TOTO',   text: "That's the spirit. Sending the address now.",
+  { speaker: 'TOTO',   text: "You ride that window into HUSH's pages. Scan what they've buried under the fake comments and bot views. Pull the receipts.",
     voiceId: 'intro-toto-06' },
+  { speaker: 'YOU',    text: "A 75-pixel rectangle. Subtle.",
+    voiceId: 'intro-you-04' },
+  { speaker: 'TOTO',   text: "That IS the subtle. Nobody looks twice at a window.",
+    voiceId: 'intro-toto-07' },
+  { speaker: 'TOTO',   text: "But before we go live — I'll walk you through a drill, {name}. You should see the system once before it's real.",
+    voiceId: 'intro-toto-08' },
   { speaker: 'SYSTEM', text: "> spoofing user agent — you are 'NormalBrowser/1.0'" },
   { speaker: 'SYSTEM', text: '> deploying to a sandbox for calibration...' },
 ];
+
+// Resolve {name} placeholders against the saved codename.
+function formatLine(text) {
+  const name = (localStorage.getItem('oqw-name') || '').trim() || 'operative';
+  return text.replace(/\{name\}/g, name);
+}
 
 const SPEAKER_COLORS = {
   PHONE:  '#9a9aa0',
@@ -66,6 +68,11 @@ export default class MenuScene extends Phaser.Scene {
     this.dom = {
       mainMenu:         document.getElementById('main-menu'),
       diffMenu:         document.getElementById('diff-menu'),
+      namePrompt:       document.getElementById('name-prompt'),
+      nameInput:        document.getElementById('name-input'),
+      nameNote:         document.getElementById('name-note'),
+      nameConfirm:      document.getElementById('name-confirm'),
+      nameBack:         document.getElementById('name-back'),
       intro:            document.getElementById('intro'),
       settings:         document.getElementById('settings-modal'),
       help:             document.getElementById('help-modal'),
@@ -79,6 +86,7 @@ export default class MenuScene extends Phaser.Scene {
     document.body.classList.add('menu-mode');
     this.show(this.dom.mainMenu);
     this.hide(this.dom.diffMenu);
+    this.hide(this.dom.namePrompt);
     this.hide(this.dom.intro);
     this.hide(this.dom.settings);
     this.hide(this.dom.help);
@@ -127,7 +135,22 @@ export default class MenuScene extends Phaser.Scene {
       card.addEventListener('click', () => this.selectDiff(card.dataset.diff), { signal });
     });
     this.bindClick('diff-back',    () => this.closeDiffMenu(), signal);
-    this.bindClick('diff-confirm', () => this.beginCutscene(), signal);
+    // BEGIN INFILTRATION now opens the name-prompt modal; the cutscene only
+    // starts after the player commits a codename (required, not skippable).
+    this.bindClick('diff-confirm', () => this.openNamePrompt(), signal);
+    this.bindClick('name-back',    () => this.closeNamePrompt(), signal);
+    this.bindClick('name-confirm', () => this.commitNameAndBegin(), signal);
+    // Live-validate the input: enable CONFIRM only when a non-empty codename
+    // is present. Enter submits.
+    if (this.dom.nameInput) {
+      this.dom.nameInput.addEventListener('input', () => this.refreshNameValidity(), { signal });
+      this.dom.nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !this.dom.nameConfirm.disabled) {
+          e.preventDefault();
+          this.commitNameAndBegin();
+        }
+      }, { signal });
+    }
 
     // Audio toggle in settings — mutes music + voice live
     document.querySelectorAll('.diff-btn[data-audio]').forEach((btn) => {
@@ -201,10 +224,48 @@ export default class MenuScene extends Phaser.Scene {
     beep(900, 0.04, 'square', 0.04);
   }
 
+  // ===== Name prompt (between difficulty and cutscene) =====
+  // The name-prompt is a .modal (layered above) — it intentionally leaves
+  // .diff-menu mounted so its .dark-room background stays visible. A CSS
+  // :has() rule hides the diff overlay automatically while a modal is open.
+  openNamePrompt() {
+    initAudio();
+    this.show(this.dom.namePrompt);
+    const saved = (localStorage.getItem('oqw-name') || '').trim();
+    if (this.dom.nameInput) {
+      this.dom.nameInput.value = saved;
+      setTimeout(() => this.dom.nameInput.focus(), 60);
+    }
+    this.refreshNameValidity();
+  }
+  closeNamePrompt() {
+    this.hide(this.dom.namePrompt);
+  }
+  refreshNameValidity() {
+    const v = (this.dom.nameInput?.value || '').trim();
+    const ok = v.length > 0;
+    if (this.dom.nameConfirm) this.dom.nameConfirm.disabled = !ok;
+    if (this.dom.nameNote) {
+      this.dom.nameNote.classList.toggle('ready', ok);
+      this.dom.nameNote.textContent = ok
+        ? '▸ codename locked. press CONFIRM or hit Enter.'
+        : '▸ type a codename to continue';
+    }
+  }
+  commitNameAndBegin() {
+    const v = (this.dom.nameInput?.value || '').trim();
+    if (!v) return;                               // safety: button should be disabled
+    localStorage.setItem('oqw-name', v);
+    beep(900, 0.05, 'square', 0.04);
+    this.hide(this.dom.namePrompt);
+    this.beginCutscene();
+  }
+
   // ===== Cutscene =====
   beginCutscene() {
     initAudio();
     this.hide(this.dom.diffMenu);
+    this.hide(this.dom.namePrompt);
     this.show(this.dom.intro);
     this.cutsceneIdx = 0;
     this.typingActive = false;
@@ -219,10 +280,12 @@ export default class MenuScene extends Phaser.Scene {
   showLine(idx) {
     const line = CUTSCENE[idx];
     if (!line) return;
+    // Speaker chip — background tinted by speaker, text stays white.
     this.dom.dialogueSpeaker.textContent = line.speaker;
-    this.dom.dialogueSpeaker.style.color = SPEAKER_COLORS[line.speaker] || '#fff';
+    this.dom.dialogueSpeaker.style.background = SPEAKER_COLORS[line.speaker] || '#1a1a1f';
+    this.dom.dialogueSpeaker.style.color = '#fff';
     this.dom.dialogueLine.textContent = '';
-    this.dom.dialogueHint.style.opacity = '0';
+    // (.dialogue-hint is display:none — kept for backwards-compat, no opacity needed)
 
     // Swap portrait. If file is missing (404), onerror hides the element so
     // dialogue still reads cleanly without a broken-image icon.
@@ -246,11 +309,10 @@ export default class MenuScene extends Phaser.Scene {
 
     this.typingActive = true;
     let i = 0;
-    const text = line.text;
+    const text = formatLine(line.text);   // resolve {name} → codename
     const tick = () => {
       if (!this.typingActive) {
         this.dom.dialogueLine.textContent = text;
-        this.dom.dialogueHint.style.opacity = '0.7';
         return;
       }
       if (i < text.length) {
@@ -262,7 +324,6 @@ export default class MenuScene extends Phaser.Scene {
         this.typewriterTimer = setTimeout(tick, 18);
       } else {
         this.typingActive = false;
-        this.dom.dialogueHint.style.opacity = '0.7';
       }
     };
     tick();
@@ -273,8 +334,7 @@ export default class MenuScene extends Phaser.Scene {
       clearTimeout(this.typewriterTimer);
       this.typingActive = false;
       const line = CUTSCENE[this.cutsceneIdx];
-      this.dom.dialogueLine.textContent = line.text;
-      this.dom.dialogueHint.style.opacity = '0.7';
+      this.dom.dialogueLine.textContent = formatLine(line.text);
       return;
     }
     this.cutsceneIdx++;

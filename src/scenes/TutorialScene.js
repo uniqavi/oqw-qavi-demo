@@ -160,22 +160,24 @@ export default class TutorialScene extends Phaser.Scene {
   }
 
   // ── Toto dialogue (typewriter) ──
+  // Resolves {name} → saved codename so Toto can address the player.
   say(speaker, text, hint = '') {
     if (!this.dlg.wrap) return;
+    const name = (localStorage.getItem('oqw-name') || '').trim() || 'operative';
+    const resolved = text.replace(/\{name\}/g, name);
     this.dlg.wrap.classList.remove('hidden');
     if (this.dlg.speaker) this.dlg.speaker.textContent = speaker;
     if (this.dlg.line) this.dlg.line.textContent = '';
-    if (this.dlg.hint) { this.dlg.hint.textContent = '▸ ' + hint; this.dlg.hint.style.opacity = '0'; }
+    // hint span is display:none in CSS now — keep the assignment for safety
+    if (this.dlg.hint) this.dlg.hint.textContent = '▸ ' + hint;
     if (this.typeTimer) clearTimeout(this.typeTimer);
     let i = 0;
     const tick = () => {
-      if (i < text.length) {
+      if (i < resolved.length) {
         i++;
-        if (this.dlg.line) this.dlg.line.textContent = text.slice(0, i);
-        if (text[i - 1] !== ' ' && Math.random() < 0.2) beep(1600 + Math.random() * 500, 0.005, 'square', 0.01);
+        if (this.dlg.line) this.dlg.line.textContent = resolved.slice(0, i);
+        if (resolved[i - 1] !== ' ' && Math.random() < 0.2) beep(1600 + Math.random() * 500, 0.005, 'square', 0.01);
         this.typeTimer = setTimeout(tick, 24);
-      } else if (this.dlg.hint && hint) {
-        this.dlg.hint.style.opacity = '0.7';
       }
     };
     tick();
@@ -343,7 +345,12 @@ export default class TutorialScene extends Phaser.Scene {
     if (this.step === STEP.DONE && !this.atExit &&
         p.x > b.x - 10 && p.x < b.x + b.w + 10 && p.y > b.y - 10 && p.y < b.y + b.h + 10) {
       this.atExit = true;
-      this.say('TOTO', "This is where I leave you. The next page is the real thing — I won't be on the line. Good luck.", 'press SPACE or click to go in');
+      // Drill-vs-reality beat: in this sandbox the exit is labeled, but the
+      // real HUSH pages won't be — you'll have to find your own way out
+      // without being noticed. Drives the design's "discovery, not button" goal.
+      this.say('TOTO',
+        "One last thing, {name} — this drill has a friendly INFILTRATE button. The real pages won't. You'll have to find your own exit, and slip out before HUSH spots you. Stay sharp.",
+        'press SPACE or click to go in');
       beep(440, 0.12, 'sine', 0.08);
     }
   }

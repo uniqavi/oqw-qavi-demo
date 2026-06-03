@@ -220,6 +220,51 @@
             </div>
           </div>
 
+          <!-- ===== NAME PROMPT (after BEGIN INFILTRATION, before cutscene) ===== -->
+          <div class="modal hidden" id="name-prompt">
+            <div class="modal-panel ink-layer" role="dialog" aria-label="Codename">
+              <div class="status">
+                <div class="status-left">[OPERATIVE REGISTRATION]</div>
+                <div class="status-right">[ENCRYPTED CHANNEL]</div>
+              </div>
+
+              <h1 class="menu-title">
+                <span class="row">Identify</span>
+                <span class="row">Yourself</span>
+              </h1>
+
+              <div class="tagline">
+                <span class="tag-chip">[CODENAME REQUIRED]</span>
+                <span>WHAT SHOULD TOTO CALL YOU?</span>
+              </div>
+
+              <div class="name-row">
+                <input type="text" id="name-input" maxlength="16" autocomplete="off"
+                       spellcheck="false" placeholder="enter codename..." />
+                <div class="name-note" id="name-note">▸ type a codename to continue</div>
+              </div>
+
+              <div class="diff-actions">
+                <button class="menu-btn ghost" type="button" id="name-back">
+                  <span class="label"><span class="br">[</span>◀ BACK<span class="br">]</span></span>
+                </button>
+                <button class="menu-btn" type="button" id="name-confirm" disabled>
+                  <span class="label"><span class="br">[</span>CONFIRM<span class="br">]</span></span>
+                  <span class="chev">&rsaquo;</span>
+                  <span class="icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="5" y1="12" x2="19" y2="12"/>
+                      <polyline points="12 5 19 12 12 19"/>
+                    </svg>
+                  </span>
+                </button>
+              </div>
+
+              <div class="ink-footer">OPS-TERM v1.4 · ID.REG</div>
+              <div class="ink-glyphs">. . .</div>
+            </div>
+          </div>
+
           <!-- ===== INTRO CUTSCENE ===== -->
           <div class="intro hidden" id="intro">
             <div class="dark-room">
