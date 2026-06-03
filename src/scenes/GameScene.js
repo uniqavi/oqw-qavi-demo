@@ -30,6 +30,14 @@ const ONBOARDING_TIPS = [
 // self-contained so a first-time player understands without prior context.
 // Each line has an optional voiceId for drop-in TTS — see public/voice/README.md
 const INTEL_LINES = [
+  // First beat: the player REACTING to what they uncovered — beats the old
+  // straight-to-memo cold open, which was jarring.
+  { speaker: 'YOU',
+    text: 'Hold on... what is this? Looks like a way out behind the wall.',
+    voiceId: 'memo-you-react' },
+  { speaker: 'YOU',
+    text: 'And something taped to the back of it... a memo?',
+    voiceId: 'memo-you-react-02' },
   { speaker: '[ INTERCEPT — INTERNAL HUSH MEMO ]',
     text: 'From: Max, Director of Engagement — Q1 2039.',
     voiceId: 'memo-intercept-01' },

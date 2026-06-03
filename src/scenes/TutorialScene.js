@@ -223,10 +223,11 @@ export default class TutorialScene extends Phaser.Scene {
     const viewW = this.VW / zoom, viewH = this.VH / zoom;
     const tx = Phaser.Math.Clamp(this.spot.x - viewW / 2, 0, Math.max(0, W - viewW));
     const ty = Phaser.Math.Clamp(this.spot.y - viewH / 2, 0, Math.max(0, H - viewH));
-    // Slow, cinematic zoom (was dt*6 — felt too snappy)
-    c.zoom += (zoom - c.zoom) * Math.min(1, dt * 3);
-    c.x += (tx - c.x) * Math.min(1, dt * 3);
-    c.y += (ty - c.y) * Math.min(1, dt * 3);
+    // Snappier zoom — dt*3 felt sluggish in playtest; dt*7 still reads as
+    // cinematic but doesn't make the player wait for the lesson.
+    c.zoom += (zoom - c.zoom) * Math.min(1, dt * 7);
+    c.x += (tx - c.x) * Math.min(1, dt * 7);
+    c.y += (ty - c.y) * Math.min(1, dt * 7);
   }
   endSpotlight() {
     this.spot.active = false;
@@ -309,9 +310,10 @@ export default class TutorialScene extends Phaser.Scene {
       }
     } else if (this.step === STEP.CHASER) {
       // First approach → enemy WAKES (visible activation). The spotlight zoom
-      // happens later, after a short reveal delay (see updateEnemies).
+      // happens later, after a short reveal delay (see updateEnemies). Trigger
+      // range bumped so it wakes when you're "slightly near," not glued to it.
       const cx = this.chaser.x + this.chaser.w / 2, cy = this.chaser.y + this.chaser.h / 2;
-      if (!this.chaser.taught && Math.hypot(p.x - cx, p.y - cy) < 240) {
+      if (!this.chaser.taught && Math.hypot(p.x - cx, p.y - cy) < 360) {
         this.chaser.taught = true;
         this.chaser.state = 'waking';
         this.chaser.wakeT = this.time;
@@ -321,7 +323,8 @@ export default class TutorialScene extends Phaser.Scene {
       // Advance only after the spotlight is done (state has become 'chase')
       if (this.chaser.state === 'chase' && p.y > 940) this.step = STEP.GUN;
     } else if (this.step === STEP.GUN) {
-      if (!this.gun.taught && Math.hypot(p.x - this.gun.x, p.y - this.gun.y) < 270) {
+      // Same accessibility nudge for the gun — triggers from "slightly near."
+      if (!this.gun.taught && Math.hypot(p.x - this.gun.x, p.y - this.gun.y) < 400) {
         this.gun.taught = true;
         this.gun.state = 'waking';
         this.gun.wakeT = this.time;
@@ -369,7 +372,7 @@ export default class TutorialScene extends Phaser.Scene {
 
   updateEnemies(dt) {
     const p = this.player;
-    const WAKE_DELAY = 1.2;  // time the enemy stays "revealing" before the zoom
+    const WAKE_DELAY = 0.55; // time the enemy stays "revealing" before the zoom — kept short so spotlight feels reactive, not delayed
 
     // ── WAKING → SPOTLIGHT: let the enemy show its activation, THEN zoom in ──
     if (this.chaser.state === 'waking' && this.time - this.chaser.wakeT > WAKE_DELAY) {

@@ -699,148 +699,241 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 
 /* ===== Intro cutscene ===== */
 .intro { position: absolute; inset: 0; z-index: 10; }
-.phone {
-  position: absolute;
-  right: 18%;
-  bottom: 20%;
-  font-size: 64px;
-  filter: drop-shadow(0 0 12px rgba(230, 57, 70, 0.7));
-  animation: phone-shake 0.4s infinite alternate;
-  z-index: 3;
-}
-@keyframes phone-shake {
-  0% { transform: rotate(-12deg) translateY(0); }
-  100% { transform: rotate(12deg) translateY(-4px); }
-}
-/* Bottom strip overlay — background scene stays visible above; dialogue
-   only occupies the bottom ~28% of the frame. Fades up from below. */
+/* ==========================================================================
+   VISUAL-NOVEL DIALOGUE FRAME — shared between intro / tutorial / intel
+   --------------------------------------------------------------------------
+   Replaces the old thin bottom strip with a proper, readable VN-style panel
+   inspired by Dramatical Murder / anime-VN frames: cyan + pink angular border
+   accents, dark glass background, portrait in an angular frame on the left
+   (when present), large Saira Condensed body text, and a visible NEXT badge
+   so the player has a clear advance affordance.
+
+   Both .dialogue (intro) and .tutorial-dialog (Toto in tutorial) use these
+   visuals. .intel-dialog (memo popup) inherits the same panel chrome but
+   stays centered + smaller.
+   ========================================================================== */
+
+/* ---- Intro cutscene panel (bottom of the menu room) ---- */
 .dialogue {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  width: 100%;
+  left: 4%; right: 4%;
+  bottom: 4%;
   height: 28%;
-  background: linear-gradient(
-    180deg,
-    rgba(8, 10, 16, 0) 0%,
-    rgba(8, 10, 16, 0.85) 25%,
-    rgba(8, 10, 16, 0.97) 100%
-  );
-  border-top: 1px solid rgba(230, 57, 70, 0.35);
-  border-radius: 0;
-  padding: 38px 8% 24px 6%;
   z-index: 4;
-  box-shadow: 0 -20px 40px rgba(0,0,0,0.4);
+  padding: 22px 26px 22px 22px;
   display: flex;
-  align-items: center;
-  gap: 36px;
+  align-items: stretch;
+  gap: 26px;
+  background:
+    linear-gradient(180deg, rgba(10,12,20,0.92) 0%, rgba(10,12,20,0.97) 100%);
+  border: 1.5px solid rgba(122, 208, 235, 0.55);
+  /* Angled VN frame — small cuts at each corner */
+  clip-path: polygon(
+    18px 0%, calc(100% - 18px) 0%, 100% 18px,
+    100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%,
+    0% calc(100% - 18px), 0% 18px
+  );
+  box-shadow: 0 -22px 50px rgba(0,0,0,0.5), 0 0 28px rgba(122, 208, 235, 0.12) inset;
   transform: none;
 }
-/* Portrait shows on the left of the dialogue. Hides if src is missing or
-   empty (so the cutscene works fine even before the art is dropped in). */
+
+/* Portrait frame on the left (when a portrait is set). Angular cut corners
+   like the references — not a circle. */
 .dialogue-portrait {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
+  width: 240px; height: 100%;
   object-fit: cover;
   flex-shrink: 0;
-  border: 2px solid rgba(230, 57, 70, 0.5);
-  box-shadow: 0 0 18px rgba(230, 57, 70, 0.3);
+  border: 1.5px solid rgba(230, 57, 70, 0.7);
+  clip-path: polygon(
+    14px 0%, 100% 0%, 100% calc(100% - 14px),
+    calc(100% - 14px) 100%, 0% 100%, 0% 14px
+  );
   background: rgba(20, 22, 30, 0.6);
-  transition: opacity 0.5s ease, transform 0.5s ease;
+  transition: opacity 0.4s ease, transform 0.4s ease;
 }
-.dialogue-portrait.hidden-portrait {
-  opacity: 0;
-  transform: scale(0.85);
-}
+.dialogue-portrait.hidden-portrait { opacity: 0; transform: scale(0.92); }
 .dialogue-portrait:not([src]),
-.dialogue-portrait[src=""] { display: none; }
+.dialogue-portrait[src=""],
 .dialogue-portrait.missing { display: none; }
-.dialogue-body { flex: 1; min-width: 0; }
-.dialogue-speaker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; color: var(--red); margin-bottom: 10px; }
-.dialogue-line { font-family: var(--font-mono); font-size: 16px; line-height: 1.6; color: #f5f5f5; min-height: 3em; white-space: pre-wrap; }
-.dialogue-hint { margin-top: 14px; font-family: var(--font-mono); font-size: 11px; color: #6b6b73; letter-spacing: 1px; opacity: 0; transition: opacity 0.2s; }
-.dialogue-skip-btn {
-  position: absolute;
-  right: 8%;
-  bottom: 24px;
-  background: transparent;
-  border: 1px solid rgba(230, 57, 70, 0.25);
-  color: #6b6b73;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 1px;
-  padding: 6px 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+
+/* Message body fills the rest of the panel. position:relative so the NEXT
+   badge + MESSAGE label can absolute-position relative to it. */
+.dialogue-body {
+  flex: 1; min-width: 0;
+  position: relative;
+  padding: 6px 76px 28px 8px;   /* right padding leaves room for NEXT */
+  display: flex; flex-direction: column;
 }
-.dialogue-skip-btn:hover {
-  color: #f5f5f5;
-  border-color: rgba(230, 57, 70, 0.8);
-  background: rgba(230, 57, 70, 0.1);
+.dialogue-speaker {
+  font-family: var(--font-mono);
+  font-size: 13px; letter-spacing: 5px; font-weight: 700;
+  color: var(--red);
+  margin-bottom: 14px;
+}
+.dialogue-line {
+  font-family: 'Saira Condensed', sans-serif;
+  font-size: 34px; font-weight: 500;
+  line-height: 1.35; letter-spacing: 0.5px;
+  color: #f0f4f8; flex: 1;
+  white-space: pre-wrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+.dialogue-hint {
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 1.5px;
+  color: rgba(122, 208, 235, 0.65);
+  opacity: 0; transition: opacity 0.2s;
+}
+/* Bottom-right "MESSAGE" subtitle tag — small typography flourish */
+.dialogue-body::before {
+  content: 'MESSAGE';
+  position: absolute; right: 78px; bottom: 4px;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 6px; color: rgba(244, 211, 94, 0.55);
+  pointer-events: none;
+}
+/* Yellow NEXT circle on the right of the body — visible advance affordance.
+   Clicking anywhere on the dialog advances; this is just the affordance. */
+.dialogue-body::after {
+  content: 'NEXT';
+  position: absolute; right: 6px; top: 50%;
+  transform: translateY(-50%);
+  width: 58px; height: 58px;
+  border: 2px solid #F4D35E;
+  border-radius: 50%;
+  font-family: var(--font-mono); font-size: 13px;
+  letter-spacing: 2px; font-weight: 700;
+  color: #F4D35E;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 18px rgba(244, 211, 94, 0.35);
+  pointer-events: none;
+  animation: vn-next-pulse 1.6s ease-in-out infinite;
+}
+@keyframes vn-next-pulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(244, 211, 94, 0.25); }
+  50%      { box-shadow: 0 0 22px rgba(244, 211, 94, 0.55); }
 }
 
-/* ===== Tutorial dialogue (Toto) — bottom strip over the wireframe page ===== */
+/* SKIP button — top-right of the panel, clearly visible (the old style had it
+   nearly the same color as the background). */
+.dialogue-skip-btn {
+  position: absolute;
+  right: 6%; top: -52px;
+  background: rgba(10, 12, 20, 0.92);
+  border: 2px solid rgba(230, 57, 70, 0.85);
+  color: #ffd5d8;
+  font-family: var(--font-mono);
+  font-size: 15px; font-weight: 700;
+  letter-spacing: 3px;
+  padding: 12px 24px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 5;
+}
+.dialogue-skip-btn:hover {
+  color: #fff;
+  background: rgba(230, 57, 70, 0.85);
+  box-shadow: 0 0 14px rgba(230, 57, 70, 0.5);
+}
+
+/* ---- Tutorial dialog (Toto narrating) — same look as intro panel ---- */
 .tutorial-dialog {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
+  left: 4%; right: 4%; bottom: 4%;
   height: 24%;
   z-index: 40;
+  padding: 22px 26px 22px 22px;
   display: flex;
-  align-items: center;
-  gap: 28px;
-  padding: 24px 7% 20px 5%;
-  background: linear-gradient(180deg,
-    rgba(8,10,16,0) 0%,
-    rgba(8,10,16,0.85) 30%,
-    rgba(8,10,16,0.97) 100%);
-  border-top: 1px solid rgba(230, 57, 70, 0.35);
+  align-items: stretch;
+  gap: 26px;
+  background:
+    linear-gradient(180deg, rgba(10,12,20,0.92) 0%, rgba(10,12,20,0.97) 100%);
+  border: 1.5px solid rgba(122, 208, 235, 0.55);
+  clip-path: polygon(
+    18px 0%, calc(100% - 18px) 0%, 100% 18px,
+    100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%,
+    0% calc(100% - 18px), 0% 18px
+  );
+  box-shadow: 0 -22px 50px rgba(0,0,0,0.5), 0 0 28px rgba(122, 208, 235, 0.12) inset;
 }
 .tutorial-dialog.hidden { display: none; }
 .tutorial-portrait {
-  width: 120px; height: 120px;
-  border-radius: 50%;
+  width: 200px; height: 100%;
   object-fit: cover;
   flex-shrink: 0;
-  border: 2px solid rgba(230, 57, 70, 0.5);
-  box-shadow: 0 0 16px rgba(230, 57, 70, 0.28);
+  border: 1.5px solid rgba(230, 57, 70, 0.7);
+  clip-path: polygon(
+    14px 0%, 100% 0%, 100% calc(100% - 14px),
+    calc(100% - 14px) 100%, 0% 100%, 0% 14px
+  );
   background: rgba(20, 22, 30, 0.6);
 }
-.tutorial-body { flex: 1; min-width: 0; }
+.tutorial-body {
+  flex: 1; min-width: 0;
+  position: relative;
+  padding: 6px 76px 24px 8px;
+  display: flex; flex-direction: column;
+}
 .tutorial-speaker {
   font-family: var(--font-mono);
-  font-size: 12px; letter-spacing: 4px;
-  color: var(--red); margin-bottom: 10px;
+  font-size: 13px; letter-spacing: 5px; font-weight: 700;
+  color: var(--red);
+  margin-bottom: 14px;
 }
 .tutorial-line {
-  font-family: var(--font-mono);
-  font-size: 18px; line-height: 1.5;
-  color: #f5f5f5; min-height: 2.5em;
+  font-family: 'Saira Condensed', sans-serif;
+  font-size: 32px; font-weight: 500;
+  line-height: 1.35; letter-spacing: 0.5px;
+  color: #f0f4f8; flex: 1;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
 }
 .tutorial-hint {
-  margin-top: 12px;
   font-family: var(--font-mono);
-  font-size: 11px; letter-spacing: 1px;
-  color: #6b6b73;
+  font-size: 11px; letter-spacing: 1.5px;
+  color: rgba(122, 208, 235, 0.65);
   opacity: 0; transition: opacity 0.25s;
 }
+.tutorial-body::before {
+  content: 'MESSAGE';
+  position: absolute; right: 78px; bottom: 4px;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 6px; color: rgba(244, 211, 94, 0.55);
+  pointer-events: none;
+}
+.tutorial-body::after {
+  content: 'NEXT';
+  position: absolute; right: 6px; top: 50%;
+  transform: translateY(-50%);
+  width: 54px; height: 54px;
+  border: 2px solid #F4D35E;
+  border-radius: 50%;
+  font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: 2px; font-weight: 700;
+  color: #F4D35E;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 16px rgba(244, 211, 94, 0.3);
+  pointer-events: none;
+  animation: vn-next-pulse 1.6s ease-in-out infinite;
+}
 .tutorial-skip {
-  align-self: flex-start;
-  background: transparent;
-  border: 1px solid rgba(230, 57, 70, 0.25);
-  color: #6b6b73;
+  position: absolute;
+  right: 4%; top: -38px;
+  background: rgba(10, 12, 20, 0.92);
+  border: 2px solid rgba(230, 57, 70, 0.85);
+  color: #ffd5d8;
   font-family: var(--font-mono);
-  font-size: 11px; letter-spacing: 1px;
-  padding: 6px 12px;
+  font-size: 15px; font-weight: 700;
+  letter-spacing: 3px;
+  padding: 12px 24px;
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
+  z-index: 41;
 }
 .tutorial-skip:hover {
-  color: #f5f5f5;
-  border-color: rgba(230, 57, 70, 0.8);
-  background: rgba(230, 57, 70, 0.1);
+  color: #fff;
+  background: rgba(230, 57, 70, 0.85);
+  box-shadow: 0 0 14px rgba(230, 57, 70, 0.5);
 }
 
 /* Cutscene fade-to-white transition into Level 1 (covers full browser) */
@@ -1184,41 +1277,72 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   opacity: 0;
   transition: opacity 0.4s ease, transform 0.4s ease;
   pointer-events: none;
-  width: min(720px, 80%);
+  width: min(960px, 84%);
 }
 .intel-dialog.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; cursor: pointer; }
 .intel-dialog.hidden { display: none; }
 .intel-frame {
-  background: rgba(8, 8, 10, 0.93);
-  border: 1px solid var(--red);
-  border-left: 4px solid var(--red);
-  padding: 18px 26px 16px;
+  position: relative;
+  background: linear-gradient(180deg, rgba(10,12,20,0.94) 0%, rgba(10,12,20,0.98) 100%);
+  border: 1.5px solid rgba(122, 208, 235, 0.55);
+  clip-path: polygon(
+    18px 0%, calc(100% - 18px) 0%, 100% 18px,
+    100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%,
+    0% calc(100% - 18px), 0% 18px
+  );
+  padding: 24px 96px 32px 28px;
   font-family: var(--font-mono);
-  color: #f5f5f5;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 18px rgba(230, 57, 70, 0.18);
+  color: #f0f4f8;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 28px rgba(122, 208, 235, 0.15) inset;
 }
 .intel-tag {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 4px;
+  font-weight: 700;
   color: var(--red);
-  margin-bottom: 10px;
+  margin-bottom: 14px;
 }
 .intel-line {
-  font-size: 16px;
+  font-family: 'Saira Condensed', sans-serif;
+  font-size: 30px; font-weight: 500;
   letter-spacing: 0.5px;
-  line-height: 1.55;
-  color: #f0f0f4;
-  min-height: 50px;
+  line-height: 1.4;
+  color: #f0f4f8;
+  min-height: 60px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
 }
 .intel-hint {
   font-size: 10px;
   letter-spacing: 2px;
-  color: #9a9aa0;
+  color: rgba(122, 208, 235, 0.65);
   margin-top: 14px;
   opacity: 0;
   transition: opacity 0.3s ease;
 }
 .intel-hint.show { opacity: 0.7; }
+/* Same MESSAGE/NEXT decorations as the main dialog */
+.intel-frame::before {
+  content: 'MESSAGE';
+  position: absolute; right: 100px; bottom: 8px;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 6px; color: rgba(244, 211, 94, 0.55);
+  pointer-events: none;
+}
+.intel-frame::after {
+  content: 'NEXT';
+  position: absolute; right: 18px; top: 50%;
+  transform: translateY(-50%);
+  width: 58px; height: 58px;
+  border: 2px solid #F4D35E;
+  border-radius: 50%;
+  font-family: var(--font-mono); font-size: 13px;
+  letter-spacing: 2px; font-weight: 700;
+  color: #F4D35E;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 18px rgba(244, 211, 94, 0.35);
+  pointer-events: none;
+  animation: vn-next-pulse 1.6s ease-in-out infinite;
+}
 
 /* ========================================================================== */
 /* POST-MISSION BANNER — minimal toast after L1 win (replaces results screen)  */

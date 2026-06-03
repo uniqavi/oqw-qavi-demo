@@ -85,10 +85,12 @@ export const DAMAGE = {
 // Agent tuning (extracted directly from source)
 export const AGENTS = {
   chasingRecs: {
-    triggerR: 180,
+    // Bumped from 180 — playtest: enemies felt dead until you were right on
+    // them. Now wakes when the player gets within a clear "danger zone."
+    triggerR: 280,
     accel: 380,
     damping: 0.93,
-    awakenDuration: 0.6,
+    awakenDuration: 0.4,
     chaseDuration: 7,
     knockMag: 40,
     instances: [{ recIdx: 1 }, { recIdx: 4 }],
@@ -128,8 +130,11 @@ export const AGENTS = {
   gunShooter: {
     baseX: 892,
     baseY: 26,
-    triggerR: 350,
-    awakenDuration: 0.7,
+    // Bumped from 350 — the avatar should clock you "as you enter the room,"
+    // not only when you're standing next to it. awakenDuration also tightened
+    // (0.7→0.45) so the threat reads sooner.
+    triggerR: 480,
+    awakenDuration: 0.45,
     aimDuration: 1.6,
     rotateSpeed: 60 * Math.PI / 180,
     armMaxLength: 55,
