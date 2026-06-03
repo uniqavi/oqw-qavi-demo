@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
-import { PLAYER, CAMERA } from '../config.js';
+import { PLAYER, CAMERA, SCAN } from '../config.js';
 import { initAudio, beep, noise } from '../game/audio.js';
 import { crossfadeTo } from '../game/music.js';
 import { drawHandRect } from '../game/draw.js';
+import { markScanCoverage } from '../game/scan.js';
 
 // LEVEL 1.0 — TUTORIAL
 //
@@ -68,10 +69,14 @@ export default class TutorialScene extends Phaser.Scene {
     this.step = STEP.MOVE;
     this.movedDistance = 0;
 
-    // Scan target (the hero headline hides the truth)
+    // Scan target (the hero headline hides the truth). `font`/`tx` let the
+    // shared scan helper measure the text width for spatial coverage.
+    const scanRect = { x: TUT.hero.x + 24, y: TUT.hero.y + 150, w: TUT.hero.w - 48, h: 56 };
     this.scanTarget = {
-      rect: { x: TUT.hero.x + 24, y: TUT.hero.y + 150, w: TUT.hero.w - 48, h: 56 },
+      rect: scanRect,
       hidden: 'HUSH TRAINING ENV — subject not yet deployed',
+      font: 'bold 16px ui-monospace, monospace',
+      tx: scanRect.x + 12,
       progress: 0,
       scanned: false,
     };
@@ -279,13 +284,15 @@ export default class TutorialScene extends Phaser.Scene {
         this.say('TOTO', "Good. Now — your window isn't just a window. It sees what they hide. Slide it over that banner headline.", 'scan the banner');
       }
     } else if (this.step === STEP.SCAN) {
-      // Accumulate scan progress only while the window overlaps the hidden
-      // text — the reveal grows as you keep hovering (see drawXrayReveal),
-      // and locks in persistently once fully uncovered.
+      // Spatial scan: the truth shows only through the window. Sweep the
+      // window across the headline; once enough of its width has been covered,
+      // the reveal latches persistent (see drawPlayer for the X-ray lens).
       if (!st.scanned && this.windowOverlaps(st.rect)) {
-        st.progress = Math.min(1, st.progress + dt * 0.5);
-        if (Math.random() < 0.3) beep(1500 + Math.random() * 600, 0.004, 'square', 0.012);
-        if (st.progress >= 1) {
+        const s = p.size, px = p.x - s / 2;
+        const { frac, gained } = markScanCoverage(st, px, s, this.ctx);
+        st.progress = frac;
+        if (gained > 0 && Math.random() < 0.5) beep(1500 + Math.random() * 600, 0.004, 'square', 0.012);
+        if (frac >= SCAN.coverThreshold) {
           st.scanned = true;
           beep(880, 0.08, 'sine', 0.1);
           this.say('TOTO', "There it is. The visible part is decoration — the truth's underneath. On the real pages, scan everything.", 'now grab the file');
@@ -545,9 +552,8 @@ export default class TutorialScene extends Phaser.Scene {
         ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
       }
     }
-    // X-ray: reveal hidden text inside the window while overlapping. The
-    // amount revealed grows with scan progress, so it uncovers as you hover.
-    if (!st.scanned && this.windowOverlaps(r)) this.drawXrayReveal(ctx, r, st.hidden, st.progress);
+    // (The in-window X-ray reveal is drawn by drawPlayer — the window itself
+    // is the lens, so it must paint on top of the player rectangle.)
   }
 
   drawContentRow(ctx, cards, enemy = null) {
@@ -649,9 +655,25 @@ export default class TutorialScene extends Phaser.Scene {
   drawPlayer(ctx) {
     const p = this.player, s = p.size, ph = s * 0.75;
     const px = p.x - s / 2, py = p.y - ph / 2;
+    const st = this.scanTarget;
+    // When the window is over un-scanned hidden text, its body becomes a dark
+    // X-ray "lens" that reveals the truth beneath — clipped to the window, so
+    // you only ever see the slice physically under it.
+    const xraying = st && !st.scanned && this.windowOverlaps(st.rect);
     ctx.save();
     if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.45;
-    drawHandRect(ctx, px, py, s, ph, p.hitFlash > 0 ? '#fff' : '#E63946', '#1a1a1f', 50);
+    const body = p.hitFlash > 0 ? '#fff' : (xraying ? SCAN.xrayBg : '#E63946');
+    drawHandRect(ctx, px, py, s, ph, body, '#1a1a1f', 50);
+    if (xraying) {
+      const r = st.rect;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(px, py, s, ph); ctx.clip();
+      ctx.fillStyle = SCAN.xrayColor;
+      ctx.font = st.font; ctx.textBaseline = 'middle';
+      ctx.fillText(st.hidden, r.x + 12, r.y + r.h / 2);
+      ctx.restore();
+    }
+    // title bar (drawn on top of the glass)
     ctx.fillStyle = '#1a1a1f'; ctx.fillRect(px + 1, py + 1, s - 2, 14);
     // title text — clipped to the title bar so it can't overflow the window
     ctx.save();
@@ -667,21 +689,6 @@ export default class TutorialScene extends Phaser.Scene {
     const p = this.player, s = p.size, ph = s * 0.75;
     const px = p.x - s / 2, py = p.y - ph / 2;
     return px < r.x + r.w && px + s > r.x && py < r.y + r.h && py + ph > r.y;
-  }
-
-  // Draw hidden text only inside the window's rectangle (the X-ray effect).
-  // `progress` (0..1) controls how much of the text has been uncovered, so it
-  // reveals incrementally as the player keeps the window over it.
-  drawXrayReveal(ctx, r, text, progress) {
-    const p = this.player, s = p.size, ph = s * 0.75;
-    const px = p.x - s / 2, py = p.y - ph / 2;
-    const shown = text.slice(0, Math.max(1, Math.ceil(text.length * progress)));
-    ctx.save();
-    ctx.beginPath(); ctx.rect(px, py, s, ph); ctx.clip();
-    ctx.fillStyle = '#110214'; ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = '#7ad0eb'; ctx.font = 'bold 16px ui-monospace, monospace';
-    ctx.textBaseline = 'middle'; ctx.fillText(shown, r.x + 12, r.y + r.h / 2);
-    ctx.restore();
   }
 
   activationOutline(ctx, x, y, w, h) {

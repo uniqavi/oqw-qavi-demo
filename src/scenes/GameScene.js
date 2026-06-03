@@ -11,6 +11,7 @@ import * as FallingComment from '../game/agents/fallingComment.js';
 import * as ShootingSearch from '../game/agents/shootingSearch.js';
 import * as ChasingRecs from '../game/agents/chasingRecs.js';
 import * as GunShooter from '../game/agents/gunShooter.js';
+import { markScanCoverage } from '../game/scan.js';
 import { startEndSequence, updateEndSequence, drawArcs, PHASE_DURATIONS } from '../game/endSequence.js';
 import { crossfadeTo, stopMusic } from '../game/music.js';
 import { playVoice, stopVoice } from '../game/voice.js';
@@ -920,18 +921,24 @@ export default class GameScene extends Phaser.Scene {
       setTimeout(() => beep(1320, 0.25, 'sine', 0.12), 320);
     }
 
-    // X-ray scanning — slide the window over a fragment to fill its scan;
-    // at 100% the reveal latches and the truth stays on the page for good
-    // (persistent, not live-only). Free + optional — does not gate the win.
-    for (const f of state.scanFragments) {
-      if (f.scanned) continue;
-      if (this.windowOverlaps(f)) {
-        f.progress = Math.min(1, f.progress + dt * SCAN.fillPerSec);
-        if (Math.random() < 0.25) beep(1500 + Math.random() * 600, 0.004, 'square', 0.012);
-        if (f.progress >= 1) {
-          f.scanned = true;
-          beep(880, 0.08, 'sine', 0.1);
-          setTimeout(() => beep(1320, 0.1, 'sine', 0.08), 70);
+    // X-ray scanning (spatial) — the truth shows only through the window.
+    // Sweep the window across an element to cover it; once enough of its width
+    // has been swept, the reveal latches persistent. Free + optional — does
+    // not gate the win.
+    {
+      const s = p.size, ph = s * 0.75;
+      const px = p.x - s / 2, py = p.y - ph / 2;
+      for (const f of state.scanFragments) {
+        if (f.scanned) continue;
+        if (this.windowOverlaps(f)) {
+          const { frac, gained } = markScanCoverage(f, px, s, this.ctx);
+          f.progress = frac;
+          if (gained > 0 && Math.random() < 0.5) beep(1500 + Math.random() * 600, 0.004, 'square', 0.012);
+          if (frac >= SCAN.coverThreshold) {
+            f.scanned = true;
+            beep(880, 0.08, 'sine', 0.1);
+            setTimeout(() => beep(1320, 0.1, 'sine', 0.08), 70);
+          }
         }
       }
     }
@@ -1026,19 +1033,19 @@ export default class GameScene extends Phaser.Scene {
     return px < r.x + r.w && px + s > r.x && py < r.y + r.h && py + ph > r.y;
   }
 
-  // Hidden text shown only inside the window's rect — the live X-ray look.
-  // `progress` controls how much of the truth has decoded so far.
+  // Spatial X-ray: draw the FULL hidden truth, clipped to the window, so only
+  // the slice physically under the window shows. No character slicing — move
+  // the window and you reveal whatever it's currently over.
   drawXrayReveal(ctx, f) {
     const p = this.state.player, s = p.size, ph = s * 0.75;
     const px = p.x - s / 2, py = p.y - ph / 2;
-    const shown = f.hidden.slice(0, Math.max(1, Math.ceil(f.hidden.length * f.progress)));
     ctx.save();
     ctx.beginPath(); ctx.rect(px, py, s, ph); ctx.clip();
     ctx.fillStyle = SCAN.xrayBg;
-    ctx.fillRect(f.x - 2, f.y - 2, f.w + 4, f.h + 4);
+    ctx.fillRect(f.x - 4, f.y - 4, f.w + 8, f.h + 8);
     ctx.fillStyle = SCAN.xrayColor;
     ctx.font = f.font; ctx.textBaseline = 'top';
-    ctx.fillText(shown, f.tx, f.ty);
+    ctx.fillText(f.hidden, f.tx, f.ty);
     ctx.restore();
   }
 

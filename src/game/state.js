@@ -171,8 +171,12 @@ export function resetState(state) {
   state.truthExposedT = 0;
   state.tipShowing = false;
 
-  // X-ray scan fragments back to un-revealed
-  state.scanFragments.forEach(f => { f.progress = 0; f.scanned = false; });
+  // X-ray scan fragments back to un-revealed (clear coverage bitmaps too)
+  state.scanFragments.forEach(f => {
+    f._cov = null; f._covCount = 0; f._covSpan = 0;
+    f.coverW = null; f.coverX = null;
+    f.progress = 0; f.scanned = false;
+  });
 
   // Agents back to idle
   state.agents.chasingRecs.forEach(a => {

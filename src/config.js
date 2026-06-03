@@ -147,11 +147,16 @@ export const AGENTS = {
 // moves away (see docs/LEVEL1.md §1). Currently a free, optional discovery
 // layer — it does not gate the win yet (that's the dossier/follow-lead step).
 export const SCAN = {
-  fillPerSec:  0.7,        // scan speed while the window overlaps a fragment
-  revealColor: '#E63946',  // persistent truth text, drawn on the page
+  // Spatial model: the truth is revealed ONLY through the window (clipped to
+  // its bounds), like an X-ray. We track which horizontal slices of an element
+  // the window has swept; once enough of it has been covered, the reveal
+  // latches persistent. No timers — coverage is purely spatial.
+  coverThreshold: 0.85,    // fraction of the text width that must be swept to latch
+  coverBucketPx:  8,       // width of each coverage bucket (smaller = finer)
+  revealColor: '#E63946',  // persistent truth text, drawn on the page once latched
   xrayColor:   '#7ad0eb',  // in-window decode text (the live X-ray look)
-  xrayBg:      '#110214',  // dark backdrop behind the in-window reveal
-  glowColor:   '122,208,235', // rgb for the "something here" fragment glow
+  xrayBg:      '#110214',  // dark "glass" backdrop the window reveals
+  glowColor:   '122,208,235', // rgb for the "something here" glow
 };
 
 // Pickups
