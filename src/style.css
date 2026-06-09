@@ -768,7 +768,8 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 .dialogue-body {
   flex: 1; min-width: 0;
   position: relative;
-  padding: 18px 86px 28px 8px;   /* room for NEXT badge + above-clip speaker */
+  /* Extra top padding clears the speaker chip so the line never crowds it. */
+  padding: 38px 86px 26px 8px;
   display: flex; flex-direction: column;
   justify-content: center;
 }
@@ -889,7 +890,7 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 .tutorial-body {
   flex: 1; min-width: 0;
   position: relative;
-  padding: 18px 86px 22px 8px;
+  padding: 38px 86px 22px 8px;   /* clears the TOTO chip above */
   display: flex; flex-direction: column;
   justify-content: center;
 }
@@ -1414,7 +1415,8 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   position: absolute;
   z-index: 35;
   font-family: var(--font-mono);
-  padding: 16px 22px 14px;
+  /* Generous top padding so the bar / text sits clearly BELOW the chip. */
+  padding: 32px 22px 16px;
   background: linear-gradient(180deg, rgba(10,12,20,0.94) 0%, rgba(10,12,20,0.98) 100%);
   border: 1.5px solid rgba(122, 208, 235, 0.55);
   clip-path: polygon(

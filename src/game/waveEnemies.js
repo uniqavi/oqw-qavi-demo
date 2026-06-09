@@ -14,12 +14,17 @@ const TYPES = {
   ytcard: {
     w: 220, h: 70,
     color: '#E63946',
-    speed: WAVE.speedUp,         // px/sec UPWARD
     homingX: WAVE.homingX,       // gentle horizontal nudge per second
     damage: 12,
     label: 'recommended',
   },
 };
+
+// Enemy upward speed at the given scroll depth — lerps min → max over rampDepth.
+function speedAtDepth(scrollY) {
+  const f = Math.min(1, scrollY / WAVE.rampDepth);
+  return WAVE.speedUpMin + (WAVE.speedUpMax - WAVE.speedUpMin) * f;
+}
 
 // Spawn one enemy of the given type at the BOTTOM of the player's viewport,
 // at a random X position. Caller provides cam Y + viewport height.
@@ -36,7 +41,7 @@ export function spawn(state, type, camY, viewH) {
     wy,
     w: def.w, h: def.h,
     vx: 0,
-    vy: -def.speed,              // negative = upward
+    vy: -speedAtDepth(camY),     // negative = upward, ramps with depth
     age: 0,
   });
 }
