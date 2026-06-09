@@ -197,9 +197,14 @@ export default class GameScene extends Phaser.Scene {
       hint:    document.getElementById('intel-hint'),
     };
     this.intelTypeTimer = null;
-    // Click anywhere on the intel dialog → advance. Also Space.
+    this.narrationTimer = null;
+    // Click anywhere → advance whichever dialog is active (intel memo OR the
+    // escape narration). Narration takes priority since it gates the escape.
     this.onIntelClick = (e) => {
-      if (this.state.intelDialog) {
+      if (this.state.narration) {
+        e.stopPropagation();
+        this.advanceNarration();
+      } else if (this.state.intelDialog) {
         e.stopPropagation();
         this.advanceIntel();
       }
@@ -216,6 +221,11 @@ export default class GameScene extends Phaser.Scene {
       if (this.state.tipShowing && (e.key === ' ' || e.key === 'Enter')) {
         e.preventDefault();
         this.hideTip();
+        return;
+      }
+      if (this.state.narration && (e.key === ' ' || e.key === 'Enter')) {
+        e.preventDefault();
+        this.advanceNarration();
         return;
       }
       if (this.state.intelDialog && (e.key === ' ' || e.key === 'Enter')) {
@@ -348,6 +358,8 @@ export default class GameScene extends Phaser.Scene {
     initAudio();
     this.updateMouseCoords(pointer);
     this.state.mouse.down = true;
+    // The suspicious comment is only draggable during the escape's 'drag' step.
+    if (!this.state.escape || this.state.escape.step !== 'drag') return;
     for (let i = this.state.propaganda.length - 1; i >= 0; i--) {
       const p = this.state.propaganda[i];
       const m = this.state.mouse;
@@ -356,9 +368,6 @@ export default class GameScene extends Phaser.Scene {
         p.dox = m.x - p.x;
         p.doy = m.y - p.y;
         beep(420, 0.04, 'square', 0.04);
-        // Dismiss the "drag ad" onboarding tip — they did it
-        this.firstAdDragged = true;
-        if (this.currentTip === 'drag-ad') this.hideTip();
         break;
       }
     }
@@ -763,7 +772,7 @@ export default class GameScene extends Phaser.Scene {
     const dt = Math.min(0.05, deltaMs / 1000);
     // Don't accrue game time while a tip or the intel memo is on-screen.
     // The run-time stat shouldn't punish players for reading.
-    if (!this.state.intelDialog && !this.state.tipShowing) this.state.time += dt;
+    if (!this.state.intelDialog && !this.state.tipShowing && !this.state.narration) this.state.time += dt;
 
     // Smooth zoom toward target
     const c = this.state.cam;
@@ -786,7 +795,7 @@ export default class GameScene extends Phaser.Scene {
       return cr.life > 0;
     });
 
-    if (this.state.status === 'playing' && !this.state.intelDialog && !this.state.tipShowing) {
+    if (this.state.status === 'playing' && !this.state.intelDialog && !this.state.tipShowing && !this.state.narration) {
       this.runGameLogic(dt);
       this.updateOnboardingTips();
     } else if (this.state.status === 'playing' && !this.state.intelDialog && this.state.tipShowing) {
@@ -822,21 +831,28 @@ export default class GameScene extends Phaser.Scene {
 
     // ── AUTO-SCROLL camera ────────────────────────────────────────────────
     // Two-phase ramp: slow chill phase, then linear ramp up to fast cap.
-    // SHIFT multiplies the current base. Camera is the source of truth.
+    // SHIFT multiplies the current base. During the escape sequence the scroll
+    // is owned by updateEscapeScroll (decelerates to a stop). dScroll = actual
+    // camera delta this frame, used to auto-advance the player.
     const viewW = this.VW / c.zoom;
     const viewH = this.VH / c.zoom;
-    let baseRamped;
-    if (state.time < SCROLL.slowDuration) {
-      baseRamped = SCROLL.slowSpeed;
+    const prevScrollY = state.scrollY;
+    if (state.escape) {
+      this.updateEscapeScroll(dt, viewH);
     } else {
-      const rampT = Math.min(1, (state.time - SCROLL.slowDuration) / SCROLL.rampDuration);
-      baseRamped = SCROLL.slowSpeed + (SCROLL.fastSpeed - SCROLL.slowSpeed) * rampT;
+      let baseRamped;
+      if (state.time < SCROLL.slowDuration) {
+        baseRamped = SCROLL.slowSpeed;
+      } else {
+        const rampT = Math.min(1, (state.time - SCROLL.slowDuration) / SCROLL.rampDuration);
+        baseRamped = SCROLL.slowSpeed + (SCROLL.fastSpeed - SCROLL.slowSpeed) * rampT;
+      }
+      const boosting = this.wasd.shift.isDown;
+      const scrollRate = boosting ? baseRamped * SCROLL.boostMult : baseRamped;
+      state.scrollSpeed = scrollRate;
+      state.scrollY += scrollRate * dt;
     }
-    const boosting = this.wasd.shift.isDown;
-    const scrollRate = boosting ? baseRamped * SCROLL.boostMult : baseRamped;
-    state.scrollSpeed = scrollRate;
-    const dScroll = scrollRate * dt;
-    state.scrollY += dScroll;
+    const dScroll = state.scrollY - prevScrollY;
 
     // Camera tracks scrollY directly
     c.y = state.scrollY;
@@ -880,25 +896,25 @@ export default class GameScene extends Phaser.Scene {
     if (p.growT > 0) p.growT -= dt;
 
     // ── Wave enemies + powerups + hidden docs ─────────────────────────────
-    Waves.tickSpawner(state, dt, viewH);
+    // During the escape sequence we stop spawning new threats/docs and let
+    // any in-flight ones clear. Enemies still update so they fly off-screen.
+    if (!state.escape) {
+      Waves.tickSpawner(state, dt, viewH);
+      Powerups.tick(state, dt, viewH);
+      const docsBefore = state.docsCollected;
+      HiddenDocs.tick(state, dt, viewH);
+      if (state.docsCollected > docsBefore) {
+        beep(880, 0.08, 'sine', 0.13);
+        setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
+        // Collected the last doc → kick off the escape sequence.
+        if (state.docsCollected >= state.docsTarget) this.beginEscape();
+      }
+    }
     Waves.update(state, dt, viewH);
-    Powerups.tick(state, dt, viewH);
-    const docsBefore = state.docsCollected;
-    HiddenDocs.tick(state, dt, viewH);
-    if (state.docsCollected > docsBefore) {
-      // Collected a doc this frame — small celebration beep
-      beep(880, 0.08, 'sine', 0.13);
-      setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
-    }
-    // Win — all docs collected. Use existing 'won' status flow for now.
-    if (state.docsCollected >= state.docsTarget && state.status === 'playing') {
-      state.status = 'won';
-      state.stats.endedAt = state.time;
-      beep(523, 0.1, 'sine', 0.1);
-      setTimeout(() => beep(659, 0.1, 'sine', 0.1), 80);
-      setTimeout(() => beep(784, 0.18, 'sine', 0.12), 180);
-      setTimeout(() => beep(1047, 0.25, 'sine', 0.1), 320);
-    }
+
+    // Escape interactions that need the post-movement player position
+    // (drag-reveal of the comment, moving into the hole).
+    if (state.escape) this.updateEscapeInteractions();
 
     if (state.gameOver && state.status === 'playing') {
       state.status = 'lost';
@@ -918,20 +934,8 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Reveal the hidden passage: once the suspicious comment is dragged far
-    // enough off its home spot, the hole behind it is uncovered. Latches, and
-    // plays the intel memo once (you read what they were hiding as you open
-    // the passage). Gaze/cursor is disabled in L1, so no gaze accumulation.
-    {
-      const prop = state.propaganda[0];
-      const movedAway = Math.hypot(prop.x - prop.homeX, prop.y - prop.homeY) > 70;
-      if (movedAway && !prop.revealed) {
-        prop.revealed = true;
-        noise(0.3, 0.14);
-        beep(90, 0.45, 'sawtooth', 0.09);   // wall cracking open
-        this.startIntel();                   // self-guards against re-trigger
-      }
-    }
+    // (Old auto-reveal of the suspicious comment removed — the escape
+    // sequence now owns the weird-comment → hole reveal. See updateEscape.)
 
     // Cursor (gaze enforcer) — disabled in L1 for accessibility (config L1).
     // The lethal hunter debuts in L2. Gaze can still rise/fall as feedback,
@@ -962,53 +966,10 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Docs
-    for (const d of state.docs) {
-      if (d.taken) continue;
-      if (dist(p.x, p.y, d.x, d.y) < d.r + p.size * PICKUPS.pickRadiusMult) {
-        d.taken = true;
-        d.takeT = state.time;
-        state.docsCollected++;
-        p.size = Math.min(PLAYER.maxSize, p.size + PICKUPS.docGrowth);
-        beep(880, 0.08, 'sine', 0.13);
-        beep(1320, 0.12, 'sine', 0.1);
-      }
-    }
-
-    // Surface Pickups
-    for (const d of state.looseCookies) {
-      if (d.taken) continue;
-      if (dist(p.x, p.y, d.x, d.y) < d.r + p.size * PICKUPS.pickRadiusMult) {
-        d.taken = true;
-        d.takeT = state.time;
-        p.size = Math.min(PLAYER.maxSize, p.size + PICKUPS.crumbGrowth);
-      }
-    }
-
-    // Cookie jar
-    const cj = state.cookieJar;
-    if (!cj.taken && dist(p.x, p.y, cj.x, cj.y) < cj.r + p.size * PICKUPS.pickRadiusMult) {
-      cj.taken = true;
-      cj.takeT = state.time;
-      state.cookieCollected = true;
-      p.size = Math.min(PLAYER.maxSize, p.size + PICKUPS.cookieGrowth);
-      p.growT = PICKUPS.cookieGrowDuration;
-      for (let i = 0; i < RENDER.crumbCount; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const sp = 100 + Math.random() * 200;
-        state.crumbs.push({
-          x: cj.x, y: cj.y,
-          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 100,
-          rot: Math.random() * Math.PI * 2, vrot: (Math.random() - 0.5) * 8,
-          life: 1.5, size: 4 + Math.random() * 4,
-          color: RENDER.crumbColors[Math.floor(Math.random() * RENDER.crumbColors.length)],
-        });
-      }
-      beep(440, 0.1, 'sine', 0.12);
-      setTimeout(() => beep(660, 0.1, 'sine', 0.12), 80);
-      setTimeout(() => beep(880, 0.18, 'sine', 0.14), 180);
-      setTimeout(() => beep(1320, 0.25, 'sine', 0.12), 320);
-    }
+    // (Legacy doc / loose-cookie / cookie-jar pickups removed — they lived at
+    // fixed page positions in the old discovery design and would be wrongly
+    // auto-collected as the runner scrolls past them. The runner's only
+    // collectible is the hidden-doc system above.)
 
     // X-ray scanning (spatial) — the truth shows only through the window.
     // Sweep the window across an element to cover it; once enough of its width
@@ -1050,24 +1011,211 @@ export default class GameScene extends Phaser.Scene {
     }
     GunShooter.updateProjectiles(state, dt);
 
-    // Win trigger — slip through the revealed hole once everything's
-    // collected. Replaces the old "reach SUBSCRIBE" exit. Starts the malware
-    // install → short-circuit → glitch-wipe sequence, which flips status to
-    // 'won' and runs the results overlay.
-    if (state.docsCollected === state.docs.length && state.cookieCollected) {
+    // (Old hole win-trigger removed — the escape sequence owns the exit now.)
+  }
+
+  // ===== ESCAPE SEQUENCE (after the 5 docs are collected) =====
+  // Beat list:
+  //   1. narration: "looks like we got what we needed. how do we get out?"
+  //   2. scroll decelerates; the weird comment scrolls into frame and stops
+  //   3. narration: "that comment looks different... something behind it"
+  //   4. player drags the weird comment aside → reveals the broken hole
+  //   5. narration: "that's an exit. let's go."
+  //   6. player moves the window into the hole → (placeholder) next level
+  beginEscape() {
+    const state = this.state;
+    if (state.escape) return;
+    const viewH = this.VH / state.cam.zoom;
+    // Place the weird comment ~1.2 viewports below the current scroll so it
+    // scrolls into view as the page decelerates. Park the hole at the same rect.
+    const commentY = state.scrollY + viewH + 260;
+    const slotX = 24, slotW = 580, slotH = 88;
+    const prop = state.propaganda[0];
+    prop.x = slotX; prop.y = commentY; prop.w = slotW; prop.h = slotH;
+    prop.homeX = slotX; prop.homeY = commentY;
+    prop.dragging = false; prop.revealed = false;
+    const hole = state.truth[0];
+    hole.x = slotX; hole.y = commentY; hole.w = slotW; hole.h = slotH;
+    // Camera target so the comment ends ~40% down the viewport.
+    const stopY = commentY - viewH * 0.40;
+    state.escape = { step: 'narrate1', commentY, stopY, t: 0 };
+    // Narration 1 — player's own voice.
+    this.startNarration([
+      { speaker: 'YOU', text: 'Looks like we got what we needed.' },
+      { speaker: 'YOU', text: 'Now... how do we get out of here?' },
+    ], () => { state.escape.step = 'toComment'; });
+  }
+
+  // Scroll-owning half of the escape — runs early (before player movement) so
+  // dScroll reflects the deceleration. Eases the camera to a stop with the
+  // weird comment in frame, then hands off to narration 2.
+  updateEscapeScroll(dt, viewH) {
+    const state = this.state;
+    const esc = state.escape;
+    esc.t += dt;
+    if (esc.step === 'toComment') {
+      const ease = Math.min(1, dt * 2.2);
+      state.scrollY += (esc.stopY - state.scrollY) * ease;
+      state.scrollSpeed = Math.abs(esc.stopY - state.scrollY) * 2.2;
+      if (Math.abs(esc.stopY - state.scrollY) < 3) {
+        state.scrollY = esc.stopY; state.scrollSpeed = 0;
+        esc.step = 'narrate2';
+        this.startNarration([
+          { speaker: 'YOU', text: 'Hold on — look at that comment.' },
+          { speaker: 'YOU', text: "It looks a little different than the others. There's something behind it, I suspect." },
+        ], () => { esc.step = 'drag'; });
+      }
+    } else {
+      // All other escape steps freeze the scroll.
+      state.scrollSpeed = 0;
+      if (esc.step !== 'narrate1') state.scrollY = esc.stopY;
+    }
+  }
+
+  // Interaction half — runs after player movement. Handles the drag-reveal and
+  // moving into the hole (both need the up-to-date player position).
+  updateEscapeInteractions() {
+    const state = this.state;
+    const esc = state.escape;
+    const p = state.player;
+    if (esc.step === 'drag') {
       const prop = state.propaganda[0];
+      const movedAway = Math.hypot(prop.x - prop.homeX, prop.y - prop.homeY) > 70;
+      if (movedAway && !prop.revealed) {
+        prop.revealed = true;
+        noise(0.3, 0.14);
+        beep(90, 0.45, 'sawtooth', 0.09);
+        esc.step = 'narrate3';
+        this.startNarration([
+          { speaker: 'YOU', text: 'Oh, damn.' },
+          { speaker: 'YOU', text: "That looks like an exit. Let's go, then." },
+        ], () => { esc.step = 'exit'; });
+      }
+    } else if (esc.step === 'exit') {
       const hole = state.truth[0];
-      if (prop.revealed &&
-          p.x > hole.x && p.x < hole.x + hole.w &&
-          p.y > hole.y - 12 && p.y < hole.y + hole.h + 12) {
-        state.stats.endedAt = state.time;
+      if (p.x > hole.x + 40 && p.x < hole.x + hole.w - 40 &&
+          p.y > hole.y - 10 && p.y < hole.y + hole.h + 10) {
+        esc.step = 'done';
         beep(523, 0.1, 'sine', 0.1);
-        setTimeout(() => beep(659, 0.1, 'sine', 0.1), 80);
-        setTimeout(() => beep(784, 0.18, 'sine', 0.12), 180);
-        setTimeout(() => beep(1047, 0.25, 'sine', 0.1), 320);
-        this.beginEndSequence();
+        setTimeout(() => beep(659, 0.1, 'sine', 0.1), 90);
+        setTimeout(() => beep(784, 0.2, 'sine', 0.12), 200);
+        // PLACEHOLDER for the next level / dark-tunnel transition. For now,
+        // a final narration then flip to 'won' so the run resolves cleanly.
+        this.startNarration([
+          { speaker: 'SYSTEM', text: '> slipping through the gap...' },
+          { speaker: 'SYSTEM', text: '> [ next level + tunnel animation goes here ]' },
+        ], () => {
+          state.status = 'won';
+          state.stats.endedAt = state.time;
+        });
       }
     }
+  }
+
+  // ===== Narration (player's own voice etc.) — reuses the intel dialog DOM =====
+  startNarration(lines, onDone) {
+    const state = this.state;
+    state.narration = { lines, idx: 0, typing: true, onDone };
+    this.intelDom.wrap?.classList.remove('hidden');
+    requestAnimationFrame(() => this.intelDom.wrap?.classList.add('show'));
+    this.showNarrationLine(0);
+    beep(660, 0.06, 'sine', 0.06);
+  }
+  showNarrationLine(i) {
+    const n = this.state.narration;
+    if (!n) return;
+    const line = n.lines[i];
+    if (!line) return this.closeNarration();
+    const colors = { YOU: '#4A7BC8', TOTO: '#E63946', SYSTEM: '#2D8659', MAX: '#9b59b6' };
+    if (this.intelDom.speaker) {
+      this.intelDom.speaker.textContent = line.speaker || '';
+      this.intelDom.speaker.style.background = colors[line.speaker] || '#1a1a1f';
+    }
+    if (this.intelDom.line) this.intelDom.line.textContent = '';
+    this.intelDom.hint?.classList.remove('show');
+    let chars = 0;
+    const text = line.text;
+    const tick = () => {
+      const nn = this.state.narration;
+      if (!nn || !nn.typing) {
+        if (this.intelDom.line) this.intelDom.line.textContent = text;
+        return;
+      }
+      if (chars < text.length) {
+        chars++;
+        if (this.intelDom.line) this.intelDom.line.textContent = text.slice(0, chars);
+        if (text[chars - 1] !== ' ' && Math.random() < 0.22) beep(1600 + Math.random() * 600, 0.005, 'square', 0.011);
+        this.narrationTimer = setTimeout(tick, 28);
+      } else if (this.state.narration) {
+        this.state.narration.typing = false;
+      }
+    };
+    tick();
+  }
+  advanceNarration() {
+    const n = this.state.narration;
+    if (!n) return;
+    if (n.typing) {
+      if (this.narrationTimer) clearTimeout(this.narrationTimer);
+      n.typing = false;
+      if (this.intelDom.line) this.intelDom.line.textContent = n.lines[n.idx].text;
+      return;
+    }
+    n.idx++;
+    if (n.idx >= n.lines.length) return this.closeNarration();
+    n.typing = true;
+    this.showNarrationLine(n.idx);
+  }
+  closeNarration() {
+    if (this.narrationTimer) clearTimeout(this.narrationTimer);
+    const n = this.state.narration;
+    const onDone = n && n.onDone;
+    this.state.narration = null;
+    this.intelDom.wrap?.classList.remove('show');
+    setTimeout(() => this.intelDom.wrap?.classList.add('hidden'), 400);
+    if (onDone) onDone();
+  }
+
+  // The suspicious comment — looks like a normal comment but greyer, so it
+  // reads as "off." Drawn during the escape sequence; draggable in the 'drag'
+  // step to reveal the hole behind it.
+  drawWeirdComment(ctx, prop) {
+    const state = this.state;
+    ctx.save();
+    if (prop.dragging) {
+      ctx.shadowColor = 'rgba(0,0,0,0.3)';
+      ctx.shadowBlur = 16; ctx.shadowOffsetY = 5;
+    }
+    drawHandRect(ctx, prop.x, prop.y, prop.w, prop.h, '#d6d6d6', '#b0b0b0', 200, 1.2);
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    // Avatar
+    ctx.fillStyle = '#9a9a9a';
+    ctx.beginPath(); ctx.arc(prop.x + 22, prop.y + 22, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0f0f0';
+    ctx.font = 'bold 12px ui-monospace, monospace';
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    ctx.fillText('?', prop.x + 22, prop.y + 23);
+    ctx.textAlign = 'left';
+    // Username + timestamp
+    ctx.fillStyle = '#5a5a5a';
+    ctx.font = 'bold 11px sans-serif'; ctx.textBaseline = 'top';
+    ctx.fillText('@hush_compliance   •   just now', prop.x + 44, prop.y + 8);
+    // Comment text — too eager (the "fishy" tell)
+    ctx.fillStyle = '#6a6a6a'; ctx.font = '11px sans-serif';
+    ctx.fillText("yeah totally, nothing weird going on here. move along.", prop.x + 44, prop.y + 28);
+    // Footer
+    ctx.fillStyle = '#999999'; ctx.font = '10px ui-monospace, monospace';
+    ctx.fillText('👍 0   👎   reply', prop.x + 44, prop.y + 56);
+    // Drag hint while it's grabbable
+    if (state.escape?.step === 'drag' && !prop.dragging && !prop.revealed) {
+      const pulse = 0.5 + Math.sin(state.time * 4) * 0.4;
+      ctx.fillStyle = 'rgba(230, 57, 70, ' + (0.5 + pulse * 0.5) + ')';
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('▸ hold & drag this aside', prop.x + prop.w - 12, prop.y + prop.h - 12);
+      ctx.textAlign = 'left';
+    }
+    ctx.restore();
   }
 
   // Broken-wall hole behind the suspicious comment — the level's escape
@@ -1304,74 +1452,26 @@ export default class GameScene extends Phaser.Scene {
     }
     ChasingRecs.drawAgents(ctx, state.agents.chasingRecs, state);
 
-    // comments — skip the falling-comment slot (drawn separately below) and
-    // slot 2, which is the suspicious (draggable) comment + hole behind it.
-    for (let i = 0; i < commentSlots.length; i++) {
-      if (i === 2) continue;
-      if (FallingComment.isAgentSlot(state.agents.fallingComment, i)) continue;
-      const slot = commentSlots[i];
-      drawComment(ctx, slot.x, slot.y, slot.w, slot.h, i, false, null);
-    }
-    if (state.agents.fallingComment.state !== 'idle') {
-      FallingComment.drawAgent(ctx, state.agents.fallingComment, state);
-    }
-
-    // (Old hole-exit visual disabled in the runner rework — the page is now
-    // infinite, there's no labeled exit. Re-enable when/if the discovery
-    // mode comes back.)
-
-    // The suspicious comment is OFF in the runner rework — kept conditional
-    // on a flag so the discovery mode can come back later without losing the
-    // code. (Setting to literal `false` makes the dead branch obvious.)
-    if (false) for (const prop of state.propaganda) {
-      ctx.save();
-      if (prop.dragging) {
-        ctx.shadowColor = 'rgba(0,0,0,0.3)';
-        ctx.shadowBlur = 16;
-        ctx.shadowOffsetY = 5;
+    // ── Infinite comment feed — tiles comment rows down the page so it reads
+    // like an endless YouTube comments section as the camera scrolls. Rows are
+    // deterministic per index, so they stay stable while scrolling.
+    {
+      const COMMENTS_TOP = 620, ROW_H = 100, CW = 580, CH = 88, CX = 24;
+      const iStart = Math.max(0, Math.floor((topY - COMMENTS_TOP) / ROW_H));
+      const iEnd = Math.floor((botY - COMMENTS_TOP) / ROW_H);
+      for (let i = iStart; i <= iEnd; i++) {
+        drawComment(ctx, CX, COMMENTS_TOP + i * ROW_H, CW, CH, i, false, null);
       }
-      // Grey card (real-comment layout, just desaturated)
-      drawHandRect(ctx, prop.x, prop.y, prop.w, prop.h, '#d6d6d6', '#b0b0b0', 200, 1.2);
-      ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    }
 
-      // Avatar
-      ctx.fillStyle = '#9a9a9a';
-      ctx.beginPath();
-      ctx.arc(prop.x + 22, prop.y + 22, 14, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#f0f0f0';
-      ctx.font = 'bold 12px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      ctx.fillText('?', prop.x + 22, prop.y + 23);
-      ctx.textAlign = 'left';
-
-      // Username + timestamp (looks normal)
-      ctx.fillStyle = '#5a5a5a';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.textBaseline = 'top';
-      ctx.fillText('@user_?   •   2 hours ago', prop.x + 44, prop.y + 8);
-
-      // Comment text — innocuous but a touch too eager (the "fishy" tell)
-      ctx.fillStyle = '#6a6a6a';
-      ctx.font = '11px sans-serif';
-      ctx.fillText("yeah totally, nothing weird going on here. move along.", prop.x + 44, prop.y + 28);
-
-      // Footer (likes / reply)
-      ctx.fillStyle = '#999999';
-      ctx.font = '10px ui-monospace, monospace';
-      ctx.fillText('👍 0   👎   reply', prop.x + 44, prop.y + 56);
-
-      // Early drag hint
-      if (!prop.dragging && !prop.revealed && state.time < 12) {
-        const pulse = 0.5 + Math.sin(state.time * 4) * 0.3;
-        ctx.fillStyle = 'rgba(230, 57, 70, ' + pulse + ')';
-        ctx.font = 'bold 9px ui-monospace, monospace';
-        ctx.textAlign = 'right';
-        ctx.fillText('▸ drag this aside', prop.x + prop.w - 12, prop.y + prop.h - 14);
-        ctx.textAlign = 'left';
+    // ── Escape sequence: the broken hole + the weird comment that hides it. ──
+    if (state.escape) {
+      const prop = state.propaganda[0];
+      const hole = state.truth[0];
+      if (prop.dragging || prop.revealed) {
+        this.drawHole(ctx, hole, state.escape.step === 'exit');
       }
-      ctx.restore();
+      this.drawWeirdComment(ctx, prop);
     }
 
     // (Cookie banner disabled — was pinned to PH-40 which is far off-screen now.)

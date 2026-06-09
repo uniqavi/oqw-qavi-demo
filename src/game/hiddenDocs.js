@@ -11,8 +11,10 @@ import { effectiveSize } from './playerSize.js';
 const DOC = {
   w: 36, h: 44,
   riseSpeed: 60,                // px/sec UP — slower than enemies so easier to catch
-  spawnIntervalMin: 6,          // seconds between spawns (random in this range)
-  spawnIntervalMax: 10,
+  // Rare on purpose — a full run (5 docs) should outlast the scroll-speed
+  // ramp so the player reaches the fast phase before escaping.
+  spawnIntervalMin: 15,         // seconds between spawns (random in this range)
+  spawnIntervalMax: 26,
   revealRange: 160,             // window center within this distance → doc becomes visible
 };
 

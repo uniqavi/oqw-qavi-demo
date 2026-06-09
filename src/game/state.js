@@ -137,10 +137,16 @@ export function createState() {
     // Hidden docs — the runner's WIN condition. Spawn from bottom, proximity-
     // revealed, collect 5 to escape.
     hiddenDocs: [],
-    hiddenDocSpawnT: 6,         // first hidden doc ~6s in
+    hiddenDocSpawnT: 10,        // first hidden doc ~10s in
     docsTarget: 5,
     // Run state for the new game over flow.
     gameOver: false,
+    // Escape sequence — scripted ending after the 5 docs are collected. null
+    // during normal play; an object { step, ... } while the escape plays out.
+    escape: null,
+    // Generic narration (player's own voice etc.) — reuses the intel dialog
+    // DOM. null when idle; { lines, idx, typing } while showing.
+    narration: null,
     agents: createAgents(),
     layout: createLayout(),
     docs: createDocs(),
@@ -203,7 +209,9 @@ export function resetState(state) {
   state.powerups.length = 0;
   state.powerupSpawnT = 4;
   state.hiddenDocs.length = 0;
-  state.hiddenDocSpawnT = 6;
+  state.hiddenDocSpawnT = 10;
+  state.escape = null;
+  state.narration = null;
   state.gameOver = false;
   p.buffs.size = 0; p.buffs.speed = 0; p.buffs.immune = 0;
 
