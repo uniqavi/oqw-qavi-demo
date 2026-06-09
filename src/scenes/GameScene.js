@@ -178,6 +178,28 @@ export default class GameScene extends Phaser.Scene {
     this.runnerHud.taskFrame?.classList.remove('hidden');
     this.runnerHud.hpFrame?.classList.remove('hidden');
 
+    // Dev testing panel (temporary). Toggle button + 3 ability toggles that
+    // flip state.player.test.* flags (immune / size / magnet).
+    this.testEls = {
+      toggle: document.getElementById('test-toggle'),
+      panel:  document.getElementById('test-panel'),
+      opts:   document.querySelectorAll('#test-panel .test-opt'),
+    };
+    this.testEls.toggle?.classList.remove('hidden');
+    this.onTestToggle = (e) => { e.stopPropagation(); this.testEls.panel?.classList.toggle('hidden'); };
+    this.testEls.toggle?.addEventListener('click', this.onTestToggle);
+    this.onTestOpt = (e) => {
+      e.stopPropagation();
+      const key = e.currentTarget.dataset.test;
+      const t = this.state.player.test;
+      t[key] = !t[key];
+      e.currentTarget.classList.toggle('on', t[key]);
+      const st = e.currentTarget.querySelector('.test-state');
+      if (st) st.textContent = t[key] ? 'ON' : 'OFF';
+      beep(t[key] ? 880 : 440, 0.05, 'square', 0.05);
+    };
+    this.testEls.opts?.forEach((el) => el.addEventListener('click', this.onTestOpt));
+
     // End-sequence DOM refs (malware install + glitch wipe)
     this.endDom = {
       wrap:    document.getElementById('end-sequence'),
@@ -301,6 +323,10 @@ export default class GameScene extends Phaser.Scene {
       // get them stuck on screen.
       this.runnerHud?.taskFrame?.classList.add('hidden');
       this.runnerHud?.hpFrame?.classList.add('hidden');
+      this.testEls?.toggle?.classList.add('hidden');
+      this.testEls?.panel?.classList.add('hidden');
+      this.testEls?.toggle?.removeEventListener('click', this.onTestToggle);
+      this.testEls?.opts?.forEach((el) => el.removeEventListener('click', this.onTestOpt));
     });
   }
 
@@ -830,9 +856,9 @@ export default class GameScene extends Phaser.Scene {
     const c = state.cam;
 
     // ── AUTO-SCROLL camera ────────────────────────────────────────────────
-    // Two-phase ramp: slow chill phase, then linear ramp up to fast cap.
-    // SHIFT multiplies the current base. During the escape sequence the scroll
-    // is owned by updateEscapeScroll (decelerates to a stop). dScroll = actual
+    // Two-phase ramp: slow chill phase, then linear ramp up to fast cap. The
+    // scroll is NOT affected by SHIFT — it ramps purely on time. During the
+    // escape the scroll is owned by updateEscapeScroll. dScroll = actual
     // camera delta this frame, used to auto-advance the player.
     const viewW = this.VW / c.zoom;
     const viewH = this.VH / c.zoom;
@@ -847,10 +873,8 @@ export default class GameScene extends Phaser.Scene {
         const rampT = Math.min(1, (state.time - SCROLL.slowDuration) / SCROLL.rampDuration);
         baseRamped = SCROLL.slowSpeed + (SCROLL.fastSpeed - SCROLL.slowSpeed) * rampT;
       }
-      const boosting = this.wasd.shift.isDown;
-      const scrollRate = boosting ? baseRamped * SCROLL.boostMult : baseRamped;
-      state.scrollSpeed = scrollRate;
-      state.scrollY += scrollRate * dt;
+      state.scrollSpeed = baseRamped;
+      state.scrollY += baseRamped * dt;
     }
     const dScroll = state.scrollY - prevScrollY;
 
@@ -860,14 +884,14 @@ export default class GameScene extends Phaser.Scene {
 
     // ── Player movement (auto-follow + WASD) ──────────────────────────────
     // Step 1: auto-advance the player WITH the camera so they keep their
-    // viewport-relative Y when no input. (Without this the camera would drag
-    // them up to the top edge every frame — the bug the player reported.)
+    // viewport-relative Y when no input.
     p.y += dScroll;
 
-    // Step 2: WASD / arrows for free movement within the viewport. Speed
-    // buff multiplies player speed. Note DOWN no longer pushes the scroll;
-    // it just moves the player down (toward the bottom edge = riskier).
-    const speedMul = (p.buffs.speed > 0) ? POWERUP.speedMul : 1;
+    // Step 2: WASD / arrows for free movement. SHIFT boosts the PLAYER's
+    // movement speed only (the scroll is untouched). The FAST powerup also
+    // multiplies movement.
+    const boosting = this.wasd.shift.isDown;
+    const speedMul = (p.buffs.speed > 0 ? POWERUP.speedMul : 1) * (boosting ? PLAYER.boostMul : 1);
     const speed = PLAYER.baseSpeed * speedMul;
     let vx = 0, vy = 0;
     if (this.wasd.left.isDown  || this.cursors.left.isDown)  vx -= 1;
@@ -911,6 +935,24 @@ export default class GameScene extends Phaser.Scene {
       }
     }
     Waves.update(state, dt, viewH);
+
+    // Humour quip — after a couple of hits the player grumbles about getting
+    // attacked, then realises the irony. Non-blocking (doesn't pause).
+    if (!state.quipShown && state.hitCount >= 2 && !state.escape) {
+      state.quipShown = true;
+      this.showQuip([
+        'bro, why do these viruses keep attacking me?',
+        "...wait. they don't know i'm a virus too.",
+      ]);
+    }
+    if (state.quip) {
+      state.quip.t += dt;
+      if (state.quip.t >= state.quip.dur) {
+        state.quip.idx++;
+        state.quip.t = 0;
+        if (state.quip.idx >= state.quip.lines.length) state.quip = null;
+      }
+    }
 
     // Escape interactions that need the post-movement player position
     // (drag-reveal of the comment, moving into the hole).
@@ -1027,8 +1069,12 @@ export default class GameScene extends Phaser.Scene {
     if (state.escape) return;
     const viewH = this.VH / state.cam.zoom;
     // Place the weird comment ~1.2 viewports below the current scroll so it
-    // scrolls into view as the page decelerates. Park the hole at the same rect.
-    const commentY = state.scrollY + viewH + 260;
+    // scrolls into view as the page decelerates. Snap it to the comment-feed
+    // grid (top 620, row 100) so it replaces a row cleanly instead of
+    // overlapping its neighbours.
+    const COMMENTS_TOP = 620, ROW_H = 100;
+    let commentY = state.scrollY + viewH + 260;
+    commentY = COMMENTS_TOP + Math.round((commentY - COMMENTS_TOP) / ROW_H) * ROW_H;
     const slotX = 24, slotW = 580, slotH = 88;
     const prop = state.propaganda[0];
     prop.x = slotX; prop.y = commentY; prop.w = slotW; prop.h = slotH;
@@ -1083,6 +1129,8 @@ export default class GameScene extends Phaser.Scene {
       const movedAway = Math.hypot(prop.x - prop.homeX, prop.y - prop.homeY) > 70;
       if (movedAway && !prop.revealed) {
         prop.revealed = true;
+        prop.revealClock = performance.now();   // real-time clock for the slide-away
+        prop.dragging = false;                   // release it so the slide takes over
         noise(0.3, 0.14);
         beep(90, 0.45, 'sawtooth', 0.09);
         esc.step = 'narrate3';
@@ -1110,6 +1158,42 @@ export default class GameScene extends Phaser.Scene {
         });
       }
     }
+  }
+
+  // Non-blocking internal-monologue quip — a small caption that auto-advances.
+  showQuip(lines) {
+    this.state.quip = { lines, idx: 0, t: 0, dur: 3.2 };
+    beep(520, 0.05, 'sine', 0.05);
+  }
+
+  // Draw the quip as a screen-space caption near the top-centre of the canvas.
+  drawQuip(ctx) {
+    const q = this.state.quip;
+    if (!q) return;
+    const text = q.lines[q.idx];
+    if (!text) return;
+    // fade in/out at the edges of each line's duration
+    const fadeIn = Math.min(1, q.t / 0.3);
+    const fadeOut = Math.min(1, (q.dur - q.t) / 0.3);
+    const alpha = Math.max(0, Math.min(fadeIn, fadeOut));
+    const { VW } = this;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = "italic 600 26px 'Saira Condensed', sans-serif";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(text).width + 44;
+    const cx = VW / 2, cy = 70;
+    // bubble
+    ctx.fillStyle = 'rgba(10,12,20,0.86)';
+    ctx.strokeStyle = 'rgba(122,208,235,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - w / 2, cy - 22, w, 44, 10);
+    else ctx.rect(cx - w / 2, cy - 22, w, 44);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#eaf6ff';
+    ctx.fillText(text, cx, cy + 1);
+    ctx.restore();
   }
 
   // ===== Narration (player's own voice etc.) — reuses the intel dialog DOM =====
@@ -1181,7 +1265,18 @@ export default class GameScene extends Phaser.Scene {
   // step to reveal the hole behind it.
   drawWeirdComment(ctx, prop) {
     const state = this.state;
+    // Once revealed, the comment slides down + fades fully off (real-time so
+    // it animates even while the narration pauses the game), exposing the hole.
+    let ox = 0, oy = 0, alpha = 1;
+    if (prop.revealed) {
+      const t = Math.min(1, (performance.now() - (prop.revealClock || 0)) / 550);
+      const e = t * t * (3 - 2 * t);     // smoothstep
+      ox = e * 90; oy = e * 200; alpha = 1 - e;
+      if (t >= 1) return;                // fully gone — hole is clear
+    }
     ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(ox, oy);
     if (prop.dragging) {
       ctx.shadowColor = 'rgba(0,0,0,0.3)';
       ctx.shadowBlur = 16; ctx.shadowOffsetY = 5;
@@ -1251,15 +1346,8 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Exit cue once everything's collected
-    if (ready) {
-      const pulse = 0.5 + Math.sin(t * 5) * 0.5;
-      ctx.fillStyle = 'rgba(124, 208, 235, ' + (0.55 + pulse * 0.45) + ')';
-      ctx.font = 'bold 12px ui-monospace, monospace';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('↳ SLIP THROUGH TO ESCAPE', cx, cy);
-      ctx.textAlign = 'left';
-    }
+    // (The "slip through to escape" cue is shown in the OBJECTIVE UI instead
+    //  of on the hole art — looks cleaner. See updateHUD.)
   }
 
   // ===== X-ray scan fragments =====
@@ -1459,7 +1547,12 @@ export default class GameScene extends Phaser.Scene {
       const COMMENTS_TOP = 620, ROW_H = 100, CW = 580, CH = 88, CX = 24;
       const iStart = Math.max(0, Math.floor((topY - COMMENTS_TOP) / ROW_H));
       const iEnd = Math.floor((botY - COMMENTS_TOP) / ROW_H);
+      // During the escape, the weird comment owns one grid row — skip the
+      // normal comment there so they don't overlap.
+      const escapeRow = state.escape
+        ? Math.round((state.escape.commentY - COMMENTS_TOP) / ROW_H) : -1;
       for (let i = iStart; i <= iEnd; i++) {
+        if (i === escapeRow) continue;
         drawComment(ctx, CX, COMMENTS_TOP + i * ROW_H, CW, CH, i, false, null);
       }
     }
@@ -1541,140 +1634,19 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // surface pickups
-    for (const c of state.looseCookies) {
-      if (c.taken) continue;
-      ctx.fillStyle = '#C68642';
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#3a1a05';
-      ctx.beginPath();
-      ctx.arc(c.x - 2, c.y - 1, 1, 0, Math.PI * 2);
-      ctx.arc(c.x + 2, c.y + 2, 1, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // ===== HIDDEN UNDER-LAYER =====
+    // (Loose-cookie surface pickups + the old cookie-jar / doc X-ray
+    //  under-layer were removed — leftovers from the discovery design with no
+    //  role in the runner. The window keeps a dark "scanner" body so the
+    //  scan-fragment reveal still reads through it.)
     {
       const p = state.player;
-      const s = p.size;
+      const s = effectiveSize(p);
       const ph = s * 0.75;
       const px = p.x - s / 2, py = p.y - ph / 2;
-      
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(px, py, s, ph);
-      ctx.clip();
-
-      // under-layer background
-      ctx.fillStyle = '#110214'; // dark purple-ish
+      ctx.beginPath(); ctx.rect(px, py, s, ph); ctx.clip();
+      ctx.fillStyle = '#110214';
       ctx.fillRect(px, py, s, ph);
-
-      // cookie jar
-      const cj = state.cookieJar;
-      if (!cj.taken) {
-        const pulse = 1 + Math.sin(state.time * 3) * 0.06;
-        ctx.save();
-        ctx.translate(cj.x, cj.y);
-        ctx.scale(pulse, pulse);
-        ctx.fillStyle = 'rgba(244,211,94,0.35)';
-        ctx.beginPath();
-        ctx.arc(0, 0, cj.r + 14, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#e8e2c8';
-        ctx.strokeStyle = '#1a1a1f';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(-cj.r, -cj.r * 0.6);
-        ctx.lineTo(-cj.r, cj.r * 0.9);
-        ctx.quadraticCurveTo(-cj.r, cj.r * 1.05, -cj.r * 0.85, cj.r * 1.05);
-        ctx.lineTo(cj.r * 0.85, cj.r * 1.05);
-        ctx.quadraticCurveTo(cj.r, cj.r * 1.05, cj.r, cj.r * 0.9);
-        ctx.lineTo(cj.r, -cj.r * 0.6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = '#E63946';
-        ctx.fillRect(-cj.r - 2, -cj.r * 0.95, cj.r * 2 + 4, cj.r * 0.4);
-        ctx.strokeRect(-cj.r - 2, -cj.r * 0.95, cj.r * 2 + 4, cj.r * 0.4);
-        const cookieColors = ['#A0522D', '#8B5A2B', '#C68642'];
-        for (let i = 0; i < 6; i++) {
-          const ccx = -cj.r * 0.6 + (i % 3) * cj.r * 0.55;
-          const ccy = -cj.r * 0.3 + Math.floor(i / 3) * cj.r * 0.55;
-          ctx.fillStyle = cookieColors[i % 3];
-          ctx.beginPath();
-          ctx.arc(ccx, ccy, cj.r * 0.22, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#3a1a05';
-          ctx.beginPath();
-          ctx.arc(ccx - 1, ccy - 1, 1, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(ccx + 2, ccy + 1, 1, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(-cj.r * 0.85, cj.r * 0.4, cj.r * 1.7, cj.r * 0.45);
-        ctx.strokeRect(-cj.r * 0.85, cj.r * 0.4, cj.r * 1.7, cj.r * 0.45);
-        ctx.fillStyle = '#1a1a1f';
-        ctx.font = 'bold 10px Georgia, serif';
-        ctx.textBaseline = 'middle';
-        ctx.textAlign = 'center';
-        ctx.fillText('COOKIES', 0, cj.r * 0.62);
-        ctx.textAlign = 'left';
-        ctx.restore();
-        const bobY = Math.sin(state.time * 2) * 4;
-        ctx.fillStyle = '#1a1a1f';
-        ctx.font = 'bold 10px ui-monospace, monospace';
-        ctx.textBaseline = 'middle';
-        ctx.textAlign = 'center';
-        ctx.fillText('↓ accept these to subscribe ↓', cj.x, cj.y - cj.r - 22 + bobY);
-        ctx.textAlign = 'left';
-      } else if (state.time - cj.takeT < 0.4) {
-        const a = state.time - cj.takeT;
-        ctx.strokeStyle = 'rgba(244,211,94,' + (1 - a / 0.4) + ')';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(cj.x, cj.y, cj.r + a * 80, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      // docs
-      for (const d of state.docs) {
-        if (d.taken) {
-          if (state.time - d.takeT < 0.4) {
-            const a = state.time - d.takeT;
-            ctx.strokeStyle = 'rgba(244,211,94,' + (1 - a / 0.4) + ')';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(d.x, d.y, d.r + a * 50, 0, Math.PI * 2);
-            ctx.stroke();
-          }
-          continue;
-        }
-        const pulse = 1 + Math.sin(state.time * 4) * 0.12;
-        ctx.save();
-        ctx.translate(d.x, d.y);
-        ctx.scale(pulse, pulse);
-        ctx.fillStyle = 'rgba(244,211,94,0.45)';
-        ctx.beginPath();
-        ctx.arc(0, 0, d.r + 8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#F4D35E';
-        ctx.strokeStyle = '#1a1a1f';
-        ctx.lineWidth = 1.2;
-        ctx.fillRect(-d.r, -d.r * 0.7, d.r * 2, d.r * 1.5);
-        ctx.strokeRect(-d.r, -d.r * 0.7, d.r * 2, d.r * 1.5);
-        ctx.fillRect(-d.r, -d.r * 0.95, d.r * 0.9, d.r * 0.3);
-        ctx.strokeRect(-d.r, -d.r * 0.95, d.r * 0.9, d.r * 0.3);
-        ctx.fillStyle = '#1a1a1f';
-        ctx.font = 'bold 6px ui-monospace, monospace';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('DOC', -7, 2);
-        ctx.restore();
-      }
-
       ctx.restore();
     }
 
@@ -1784,6 +1756,9 @@ export default class GameScene extends Phaser.Scene {
     if (this.endSeq) drawArcs(ctx, this.endSeq, state);
 
     ctx.restore();
+
+    // Screen-space overlays (outside the world transform)
+    this.drawQuip(ctx);
   }
 
   // ===== HUD =====
@@ -1793,12 +1768,20 @@ export default class GameScene extends Phaser.Scene {
 
     // ── Runner HUD (top-left task + top-right HP) ──
     if (this.runnerHud?.taskLine) {
-      const done = state.docsCollected >= state.docsTarget;
-      this.runnerHud.taskLine.textContent = done
-        ? 'All docs secured — escape activated.'
-        : 'Collect 5 hidden docs to escape this page.';
-      this.runnerHud.taskProgress.textContent =
-        state.docsCollected + ' / ' + state.docsTarget;
+      const step = state.escape?.step;
+      let line, prog;
+      if (step === 'exit' || step === 'done') {
+        line = '▸ Slip the window through the hole to escape!';
+        prog = 'GO';
+      } else if (state.escape) {
+        line = 'All docs secured — find the way out.';
+        prog = state.docsCollected + ' / ' + state.docsTarget;
+      } else {
+        line = 'Collect 5 hidden docs to escape this page.';
+        prog = state.docsCollected + ' / ' + state.docsTarget;
+      }
+      this.runnerHud.taskLine.textContent = line;
+      this.runnerHud.taskProgress.textContent = prog;
     }
     if (this.runnerHud?.hpFill) {
       const hpPct = Math.max(0, Math.min(100, Math.round((p.hp / p.maxHp) * 100)));

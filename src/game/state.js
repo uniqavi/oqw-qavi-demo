@@ -85,6 +85,8 @@ export function createState() {
       maxHp: PLAYER.maxHp,
       // Active buff timers — each decremented per frame, drives effect.
       buffs: { size: 0, speed: 0, immune: 0 },
+      // Testing-mode toggles (no time limit) — driven by the dev test panel.
+      test: { immune: false, size: false, magnet: false },
     },
     cam: {
       x: 0, y: 0,
@@ -141,6 +143,8 @@ export function createState() {
     docsTarget: 5,
     // Run state for the new game over flow.
     gameOver: false,
+    hitCount: 0,          // total enemy hits taken (drives the humour quip)
+    quipShown: false,     // the "i'm a virus too" quip has played
     // Escape sequence — scripted ending after the 5 docs are collected. null
     // during normal play; an object { step, ... } while the escape plays out.
     escape: null,
@@ -212,6 +216,9 @@ export function resetState(state) {
   state.hiddenDocSpawnT = 10;
   state.escape = null;
   state.narration = null;
+  state.hitCount = 0;
+  state.quipShown = false;
+  state.quip = null;
   state.gameOver = false;
   p.buffs.size = 0; p.buffs.speed = 0; p.buffs.immune = 0;
 

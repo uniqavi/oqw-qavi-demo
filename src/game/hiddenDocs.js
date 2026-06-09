@@ -45,12 +45,27 @@ export function tick(state, dt, viewH) {
   const s = effectiveSize(p), ph = s * 0.75;
   const px = p.x - s / 2, py = p.y - ph / 2;
   const pcx = p.x, pcy = p.y;
+  const magnet = p.test && p.test.magnet;
+  const MAGNET_RANGE = 320;     // px — docs within this get pulled to the player
 
   for (let i = state.hiddenDocs.length - 1; i >= 0; i--) {
     const d = state.hiddenDocs[i];
     if (d.taken) { state.hiddenDocs.splice(i, 1); continue; }
     d.wy += d.vy * dt;
     d.age += dt;
+
+    // Magnet (testing) — pull nearby docs straight toward the player.
+    if (magnet) {
+      const mdx = pcx - (d.wx + d.w / 2);
+      const mdy = pcy - (d.wy + d.h / 2);
+      const md = Math.hypot(mdx, mdy) || 1;
+      if (md < MAGNET_RANGE) {
+        const pull = 600 * dt;     // strong attraction
+        d.wx += (mdx / md) * Math.min(md, pull);
+        d.wy += (mdy / md) * Math.min(md, pull);
+        d.reveal = 1;              // magnetised docs are fully visible
+      }
+    }
 
     // Cull when fully above the viewport (uncollected docs just despawn)
     if (d.wy + d.h < state.scrollY - 60) { state.hiddenDocs.splice(i, 1); continue; }
@@ -82,23 +97,28 @@ export function draw(ctx, state) {
   for (const d of state.hiddenDocs) {
     if (d.taken) continue;
     const r = d.reveal;
-    // Ambient hint — always faintly outlined, even at zero reveal, so you
-    // can sometimes spot a doc just barely under your window when scanning
-    const ambient = 0.08;
-    const alpha = Math.max(ambient, r);
+    // Much more visible now (the light-yellow-on-white was too hard to spot).
+    // Stays clearly readable even at zero reveal; brightens further when near.
+    const ambient = 0.85;
+    const alpha = Math.min(1, Math.max(ambient, r));
     ctx.save();
     // Soft halo grows with reveal
     if (r > 0.2) {
-      ctx.globalAlpha = r * 0.55;
+      ctx.globalAlpha = r * 0.5;
       ctx.fillStyle = '#F4D35E';
       ctx.fillRect(d.wx - 8, d.wy - 8, d.w + 16, d.h + 16);
     }
     ctx.globalAlpha = alpha;
-    // Folded-document silhouette
-    ctx.fillStyle = '#F4D35E';
+    // Drop shadow so it pops against the white page
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
+    // A deeper-gold body reads better on white than the pale yellow
+    ctx.fillStyle = '#F2C200';
     ctx.fillRect(d.wx, d.wy, d.w, d.h);
+    ctx.restore();
     ctx.strokeStyle = '#1a1a1f';
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 2;
     ctx.strokeRect(d.wx, d.wy, d.w, d.h);
     // Dog-ear corner
     ctx.fillStyle = '#d4b94a';

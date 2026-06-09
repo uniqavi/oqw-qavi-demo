@@ -61,6 +61,8 @@ export const PLAYER = {
   // discrete damage. At 0 HP the level fails.
   maxHp: 100,
   startHp: 100,
+  // SHIFT boosts the PLAYER's movement speed only (the scroll is unaffected).
+  boostMul: 1.9,
 };
 
 // Auto-scroll model (Subway-Surfers-style piecewise ramp). The first stretch
@@ -74,7 +76,8 @@ export const SCROLL = {
   fastSpeed:    280,   // max base speed after the ramp completes
   slowDuration: 14,    // seconds of calm intro before ramp begins
   rampDuration: 30,    // seconds over which speed ramps slow → fast
-  boostMult:    2.0,   // SHIFT held → scrollSpeed *= boostMult
+  // NOTE: SHIFT no longer affects the scroll — it only boosts the player's
+  // own movement (see PLAYER.boostMul). The scroll ramps purely on time.
 };
 
 // Wave-enemy tuning. Enemies spawn just below the viewport and fly UP toward
@@ -84,13 +87,15 @@ export const SCROLL = {
 export const WAVE = {
   startInterval:  3.0,   // seconds between spawns at depth = 0
   minInterval:    1.1,   // tightest spawn rate at max depth
-  rampDepth:      8000,  // depth (scrollY) at which we hit minInterval + max speed
-  // Enemy upward speed ramps with depth — slow + dodgeable early, faster later.
-  // (Closing speed also grows because the scroll speed itself ramps, so these
-  // are kept modest on purpose.)
-  speedUpMin:     95,    // px/sec at depth 0
-  speedUpMax:     185,   // px/sec at rampDepth
-  homingX:        70,    // gentle horizontal nudge toward player x (px/sec)
+  rampDepth:      8000,  // depth (scrollY) at which we hit minInterval (spawn rate only)
+  // Enemy upward speed is CONSTANT and slow — only the scroll speed ramps, so
+  // the closing speed grows over time without the enemies themselves getting
+  // faster (keeps them dodgeable).
+  speed:          85,    // px/sec, fixed
+  // Homing: enemies track the player's x only briefly after spawning, then go
+  // straight up their own way (no more tracking).
+  homingX:        90,    // horizontal nudge toward player x while homing (px/sec)
+  homeDuration:   1.0,   // seconds of homing before they stop tracking
 };
 
 // Powerup tuning — random pickups that grant 5s of a buff.
@@ -99,7 +104,7 @@ export const POWERUP = {
   intervalJitter: 5,     // ± random padding so spawns feel organic
   riseSpeed:      80,    // px/sec — pickups drift up gently so player can intercept
   duration:       5,     // seconds each buff lasts
-  sizeMul:        1.35,  // SIZE+: window scaled by this much (kept modest)
+  sizeMul:        1.85,  // SIZE+: window scaled by this much (a big, obvious buff)
   speedMul:       1.55,  // FAST: player movement speed scaled
 };
 

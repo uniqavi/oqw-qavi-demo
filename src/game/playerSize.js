@@ -10,6 +10,7 @@ export const HP_SIZE_FLOOR = 0.45;   // 45% size at 0 HP
 export function effectiveSize(p) {
   const hpRatio = Math.max(0, p.hp / p.maxHp);
   const hpScale = HP_SIZE_FLOOR + (1 - HP_SIZE_FLOOR) * hpRatio;
-  const buffScale = p.buffs.size > 0 ? POWERUP.sizeMul : 1;
+  const big = p.buffs.size > 0 || (p.test && p.test.size);
+  const buffScale = big ? POWERUP.sizeMul : 1;
   return p.size * hpScale * buffScale;
 }
