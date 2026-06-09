@@ -1,0 +1,12 @@
+# Netlify build config — Vite static build.
+# Netlify runs `npm install` then this command, and serves the `dist` folder.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Single-page app: serve index.html for any unknown path (harmless here since
+# the game is one page, but avoids 404s on refresh).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
