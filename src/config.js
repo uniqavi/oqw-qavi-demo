@@ -1,6 +1,9 @@
-// World dimensions (page logical size — viewport scales to fit)
+// World dimensions (page logical size — viewport scales to fit).
+// PW stays as the playable width. PH is effectively INFINITE for the runner
+// rework — the camera scrolls forever. We use a huge number rather than
+// Infinity so a few legacy clamps that compare against PH still behave.
 export const PW = 960;
-export const PH = 1200;
+export const PH = 1e9;
 
 // Per-difficulty multipliers. Applied at agent update time. Tuned so EASY
 // is genuinely forgiving for new players, NORMAL is "as designed,"
@@ -28,26 +31,72 @@ export function getDifficulty() {
 // removed — they simply never leave idle state, so they still render as normal
 // harmless page components (the search bar still shows, it just won't shoot).
 // Later levels re-enable more of them for escalating difficulty.
+// NOTE: with the auto-scroll shooter rework, the level uses the new
+// wave-spawn enemy system (src/game/waveEnemies.js). All of the original
+// static page-element agents are now disabled — they still render as
+// inert page chrome (search bar, account avatar) so the page still LOOKS
+// right, they just never wake up. Re-enable per-flag if a specific one is
+// useful in the wave model.
 export const L1 = {
-  activeChasingRecs: 1,    // 0..2 — how many sidebar cards actually chase
-  gunShooter:     true,    // the signature threat — kept
-  shootingSearch: false,   // deferred to later levels
-  fallingComment: false,   // deferred
-  explodingLike:  false,   // deferred
-  crushingCookie: false,   // deferred
-  gazeEnforcer:   false,   // the lethal cursor hunter — debuts in L2, off in L1
+  activeChasingRecs: 0,
+  gunShooter:     false,
+  shootingSearch: false,
+  fallingComment: false,
+  explodingLike:  false,
+  crushingCookie: false,
+  gazeEnforcer:   false,
 };
 
 // Player
 export const PLAYER = {
-  startX: 100,
-  startY: 100,
+  startX: 480,             // centered horizontally
+  startY: 320,             // near top of the page (camera starts at top)
   startSize: 75,
   maxSize: 200,
   deathSize: 25,
-  baseSpeed: 230,
+  baseSpeed: 360,          // bumped — needed for dodging in a scroller
   invulnDuration: 0.85,
   hitFlashDuration: 0.3,
+  // HP replaces the size-shrink damage model. 100 max; enemy hits deal
+  // discrete damage. At 0 HP the level fails.
+  maxHp: 100,
+  startHp: 100,
+};
+
+// Auto-scroll model (Subway-Surfers-style piecewise ramp). The first stretch
+// is intentionally slow — the player should clear the YouTube page chrome
+// (~1100px tall) in 12-15s so the world feels "calm" before it escalates.
+// After the chill phase, base speed ramps linearly up to a max.
+// SHIFT is the ONLY input that pushes scroll faster — DOWN is purely player
+// movement (towards viewport bottom = closer to enemy spawn = riskier dodge).
+export const SCROLL = {
+  slowSpeed:    75,    // px/sec for the first `slowDuration` seconds
+  fastSpeed:    280,   // max base speed after the ramp completes
+  slowDuration: 12,    // seconds of calm intro before ramp begins
+  rampDuration: 28,    // seconds over which speed ramps slow → fast
+  boostMult:    2.0,   // SHIFT held → scrollSpeed *= boostMult
+};
+
+// Wave-enemy tuning. Enemies spawn just below the viewport and fly UP toward
+// the player — opposite direction to the auto-scroll, so they always meet
+// the player even if the player is hugging the top edge. Spawn rate is
+// gentle at start, tightens with depth (capped to keep it survivable).
+export const WAVE = {
+  startInterval:  2.8,   // seconds between spawns at depth = 0
+  minInterval:    1.0,   // tightest spawn rate at max depth
+  rampDepth:      8000,  // depth (scrollY) at which we hit minInterval
+  speedUp:        220,   // px/sec — enemy upward speed
+  homingX:        90,    // gentle horizontal nudge toward player x (px/sec)
+};
+
+// Powerup tuning — random pickups that grant 5s of a buff.
+export const POWERUP = {
+  startInterval: 7,      // seconds between spawns at start
+  intervalJitter: 5,     // ± random padding so spawns feel organic
+  riseSpeed:      80,    // px/sec — pickups drift up gently so player can intercept
+  duration:       5,     // seconds each buff lasts
+  sizeMul:        1.6,   // SIZE+: window scaled by this much
+  speedMul:       1.55,  // FAST: player movement speed scaled
 };
 
 // Camera (zoom values overridden by resize fit-to-width)

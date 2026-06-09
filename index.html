@@ -28,6 +28,22 @@
           <div id="game"></div>
           <canvas id="oqw"></canvas>
 
+          <!-- ===== RUNNER HUD — top-left objective + top-right HP ===== -->
+          <div class="task-frame hidden" id="task-frame">
+            <span class="task-chip">OBJECTIVE</span>
+            <div class="task-body">
+              <div class="task-line" id="task-line">Collect 5 hidden docs to escape this page.</div>
+              <div class="task-progress" id="task-progress">0 / 5</div>
+            </div>
+          </div>
+          <div class="hp-frame hidden" id="hp-frame">
+            <span class="hp-chip">HP</span>
+            <div class="hp-body">
+              <div class="hp-bar"><div class="hp-fill" id="hp-fill"></div></div>
+              <div class="hp-number" id="hp-number">100 / 100</div>
+            </div>
+          </div>
+
           <!-- ===== ONBOARDING TOOLTIP (centered modal, pauses game) ===== -->
           <div class="onboarding-tip hidden" id="onboarding-tip">
             <div class="tip-card">
@@ -430,16 +446,13 @@
             </div>
           </div>
         </div>
-        <div class="hud">
-          <div class="stat"><span class="stat-label">SIZE</span><span id="ui-size">75px</span></div>
-          <div class="stat"><span class="stat-label">GAZE</span><span class="bar"><span class="bar-fill" id="ui-gaze"></span></span></div>
-          <div class="stat"><span class="stat-label">DOCS</span><span id="ui-docs">0 / 5</span></div>
-          <div class="stat"><span class="stat-label">🍪</span><span id="ui-cookie">no</span></div>
-          <div class="stat"><span class="stat-label">ZOOM</span><span id="ui-zoom">100%</span></div>
-          <div class="hint" id="ui-hint">infiltrating…</div>
-        </div>
-        <div class="instr">
-          <kbd>WASD</kbd> move &nbsp;·&nbsp; <kbd>+</kbd>/<kbd>-</kbd> or <kbd>scroll</kbd> zoom &nbsp;·&nbsp; <kbd>drag</kbd> ad banners &nbsp;·&nbsp; grab <code>cookies</code> &nbsp;·&nbsp; reach <code>SUBSCRIBE</code>
+        <!-- Legacy HUD strip — hidden in the runner rework (CSS .hud { display:none }).
+             JS still writes to these ids so the old logic keeps working; the
+             values that matter are mirrored into the new top-left/top-right
+             frames below. -->
+        <div class="hud" style="display:none">
+          <span id="ui-size"></span><span id="ui-gaze"></span><span id="ui-docs"></span>
+          <span id="ui-cookie"></span><span id="ui-zoom"></span><span id="ui-hint"></span>
         </div>
       </div>
     </div>

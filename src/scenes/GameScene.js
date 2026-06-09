@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PW, PH, PLAYER, CAMERA, GAZE, PICKUPS, RENDER, DIFFICULTY, L1, SCAN } from '../config.js';
+import { PW, PH, PLAYER, CAMERA, GAZE, PICKUPS, RENDER, DIFFICULTY, L1, SCAN, SCROLL, POWERUP } from '../config.js';
 import { createState, resetState } from '../game/state.js';
 import { recSlots, commentSlots } from '../game/layout.js';
 import { dist } from '../game/physics.js';
@@ -12,6 +12,10 @@ import * as ShootingSearch from '../game/agents/shootingSearch.js';
 import * as ChasingRecs from '../game/agents/chasingRecs.js';
 import * as GunShooter from '../game/agents/gunShooter.js';
 import { markScanCoverage } from '../game/scan.js';
+import * as Waves from '../game/waveEnemies.js';
+import * as Powerups from '../game/powerups.js';
+import * as HiddenDocs from '../game/hiddenDocs.js';
+import { effectiveSize } from '../game/playerSize.js';
 import { startEndSequence, updateEndSequence, drawArcs, PHASE_DURATIONS } from '../game/endSequence.js';
 import { crossfadeTo, stopMusic } from '../game/music.js';
 import { playVoice, stopVoice } from '../game/voice.js';
@@ -115,6 +119,7 @@ export default class GameScene extends Phaser.Scene {
       left: Phaser.Input.Keyboard.KeyCodes.A,
       down: Phaser.Input.Keyboard.KeyCodes.S,
       right: Phaser.Input.Keyboard.KeyCodes.D,
+      shift: Phaser.Input.Keyboard.KeyCodes.SHIFT,
     });
     this.input.keyboard.on('keydown-PLUS', this.zoomInStep, this);
     this.input.keyboard.on('keydown-EQUALS', this.zoomInStep, this);
@@ -150,7 +155,8 @@ export default class GameScene extends Phaser.Scene {
     this.restartBtn?.addEventListener('click', this.onRestart);
     this.backMenuBtn?.addEventListener('click', this.onBackMenu);
 
-    // HUD DOM refs
+    // HUD DOM refs — legacy ids still queried for backwards-compat, but the
+    // visible UI is the new top-left task frame + top-right HP frame.
     this.hud = {
       size: document.getElementById('ui-size'),
       gaze: document.getElementById('ui-gaze'),
@@ -159,6 +165,18 @@ export default class GameScene extends Phaser.Scene {
       zoom: document.getElementById('ui-zoom'),
       hint: document.getElementById('ui-hint'),
     };
+    // New runner HUD (top-left task + top-right HP)
+    this.runnerHud = {
+      taskFrame:    document.getElementById('task-frame'),
+      taskLine:     document.getElementById('task-line'),
+      taskProgress: document.getElementById('task-progress'),
+      hpFrame:      document.getElementById('hp-frame'),
+      hpFill:       document.getElementById('hp-fill'),
+      hpNumber:     document.getElementById('hp-number'),
+    };
+    // Show the runner frames while this scene is active
+    this.runnerHud.taskFrame?.classList.remove('hidden');
+    this.runnerHud.hpFrame?.classList.remove('hidden');
 
     // End-sequence DOM refs (malware install + glitch wipe)
     this.endDom = {
@@ -269,6 +287,10 @@ export default class GameScene extends Phaser.Scene {
       this.postMissionEl?.classList.add('hidden');
       this.postMissionEl?.classList.remove('show');
       this.canvasWrapEl?.classList.remove('post-mission');
+      // Hide runner-specific HUD frames so other scenes (Menu / Level2) don't
+      // get them stuck on screen.
+      this.runnerHud?.taskFrame?.classList.add('hidden');
+      this.runnerHud?.hpFrame?.classList.add('hidden');
     });
   }
 
@@ -798,34 +820,93 @@ export default class GameScene extends Phaser.Scene {
     const p = state.player;
     const c = state.cam;
 
-    // Player movement
-    const speedMult = 1.5 - (p.size / 200) * 0.7;
-    const speed = PLAYER.baseSpeed * speedMult;
+    // ── AUTO-SCROLL camera ────────────────────────────────────────────────
+    // Two-phase ramp: slow chill phase, then linear ramp up to fast cap.
+    // SHIFT multiplies the current base. Camera is the source of truth.
+    const viewW = this.VW / c.zoom;
+    const viewH = this.VH / c.zoom;
+    let baseRamped;
+    if (state.time < SCROLL.slowDuration) {
+      baseRamped = SCROLL.slowSpeed;
+    } else {
+      const rampT = Math.min(1, (state.time - SCROLL.slowDuration) / SCROLL.rampDuration);
+      baseRamped = SCROLL.slowSpeed + (SCROLL.fastSpeed - SCROLL.slowSpeed) * rampT;
+    }
+    const boosting = this.wasd.shift.isDown;
+    const scrollRate = boosting ? baseRamped * SCROLL.boostMult : baseRamped;
+    state.scrollSpeed = scrollRate;
+    const dScroll = scrollRate * dt;
+    state.scrollY += dScroll;
+
+    // Camera tracks scrollY directly
+    c.y = state.scrollY;
+    c.x = (PW - viewW) / 2;
+
+    // ── Player movement (auto-follow + WASD) ──────────────────────────────
+    // Step 1: auto-advance the player WITH the camera so they keep their
+    // viewport-relative Y when no input. (Without this the camera would drag
+    // them up to the top edge every frame — the bug the player reported.)
+    p.y += dScroll;
+
+    // Step 2: WASD / arrows for free movement within the viewport. Speed
+    // buff multiplies player speed. Note DOWN no longer pushes the scroll;
+    // it just moves the player down (toward the bottom edge = riskier).
+    const speedMul = (p.buffs.speed > 0) ? POWERUP.speedMul : 1;
+    const speed = PLAYER.baseSpeed * speedMul;
     let vx = 0, vy = 0;
-    if (this.wasd.left.isDown || this.cursors.left.isDown) vx -= 1;
+    if (this.wasd.left.isDown  || this.cursors.left.isDown)  vx -= 1;
     if (this.wasd.right.isDown || this.cursors.right.isDown) vx += 1;
-    if (this.wasd.up.isDown || this.cursors.up.isDown) vy -= 1;
-    if (this.wasd.down.isDown || this.cursors.down.isDown) vy += 1;
+    if (this.wasd.up.isDown    || this.cursors.up.isDown)    vy -= 1;
+    if (this.wasd.down.isDown  || this.cursors.down.isDown)  vy += 1;
     if (vx || vy) {
       const len = Math.hypot(vx, vy);
       vx /= len; vy /= len;
-      if (Math.random() < 0.06) beep(700 + Math.random() * 500, 0.015, 'square', 0.02);
     }
     p.x += vx * speed * dt;
     p.y += vy * speed * dt;
-    p.x = Phaser.Math.Clamp(p.x, p.size / 2, PW - p.size / 2);
-    p.y = Phaser.Math.Clamp(p.y, p.size * 0.4, PH - p.size * 0.4);
+
+    // Step 3: clamp horizontally to the page; vertically to the viewport.
+    // The bottom clamp is intentional — the player can ride at the bottom
+    // edge, but they're then directly in the enemy-spawn line. effSize is
+    // HP-scaled + buff-scaled so the window literally shrinks with damage.
+    const effSize = effectiveSize(p);
+    p.x = Phaser.Math.Clamp(p.x, effSize / 2, PW - effSize / 2);
+    const viewTop = state.scrollY + 30;
+    const viewBot = state.scrollY + viewH - 30 - effSize * 0.75;
+    p.y = Phaser.Math.Clamp(p.y, viewTop, viewBot);
+
     if (p.invuln > 0) p.invuln -= dt;
     if (p.hitFlash > 0) p.hitFlash -= dt;
     if (p.growT > 0) p.growT -= dt;
 
-    // Camera follow
-    const viewW = this.VW / c.zoom;
-    const viewH = this.VH / c.zoom;
-    c.x += ((p.x - viewW / 2) - c.x) * Math.min(1, dt * CAMERA.followLerp);
-    c.y += ((p.y - viewH / 2) - c.y) * Math.min(1, dt * CAMERA.followLerp);
-    c.x = PW > viewW ? Phaser.Math.Clamp(c.x, 0, PW - viewW) : (PW - viewW) / 2;
-    c.y = PH > viewH ? Phaser.Math.Clamp(c.y, 0, PH - viewH) : (PH - viewH) / 2;
+    // ── Wave enemies + powerups + hidden docs ─────────────────────────────
+    Waves.tickSpawner(state, dt, viewH);
+    Waves.update(state, dt, viewH);
+    Powerups.tick(state, dt, viewH);
+    const docsBefore = state.docsCollected;
+    HiddenDocs.tick(state, dt, viewH);
+    if (state.docsCollected > docsBefore) {
+      // Collected a doc this frame — small celebration beep
+      beep(880, 0.08, 'sine', 0.13);
+      setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
+    }
+    // Win — all docs collected. Use existing 'won' status flow for now.
+    if (state.docsCollected >= state.docsTarget && state.status === 'playing') {
+      state.status = 'won';
+      state.stats.endedAt = state.time;
+      beep(523, 0.1, 'sine', 0.1);
+      setTimeout(() => beep(659, 0.1, 'sine', 0.1), 80);
+      setTimeout(() => beep(784, 0.18, 'sine', 0.12), 180);
+      setTimeout(() => beep(1047, 0.25, 'sine', 0.1), 320);
+    }
+
+    if (state.gameOver && state.status === 'playing') {
+      state.status = 'lost';
+      state.lostReason = 'WINDOW CRASHED';
+      state.stats.endedAt = state.time;
+      noise(0.4, 0.18);
+      beep(80, 0.5, 'square', 0.13);
+    }
 
     // Propaganda dragging
     for (const prop of state.propaganda) {
@@ -1108,14 +1189,19 @@ export default class GameScene extends Phaser.Scene {
     ctx.scale(state.cam.zoom, state.cam.zoom);
     ctx.translate(-state.cam.x, -state.cam.y);
 
-    // page bg + grid
+    // page bg + grid — bounded to the CURRENT viewport so PH=∞ doesn't
+    // blow up the line loops. The grid tiles forever as the camera scrolls.
+    const viewH = this.VH / state.cam.zoom;
+    const topY = state.cam.y - 40;
+    const botY = state.cam.y + viewH + 40;
     ctx.fillStyle = '#f5f5f5';
-    ctx.fillRect(0, 0, PW, PH);
+    ctx.fillRect(0, topY, PW, botY - topY);
     ctx.strokeStyle = 'rgba(0,0,0,0.03)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let i = 0; i <= PW; i += 40) { ctx.moveTo(i, 0); ctx.lineTo(i, PH); }
-    for (let i = 0; i <= PH; i += 40) { ctx.moveTo(0, i); ctx.lineTo(PW, i); }
+    for (let i = 0; i <= PW; i += 40) { ctx.moveTo(i, topY); ctx.lineTo(i, botY); }
+    const gridStart = Math.floor(topY / 40) * 40;
+    for (let i = gridStart; i <= botY; i += 40) { ctx.moveTo(0, i); ctx.lineTo(PW, i); }
     ctx.stroke();
 
     // nav
@@ -1230,22 +1316,14 @@ export default class GameScene extends Phaser.Scene {
       FallingComment.drawAgent(ctx, state.agents.fallingComment, state);
     }
 
-    // The hidden passage (hole) behind the suspicious comment. Only drawn
-    // once the player starts moving the comment, so it stays concealed until
-    // uncovered. The comment is drawn AFTER, so when home it covers the hole.
-    {
-      const prop = state.propaganda[0];
-      const hole = state.truth[0];
-      if (prop.dragging || prop.revealed) {
-        const ready = state.docsCollected === state.docs.length && state.cookieCollected;
-        this.drawHole(ctx, hole, ready);
-      }
-    }
+    // (Old hole-exit visual disabled in the runner rework — the page is now
+    // infinite, there's no labeled exit. Re-enable when/if the discovery
+    // mode comes back.)
 
-    // The suspicious comment — looks like a normal comment but greyer, so the
-    // player senses something's off. Draggable; pulling it aside reveals the
-    // hole behind it.
-    for (const prop of state.propaganda) {
+    // The suspicious comment is OFF in the runner rework — kept conditional
+    // on a flag so the discovery mode can come back later without losing the
+    // code. (Setting to literal `false` makes the dead branch obvious.)
+    if (false) for (const prop of state.propaganda) {
       ctx.save();
       if (prop.dragging) {
         ctx.shadowColor = 'rgba(0,0,0,0.3)';
@@ -1296,8 +1374,8 @@ export default class GameScene extends Phaser.Scene {
       ctx.restore();
     }
 
-    // cookie banner (driven by CrushingCookie agent state)
-    CrushingCookie.drawBanner(ctx, state.agents.crushingCookie, state);
+    // (Cookie banner disabled — was pinned to PH-40 which is far off-screen now.)
+    // CrushingCookie.drawBanner(ctx, state.agents.crushingCookie, state);
 
 
     // crumbs
@@ -1504,13 +1582,33 @@ export default class GameScene extends Phaser.Scene {
     // under the player chrome, so it reads as truth seen through the window.
     this.drawScanXray(ctx);
 
+    // Wave enemies (auto-scroll shooter waves) — drawn in world coords above
+    // the page chrome so they appear to fly OVER the page.
+    Waves.draw(ctx, state);
+    // Hidden docs — drift up like enemies, proximity-revealed.
+    HiddenDocs.draw(ctx, state);
+    // Powerups drift up in the same world space — drawn after so they read
+    // on top if they overlap.
+    Powerups.draw(ctx, state);
+
     // player
     {
       const p = state.player;
-      const s = p.size;
+      // Effective size = HP-scaled × buff-scaled (shared with collision so
+      // the window LOOKS the same as it COLLIDES — the visible shrink from
+      // damage is real, not just cosmetic).
+      const s = effectiveSize(p);
       const ph = s * 0.75;
       const px = p.x - s / 2, py = p.y - ph / 2;
       ctx.save();
+      // Immune-buff golden halo (drawn behind player)
+      if (p.buffs.immune > 0) {
+        const pulse = 0.6 + Math.sin(state.time * 8) * 0.4;
+        ctx.strokeStyle = 'rgba(244, 211, 94, ' + (0.5 + pulse * 0.4) + ')';
+        ctx.lineWidth = 5; ctx.shadowColor = 'rgba(244, 211, 94, 0.9)'; ctx.shadowBlur = 18;
+        ctx.strokeRect(px - 4, py - 4, s + 8, ph + 8);
+        ctx.shadowBlur = 0;
+      }
       if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.45;
       // Window-border glow when hovering un-scanned hidden content (§1 cue).
       if (state.scanFragments.some(f => !f.scanned && this.windowOverlaps(f))) {
@@ -1591,29 +1689,32 @@ export default class GameScene extends Phaser.Scene {
   // ===== HUD =====
   updateHUD() {
     const state = this.state;
-    if (!this.hud.size) return;
-    this.hud.size.textContent = Math.round(state.player.size) + 'px';
-    this.hud.size.style.color =
-      state.player.size < 40 ? '#E63946' : state.player.size < 60 ? '#F4D35E' : '#f5f5f5';
-    this.hud.gaze.style.width = state.gaze + '%';
-    this.hud.gaze.style.background =
-      state.gaze < 50 ? '#2D8659' : state.gaze < 80 ? '#F4D35E' : '#E63946';
-    this.hud.docs.textContent = state.docsCollected + ' / ' + state.docs.length;
-    this.hud.cookie.textContent = state.cookieCollected ? 'YES' : 'no';
-    this.hud.cookie.style.color = state.cookieCollected ? '#2D8659' : '#f5f5f5';
-    this.hud.zoom.textContent = Math.round((state.cam.zoom / state.cam.baseZoom) * 100) + '%';
+    const p = state.player;
 
-    const gun = state.agents.gunShooter;
-    const prop = state.propaganda[0];
-    const allDone = state.docsCollected === state.docs.length && state.cookieCollected;
-    if (gun.state === 'aiming') this.hud.hint.textContent = '⚠ the avatar has a gun. of course it does. RUN AT IT';
-    else if (gun.state === 'awakening') this.hud.hint.textContent = '⚠ avatar waking up. this is bad';
-    else if (state.cursor) this.hud.hint.textContent = 'cursor is on you. break line of sight';
-    else if (allDone && prop.revealed) this.hud.hint.textContent = 'everything\'s yours. slip through the hole to escape.';
-    else if (allDone) this.hud.hint.textContent = 'drag the grey comment aside — there\'s a way out behind it.';
-    else if (state.docsCollected === state.docs.length && !state.cookieCollected)
-      this.hud.hint.textContent = 'docs got. now the cookies';
-    else this.hud.hint.textContent = (state.docs.length - state.docsCollected) + ' more docs to grab';
+    // ── Runner HUD (top-left task + top-right HP) ──
+    if (this.runnerHud?.taskLine) {
+      const done = state.docsCollected >= state.docsTarget;
+      this.runnerHud.taskLine.textContent = done
+        ? 'All docs secured — escape activated.'
+        : 'Collect 5 hidden docs to escape this page.';
+      this.runnerHud.taskProgress.textContent =
+        state.docsCollected + ' / ' + state.docsTarget;
+    }
+    if (this.runnerHud?.hpFill) {
+      const hpPct = Math.max(0, Math.min(100, Math.round((p.hp / p.maxHp) * 100)));
+      this.runnerHud.hpFill.style.width = hpPct + '%';
+      // Color shifts as HP drops
+      this.runnerHud.hpFill.style.background =
+        hpPct > 60 ? 'linear-gradient(90deg, #2D8659 0%, #6dc89e 100%)'
+        : hpPct > 30 ? 'linear-gradient(90deg, #F4D35E 0%, #ffe48a 100%)'
+        : 'linear-gradient(90deg, #E63946 0%, #ff6b73 100%)';
+      this.runnerHud.hpNumber.textContent = p.hp + ' / ' + p.maxHp;
+    }
+
+    // ── Legacy HUD writes (still set for any code path that reads them) ──
+    if (this.hud.size) this.hud.size.textContent = p.hp + ' / ' + p.maxHp;
+    if (this.hud.docs) this.hud.docs.textContent = state.docsCollected + ' / ' + state.docsTarget;
+    if (this.hud.zoom) this.hud.zoom.textContent = Math.round(state.scrollSpeed);
   }
 
 }

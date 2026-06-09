@@ -1409,6 +1409,101 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
   color: #ccc;
 }
 
+/* ===== Runner HUD — task frame + HP frame (VN-style angular chrome) ===== */
+.task-frame, .hp-frame {
+  position: absolute;
+  z-index: 35;
+  font-family: var(--font-mono);
+  padding: 16px 22px 14px;
+  background: linear-gradient(180deg, rgba(10,12,20,0.94) 0%, rgba(10,12,20,0.98) 100%);
+  border: 1.5px solid rgba(122, 208, 235, 0.55);
+  clip-path: polygon(
+    14px 0%, calc(100% - 14px) 0%, 100% 14px,
+    100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%,
+    0% calc(100% - 14px), 0% 14px
+  );
+  box-shadow: 0 6px 22px rgba(0,0,0,0.5);
+}
+.task-frame {
+  top: 24px; left: 24px;
+  min-width: 380px; max-width: 460px;
+}
+.hp-frame {
+  top: 24px; right: 24px;
+  min-width: 240px;
+}
+.task-frame.hidden, .hp-frame.hidden { display: none; }
+
+/* Speaker-style chips poking above each frame */
+.task-chip, .hp-chip {
+  position: absolute;
+  top: -22px; left: 8px;
+  font-family: 'Saira Condensed', sans-serif;
+  font-weight: 800;
+  color: #fff;
+  font-size: 18px;
+  letter-spacing: 4px;
+  padding: 6px 16px 4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  clip-path: polygon(0% 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  z-index: 1;
+}
+.task-chip { background: #F4D35E; color: #1a1a1f; }   /* yellow — objective */
+.hp-chip   { background: var(--red); }                /* red — health */
+
+/* Task body — objective text + progress */
+.task-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.task-line {
+  font-family: 'Saira Condensed', sans-serif;
+  font-size: 22px; font-weight: 500;
+  line-height: 1.25;
+  color: #f0f4f8;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+.task-progress {
+  font-family: 'Saira Condensed', sans-serif;
+  font-size: 28px; font-weight: 800;
+  color: #F4D35E;
+  letter-spacing: 4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+
+/* HP body — bar above a number readout */
+.hp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hp-bar {
+  width: 100%; height: 18px;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(122, 208, 235, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+.hp-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 100%;
+  background: linear-gradient(90deg, var(--red) 0%, #ff6b73 100%);
+  transition: width 0.2s ease, background 0.2s ease;
+}
+.hp-number {
+  font-family: 'Saira Condensed', sans-serif;
+  font-size: 22px; font-weight: 700;
+  color: #f0f4f8;
+  text-align: right;
+  letter-spacing: 2px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+
+/* Hide the bottom instructions strip globally — runner doesn't need it. */
+.instr { display: none !important; }
+.hud   { display: none !important; }
+
 /* ===== Name prompt modal — codename entry between difficulty & cutscene ===== */
 .name-row {
   display: flex;

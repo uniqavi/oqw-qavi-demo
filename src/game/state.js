@@ -81,6 +81,10 @@ export function createState() {
       x: PLAYER.startX, y: PLAYER.startY,
       size: PLAYER.startSize,
       invuln: 0, hitFlash: 0, growT: 0,
+      hp: PLAYER.startHp,         // HP-bar damage model (replaces size shrink)
+      maxHp: PLAYER.maxHp,
+      // Active buff timers — each decremented per frame, drives effect.
+      buffs: { size: 0, speed: 0, immune: 0 },
     },
     cam: {
       x: 0, y: 0,
@@ -118,6 +122,25 @@ export function createState() {
     truthExposedT: 0,    // seconds of continuous uncovered truth (debounce trigger)
     gunGraceUntil: 6,    // gun shooter doesn't fire before this game-time (set per difficulty in GameScene)
     tipShowing: false,   // true while an onboarding tip modal is on-screen (pauses game)
+    // Auto-scroll model: scrollY is the camera's vertical "world" position; it
+    // monotonically increases. scrollSpeed is the current px/sec rate.
+    scrollY: 0,
+    scrollSpeed: 0,
+    // Wave-spawn system — enemies fly UP from below the viewport.
+    // Initial spawn delay (2.5s) gives the player a chance to read the screen
+    // before the first threat appears.
+    waveEnemies: [],
+    waveSpawnT: 2.5,
+    // Powerups — same shape, drift up; collide → grant buff.
+    powerups: [],
+    powerupSpawnT: 4,           // first powerup ~4s in
+    // Hidden docs — the runner's WIN condition. Spawn from bottom, proximity-
+    // revealed, collect 5 to escape.
+    hiddenDocs: [],
+    hiddenDocSpawnT: 6,         // first hidden doc ~6s in
+    docsTarget: 5,
+    // Run state for the new game over flow.
+    gameOver: false,
     agents: createAgents(),
     layout: createLayout(),
     docs: createDocs(),
@@ -134,6 +157,7 @@ export function resetState(state) {
   const p = state.player;
   p.x = PLAYER.startX; p.y = PLAYER.startY; p.size = PLAYER.startSize;
   p.invuln = 0; p.hitFlash = 0; p.growT = 0;
+  p.hp = PLAYER.startHp; p.maxHp = PLAYER.maxHp;
 
   state.docs.forEach(d => { d.taken = false; d.takeT = 0; });
   state.looseCookies.forEach(d => { d.taken = false; d.takeT = 0; });
@@ -170,6 +194,18 @@ export function resetState(state) {
   state.intelDialog = null;
   state.truthExposedT = 0;
   state.tipShowing = false;
+
+  // Auto-scroll + wave + powerup system reset
+  state.scrollY = 0;
+  state.scrollSpeed = 0;
+  state.waveEnemies.length = 0;
+  state.waveSpawnT = 2.5;       // matches initial grace
+  state.powerups.length = 0;
+  state.powerupSpawnT = 4;
+  state.hiddenDocs.length = 0;
+  state.hiddenDocSpawnT = 6;
+  state.gameOver = false;
+  p.buffs.size = 0; p.buffs.speed = 0; p.buffs.immune = 0;
 
   // X-ray scan fragments back to un-revealed (clear coverage bitmaps too)
   state.scanFragments.forEach(f => {
