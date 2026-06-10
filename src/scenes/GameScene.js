@@ -485,21 +485,11 @@ export default class GameScene extends Phaser.Scene {
 
   // Decide which tip (if any) is relevant given current game state.
   updateOnboardingTips() {
-    const state = this.state;
-    if (state.status !== 'playing') { this.hideTip(false); return; }
-    if (this.currentTip) return; // a tip is already on screen
-    if (this.shouldShowTip('drag-ad') && state.time < 8 && !this.firstAdDragged) {
-      this.showTip(ONBOARDING_TIPS[0]); return;
-    }
-    if (this.shouldShowTip('docs') && state.time > 8 && state.docsCollected === 0) {
-      this.showTip(ONBOARDING_TIPS[1]); return;
-    }
-    if (this.shouldShowTip('cookies') && state.docsCollected === state.docs.length && !state.cookieCollected) {
-      this.showTip(ONBOARDING_TIPS[2]); return;
-    }
-    if (this.shouldShowTip('exfil') && state.docsCollected === state.docs.length && state.cookieCollected) {
-      this.showTip(ONBOARDING_TIPS[3]); return;
-    }
+    // Disabled in the runner rework — these tips ("grab the 5 docs", "drag the
+    // comment", "accept the cookies", "SUBSCRIBE") were for the old discovery
+    // design and were popping up mid-run. The OBJECTIVE frame is the guidance
+    // now. Make sure none are left showing.
+    if (this.currentTip) this.hideTip(false);
   }
 
   // ===== End sequence (malware install → short-circuit arcs → glitch wipe) =====
