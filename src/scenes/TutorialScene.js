@@ -454,8 +454,8 @@ export default class TutorialScene extends Phaser.Scene {
     beep(523, 0.1, 'sine', 0.1);
     setTimeout(() => beep(784, 0.18, 'sine', 0.12), 110);
     this.dlg.wrap?.classList.add('hidden');
-    this.scene.start('GameScene', { difficulty: this.difficulty });
-    this.scene.launch('HUDScene');
+    // Flow: tutorial → 1.1 home page (take down the propaganda) → 1.2 runner.
+    this.scene.start('HomeScene', { difficulty: this.difficulty });
   }
 
   // ── Render ──
