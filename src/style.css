@@ -1435,12 +1435,14 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 }
 .task-frame > *, .hp-frame > * { position: relative; z-index: 1; }
 .task-chip, .hp-chip { z-index: 2 !important; }
+/* Both frames live in the top-right column so they don't cover the YouTube
+   logo / search bar on the left. OBJECTIVE sits on top, HP just below it. */
 .task-frame {
-  top: 44px; left: 24px;   /* below the top edge so the chip isn't clipped */
+  top: 44px; right: 24px;
   min-width: 380px; max-width: 460px;
 }
 .hp-frame {
-  top: 44px; right: 24px;
+  top: 170px; right: 24px;
   min-width: 240px;
 }
 .task-frame.hidden, .hp-frame.hidden { display: none; }
@@ -1448,7 +1450,7 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 /* ===== Dev testing panel (below the HP frame) ===== */
 .test-toggle {
   position: absolute;
-  top: 168px; right: 24px;
+  top: 290px; right: 24px;
   z-index: 36;
   background: rgba(10,12,20,0.92);
   border: 1.5px solid rgba(155, 89, 182, 0.8);
@@ -1463,7 +1465,7 @@ canvas#oqw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-ev
 .test-toggle.hidden { display: none; }
 .test-panel {
   position: absolute;
-  top: 206px; right: 24px;
+  top: 328px; right: 24px;
   z-index: 36;
   width: 240px;
   background: rgba(10,12,20,0.96);

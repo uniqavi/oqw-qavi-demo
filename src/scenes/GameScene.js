@@ -18,6 +18,7 @@ import * as HiddenDocs from '../game/hiddenDocs.js';
 import { effectiveSize } from '../game/playerSize.js';
 import { startEndSequence, updateEndSequence, drawArcs, PHASE_DURATIONS } from '../game/endSequence.js';
 import { crossfadeTo, stopMusic } from '../game/music.js';
+import { playSfx } from '../game/sfx.js';
 import { playVoice, stopVoice } from '../game/voice.js';
 
 // First-time onboarding tips. Direction A voice — has personality but
@@ -72,6 +73,7 @@ export default class GameScene extends Phaser.Scene {
 
   create(data) {
     this.difficulty = data?.difficulty || localStorage.getItem('oqw-difficulty') || 'easy';
+    this.fromHomePage = !!data?.fromHomePage;        // arrived via 1.1 fight
     this.diffMod = DIFFICULTY[this.difficulty] || DIFFICULTY.easy;
     this.state = createState();
     this.state.status = 'playing';
@@ -177,6 +179,18 @@ export default class GameScene extends Phaser.Scene {
     // Show the runner frames while this scene is active
     this.runnerHud.taskFrame?.classList.remove('hidden');
     this.runnerHud.hpFrame?.classList.remove('hidden');
+
+    // Solo-YOU intro after the 1.1 → 1.2 transition: Toto is gone, the player
+    // is now inside the boosted video.
+    if (this.fromHomePage) {
+      setTimeout(() => {
+        this.startNarration([
+          { speaker: 'YOU', text: "Okay... I'm inside the video. This isn't a video. It's a feed — and it's hostile." },
+          { speaker: 'YOU', text: "If I find five pieces of evidence in here, I can take this thing down myself." },
+          { speaker: 'YOU', text: "Stay sharp. No Toto on the line." },
+        ]);
+      }, 600);
+    }
 
     // Dev testing panel (temporary). Toggle button + 3 ability toggles that
     // flip state.player.test.* flags (immune / size / magnet).
@@ -774,6 +788,7 @@ export default class GameScene extends Phaser.Scene {
       });
     } else {
       // Loss: reveal everything quickly, no celebratory grade animation
+      playSfx('gameOver');
       reveal(200, () => { this.statRows.forEach((r) => r.classList.remove('hidden-row')); });
       reveal(450, () => {
         this.gradeLetterEl.classList.add('show');
@@ -1764,10 +1779,10 @@ export default class GameScene extends Phaser.Scene {
         line = '▸ Slip the window through the hole to escape!';
         prog = 'GO';
       } else if (state.escape) {
-        line = 'All docs secured — find the way out.';
+        line = 'Evidence secured — find the way out.';
         prog = state.docsCollected + ' / ' + state.docsTarget;
       } else {
-        line = 'Collect 5 hidden docs to escape this page.';
+        line = 'Collect 5 pieces of evidence to take it down.';
         prog = state.docsCollected + ' / ' + state.docsTarget;
       }
       this.runnerHud.taskLine.textContent = line;

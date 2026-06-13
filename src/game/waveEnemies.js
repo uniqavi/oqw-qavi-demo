@@ -11,6 +11,7 @@
 import { PW, WAVE } from '../config.js';
 import { effectiveSize } from './playerSize.js';
 import { beep, noise } from './audio.js';
+import { playSfx } from './sfx.js';
 
 const AD_TEXTS = [
   'DOWNLOAD MORE RAM — FREE',
@@ -92,6 +93,7 @@ export function update(state, dt, viewH) {
         p.hp = Math.max(0, p.hp - def.damage);
         p.invuln = 0.6; p.hitFlash = 0.25;
         state.hitCount = (state.hitCount || 0) + 1;
+        playSfx('hit');
         if (p.hp === 0) state.gameOver = true;
       }
       e.dying = 0.22;
@@ -199,12 +201,18 @@ function drawVirus(ctx, e, def, state) {
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 9px ui-monospace, monospace';
   ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-  ctx.fillText('⚠ SECURITY ALERT', e.wx + 6, e.wy + 9);
-  // big warning glyph
+  ctx.fillText('SECURITY ALERT', e.wx + 6, e.wy + 9);
+  // big warning glyph — drawn as a triangle with "!" so no emoji font is needed
   ctx.fillStyle = '#F4D35E';
-  ctx.font = 'bold 22px sans-serif';
+  ctx.beginPath();
+  ctx.moveTo(e.wx + 24, e.wy + e.h / 2 - 14);
+  ctx.lineTo(e.wx + 38, e.wy + e.h / 2 + 10);
+  ctx.lineTo(e.wx + 10, e.wy + e.h / 2 + 10);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#1a1a1f';
+  ctx.font = 'bold 16px sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('⚠', e.wx + 24, e.wy + e.h / 2 + 6);
+  ctx.fillText('!', e.wx + 24, e.wy + e.h / 2 + 3);
   // text
   ctx.fillStyle = '#ffdde0';
   ctx.font = 'bold 11px sans-serif';

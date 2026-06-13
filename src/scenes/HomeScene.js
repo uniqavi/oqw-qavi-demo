@@ -39,20 +39,20 @@ const THUMB_COLORS = [COLORS.blue, COLORS.purple, COLORS.green, COLORS.yellow,
 // `p` = propaganda (insane views, takedown target). `target` = the 5th that
 // fights back. Everything else is normal traffic (scanning it = EXPOSED).
 const FEATURED = [
-  { t: "I BET YOU DIDN'T KNOW THIS 🤯", c: 'MindBlown Daily', v: '2.1B', d: '0:42', p: true },
+  { t: "I BET YOU DIDN'T KNOW THIS", c: 'MindBlown Daily', v: '2.1B', d: '0:42', p: true },
   { t: 'MAKE DINOSAURS GREAT AGAIN', c: 'PrehistoricPolitics', v: '1.8B', d: '8:00', p: true, art: 'turtle' },
   { t: 'CELEBRITY DOES NOTHING FOR 3 HOURS', c: 'NoThoughts', v: '205K', d: '16:31' },
 ];
 const SHORTS = [
-  { t: "it's giving 💅", e: '💅' }, { t: 'we live in a society', e: '🤡' },
-  { t: 'delulu solulu', e: '✨' }, { t: 'caught in 4K', e: '📸' }, { t: 'obey', e: '🫡' },
+  { t: "it's giving 💅", e: '' }, { t: 'we live in a society', e: '' },
+  { t: 'delulu solulu', e: '' }, { t: 'caught in 4K', e: '' }, { t: 'obey', e: '' },
 ];
 const GRID = [
   { t: 'why thinking is bad for you', c: 'BoredAbove', v: '88K', d: '9:41' },
   { t: 'POV: you opened this tab again', c: 'RelatableCore', v: '4.2K', d: '0:15' },
-  { t: 'this is fine 🔥 (everything is normal)', c: 'ThisIsFine', v: '12K', d: '7:07' },
-  { t: 'STONKS only go up 📈 (trust me)', c: 'MemeStreet', v: '990M', d: '14:22', p: true },
-  { t: "bro really thinks he's him 💀", c: 'NoWayBro', v: '212', d: '0:33' },
+  { t: 'this is fine (everything is normal)', c: 'ThisIsFine', v: '12K', d: '7:07' },
+  { t: 'STONKS only go up (trust me)', c: 'MemeStreet', v: '990M', d: '14:22', p: true },
+  { t: "bro really thinks he's him", c: 'NoWayBro', v: '212', d: '0:33' },
   { t: 'skibidi rizz gone wrong (emotional)', c: 'BrainrotTV', v: '3.4B', d: '2:31', p: true },
   { t: "What They Don't Want You To See (full doc)", c: 'UnknownUploader', v: '6.9B', d: '3:14', target: true },
   { t: '[REDACTED] (do not watch)', c: '████████', v: '4', d: '0:04' },
@@ -98,8 +98,13 @@ export default class HomeScene extends Phaser.Scene {
     this.wasd = this.input.keyboard.addKeys({
       up: Phaser.Input.Keyboard.KeyCodes.W, left: Phaser.Input.Keyboard.KeyCodes.A,
       down: Phaser.Input.Keyboard.KeyCodes.S, right: Phaser.Input.Keyboard.KeyCodes.D,
+      scan: Phaser.Input.Keyboard.KeyCodes.SPACE,
     });
     this.onKey = (e) => {
+      // Narration takes priority — SPACE/Enter advance the line
+      if (this.narration && (e.key === ' ' || e.key === 'Enter')) {
+        e.preventDefault(); this.advanceNarration(); return;
+      }
       if (e.key === 'Escape') {
         e.preventDefault();
         document.body.classList.add('menu-mode');
@@ -116,13 +121,38 @@ export default class HomeScene extends Phaser.Scene {
     this.taskProg = document.getElementById('task-progress');
     this.taskFrame?.classList.remove('hidden');
 
+    // Narration: reuse the intel-dialog DOM (same look as the runner's
+    // narration). Click anywhere or SPACE/Enter advances. While narration is
+    // active the level is paused (no movement, no scan).
+    this.intelDom = {
+      wrap:    document.getElementById('intel-dialog'),
+      speaker: document.getElementById('intel-speaker'),
+      line:    document.getElementById('intel-line'),
+      hint:    document.getElementById('intel-hint'),
+    };
+    this.narration = null;          // { lines, idx, typing, onDone, char, text }
+    this.narrationTimer = null;
+    this.onNarrationClick = (e) => {
+      if (this.narration) { e.stopPropagation(); this.advanceNarration(); }
+    };
+    document.addEventListener('click', this.onNarrationClick);
+
+    // Beat tracking — flag-driven narration so the same beat can't replay.
+    this.beats = { intro: false, first: false, third: false, fourth: false, lost: false };
+    // Kick off the intro narration after a short pause.
+    setTimeout(() => this.playIntroNarration(), 600);
+
     this.handleResize();
     initAudio();
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       window.removeEventListener('resize', this.handleResize);
       document.removeEventListener('keydown', this.onKey);
+      document.removeEventListener('click', this.onNarrationClick);
+      if (this.narrationTimer) clearTimeout(this.narrationTimer);
       this.taskFrame?.classList.add('hidden');
+      this.intelDom?.wrap?.classList.add('hidden');
+      this.intelDom?.wrap?.classList.remove('show');
     });
   }
 
@@ -178,6 +208,7 @@ export default class HomeScene extends Phaser.Scene {
 
     if (this.fighting) { this.updateFight(dt); this.render(); this.updateHud(); return; }
     if (this.failed) { this.render(); return; }
+    if (this.narration) { this.render(); this.updateHud(); return; }   // paused for narration
 
     // ── Player movement (WASD / arrows) ──
     const p = this.player;
@@ -196,14 +227,22 @@ export default class HomeScene extends Phaser.Scene {
     // ── Camera follows the window ──
     this.camY = Phaser.Math.Clamp(p.y - this.viewHW * 0.42, 0, Math.max(0, this.worldH - this.viewHW));
 
-    // ── Scan: the video under the window's centre ──
+    // ── Scan: hover over a video shows the readout; HOLD SPACE to scan it.
+    //  • Releasing SPACE (or moving off) resets progress — commitment matters.
+    //  • The readout shows view count + SUSPICIOUS/normal so you can judge
+    //    BEFORE committing.
     const hover = this.videoAt(p.x, p.y);
-    if (hover && hover !== this.scanVid) { this.scanVid = hover; this.scanT = 0; }
-    if (!hover) { this.scanVid = null; this.scanT = 0; }
-    if (this.scanVid) {
+    this.hoverVid = hover;
+    const holding = this.wasd.scan.isDown;
+    if (holding && hover) {
+      if (hover !== this.scanVid) { this.scanVid = hover; this.scanT = 0; }
       this.scanT += dt / SCAN_TIME;
       if (Math.random() < 0.18) beep(1400 + Math.random() * 500, 0.004, 'square', 0.01);
       if (this.scanT >= 1) this.resolveScan(this.scanVid);
+    } else {
+      // released or moved off — reset
+      if (this.scanVid && this.scanT > 0) beep(220, 0.05, 'square', 0.03);
+      this.scanVid = null; this.scanT = 0;
     }
 
     this.render();
@@ -230,6 +269,10 @@ export default class HomeScene extends Phaser.Scene {
       v.removed = true; v.removeT = this.time;
       this.taken++;
       beep(523, 0.09, 'sine', 0.1); setTimeout(() => beep(784, 0.14, 'sine', 0.1), 90);
+      // Contextual narration beats
+      if (this.taken === 1) setTimeout(() => this.playFirstTakedownNarration(), 350);
+      else if (this.taken === 3) setTimeout(() => this.playThirdTakedownNarration(), 350);
+      else if (this.taken === 4) setTimeout(() => this.playFourthTakedownNarration(), 350);
     } else {                         // legitimate traffic → exposed
       this.failLevel(v);
     }
@@ -238,7 +281,7 @@ export default class HomeScene extends Phaser.Scene {
   // Target scanned too early — it shrugs you off.
   bounceTarget() {
     noise(0.12, 0.1); beep(160, 0.2, 'sawtooth', 0.08);
-    this.flash = { t: 0.6, text: 'Too strong — take down the others first.' };
+    this.flash = { t: 0.6, text: "It's too well-defended. Bring down the others first." };
   }
 
   failLevel() {
@@ -249,14 +292,20 @@ export default class HomeScene extends Phaser.Scene {
   startFight(v) {
     this.fighting = true; this.fightT = 0; this.fightVid = v;
     noise(0.5, 0.2); beep(120, 0.5, 'sawtooth', 0.1);
+    // Trigger the lost-contact narration. When the player dismisses the last
+    // line, drop into 1.2 with `fromHomePage` so it plays its own intro.
+    setTimeout(() => this.playLostContactNarration(() => {
+      this.transitionToRunner();
+    }), 450);
   }
   updateFight(dt) {
     this.fightT += dt;
-    if (this.fightT > 1.4) {
-      this.scene.stop();
-      this.scene.start('GameScene', { difficulty: this.difficulty });
-      this.scene.launch('HUDScene');
-    }
+    // Wait for narration to finish — transition is owned by playLostContact.
+  }
+  transitionToRunner() {
+    this.scene.stop();
+    this.scene.start('GameScene', { difficulty: this.difficulty, fromHomePage: true });
+    this.scene.launch('HUDScene');
   }
 
   updateHud() {
@@ -314,7 +363,121 @@ export default class HomeScene extends Phaser.Scene {
 
     // hint
     ctx.fillStyle = '#9a9a9a'; ctx.font = '12px Consolas, monospace'; ctx.textBaseline = 'middle';
-    ctx.fillText('WASD to move  ·  HOLD over a video to scan it down  ·  ESC to exit', 18, VH - 16);
+    ctx.fillText('WASD to move  ·  HOLD SPACE on a video to scan it down  ·  ESC to exit', 18, VH - 16);
+  }
+
+  // ===== Narration (Toto + YOU exploring the level together) =====
+  playIntroNarration() {
+    if (this.beats.intro) return;
+    this.beats.intro = true;
+    this.startNarration([
+      { speaker: 'TOTO', text: "Okay — I patched into HUSH's algorithm. You're standing on their home page." },
+      { speaker: 'YOU',  text: "Yeah, I see it. It's all... clickbait. Endless." },
+      { speaker: 'TOTO', text: "That's the point. The good stuff is buried in noise." },
+      { speaker: 'TOTO', text: "Look at the view counts. Anything in the BILLIONS is a HUSH boost — that's the propaganda. Take down five of those." },
+      { speaker: 'YOU',  text: "How do I take one down?" },
+      { speaker: 'TOTO', text: "Move your window over a target and HOLD SPACE to scan it. Three and a half seconds, you're in." },
+      { speaker: 'TOTO', text: "But scan a normal video by mistake and HUSH will flag you. Read the view counts. Be sure before you commit." },
+      { speaker: 'YOU',  text: "Got it. Starting the sweep." },
+    ]);
+  }
+  playFirstTakedownNarration() {
+    if (this.beats.first) return;
+    this.beats.first = true;
+    this.startNarration([
+      { speaker: 'YOU',  text: "One down." },
+      { speaker: 'TOTO', text: "Nice. The algorithm just lost a load-bearing piece. Keep going." },
+    ]);
+  }
+  playThirdTakedownNarration() {
+    if (this.beats.third) return;
+    this.beats.third = true;
+    this.startNarration([
+      { speaker: 'YOU',  text: "These view counts are insane." },
+      { speaker: 'TOTO', text: "Manufactured. Every one of these is a bot farm pretending to be culture." },
+    ]);
+  }
+  playFourthTakedownNarration() {
+    if (this.beats.fourth) return;
+    this.beats.fourth = true;
+    this.startNarration([
+      { speaker: 'TOTO', text: "Four down. The last one's the big one — 'What They Don't Want You To See.' That's the doc we've been after." },
+      { speaker: 'YOU',  text: "Going for it." },
+    ]);
+  }
+  // Triggered when scanning the target after 4 are down — Toto cuts out.
+  playLostContactNarration(onDone) {
+    if (this.beats.lost) return;
+    this.beats.lost = true;
+    this.startNarration([
+      { speaker: 'TOTO', text: "Wait — it's pushing back. Something's wrong, I'm—" },
+      { speaker: 'SYSTEM', text: '> CONNECTION LOST: toto.handler' },
+      { speaker: 'YOU',  text: "Toto? Toto, do you copy?" },
+      { speaker: 'YOU',  text: "...okay. Just me, then." },
+    ], onDone);
+  }
+
+  startNarration(lines, onDone) {
+    if (this.narrationTimer) clearTimeout(this.narrationTimer);
+    this.narration = { lines, idx: 0, typing: true, onDone };
+    this.intelDom.wrap?.classList.remove('hidden');
+    requestAnimationFrame(() => this.intelDom.wrap?.classList.add('show'));
+    this.showNarrationLine(0);
+    beep(660, 0.06, 'sine', 0.06);
+  }
+  showNarrationLine(i) {
+    const n = this.narration;
+    if (!n) return;
+    const line = n.lines[i];
+    if (!line) return this.closeNarration();
+    const colors = { YOU: '#4A7BC8', TOTO: '#E63946', SYSTEM: '#2D8659' };
+    if (this.intelDom.speaker) {
+      this.intelDom.speaker.textContent = line.speaker || '';
+      this.intelDom.speaker.style.background = colors[line.speaker] || '#1a1a1f';
+    }
+    if (this.intelDom.line) this.intelDom.line.textContent = '';
+    this.intelDom.hint?.classList.remove('show');
+    let chars = 0;
+    const text = line.text;
+    const tick = () => {
+      const nn = this.narration;
+      if (!nn || !nn.typing) {
+        if (this.intelDom.line) this.intelDom.line.textContent = text;
+        return;
+      }
+      if (chars < text.length) {
+        chars++;
+        if (this.intelDom.line) this.intelDom.line.textContent = text.slice(0, chars);
+        if (text[chars - 1] !== ' ' && Math.random() < 0.22) beep(1600 + Math.random() * 600, 0.005, 'square', 0.011);
+        this.narrationTimer = setTimeout(tick, 28);
+      } else {
+        this.narration.typing = false;
+      }
+    };
+    tick();
+  }
+  advanceNarration() {
+    const n = this.narration;
+    if (!n) return;
+    if (n.typing) {
+      if (this.narrationTimer) clearTimeout(this.narrationTimer);
+      n.typing = false;
+      if (this.intelDom.line) this.intelDom.line.textContent = n.lines[n.idx].text;
+      return;
+    }
+    n.idx++;
+    if (n.idx >= n.lines.length) return this.closeNarration();
+    n.typing = true;
+    this.showNarrationLine(n.idx);
+  }
+  closeNarration() {
+    if (this.narrationTimer) clearTimeout(this.narrationTimer);
+    const n = this.narration;
+    const onDone = n && n.onDone;
+    this.narration = null;
+    this.intelDom?.wrap?.classList.remove('show');
+    setTimeout(() => this.intelDom?.wrap?.classList.add('hidden'), 400);
+    if (onDone) onDone();
   }
 
   drawWindow(ctx) {
@@ -347,13 +510,14 @@ export default class HomeScene extends Phaser.Scene {
   // Read out the hovered video's view count near the window so the player can
   // judge propaganda (insane views) vs normal traffic before committing.
   drawReadout(ctx) {
-    const v = this.scanVid;
+    const v = this.scanVid || this.hoverVid;
     if (!v) return;
     const s = this.scale1;
     const sx = (this.player.x) * s, sy = (this.player.y - this.player.h / 2 - this.camY) * s - 14;
     const big = v.p || v.target;
-    const text = v.v + ' views' + (big ? '  ⚠ SUSPICIOUS' : '  · normal traffic');
-    ctx.font = 'bold 15px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const verb = this.scanVid ? 'SCANNING' : 'HOLD SPACE';
+    const text = v.v + ' views' + (big ? '  [!] SUSPICIOUS' : '  · normal traffic') + '   ' + verb;
+    ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const w = ctx.measureText(text).width + 28;
     ctx.fillStyle = big ? 'rgba(120,20,28,0.92)' : 'rgba(10,12,20,0.88)';
     ctx.fillRect(sx - w / 2, sy - 16, w, 26);
@@ -385,7 +549,7 @@ export default class HomeScene extends Phaser.Scene {
     ctx.fillRect(v.x - 10, v.y - 10, v.w + 20, v.th + 20);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 18px ui-monospace, monospace';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('⚠ IT\'S FIGHTING BACK', v.x + v.w / 2, v.y + v.th / 2);
+    ctx.fillText("IT'S FIGHTING BACK", v.x + v.w / 2, v.y + v.th / 2);
     ctx.textAlign = 'left';
   }
 
@@ -420,7 +584,11 @@ export default class HomeScene extends Phaser.Scene {
     ctx.fillStyle = '#606060'; ctx.fillText('⌕', sx + sw + 24, 29);
     drawHandRect(ctx, DW - 300, 14, 96, 28, '#f0f0f0', '#dcdcdc', 90, 1.2);
     ctx.fillStyle = '#1a1a1f'; ctx.font = 'bold 13px Arial'; ctx.fillText('＋ Create', DW - 288, 29);
-    ctx.font = '16px Arial'; ctx.fillText('🔔', DW - 188, 30);
+    // bell icon
+    ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(DW - 188, 28, 7, Math.PI, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(DW - 195, 28); ctx.lineTo(DW - 181, 28); ctx.stroke();
+    ctx.beginPath(); ctx.arc(DW - 188, 32, 2, 0, Math.PI); ctx.stroke();
     ctx.fillStyle = COLORS.purple; ctx.beginPath(); ctx.arc(DW - 130, 28, 16, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = 'bold 13px Arial'; ctx.textAlign = 'center';
     ctx.fillText('R', DW - 130, 29); ctx.textAlign = 'left';
@@ -497,10 +665,12 @@ export default class HomeScene extends Phaser.Scene {
 
   drawShortCard(ctx, x, y, w, h, data, seed) {
     drawHandRect(ctx, x, y, w, h, THUMB_COLORS[(seed + 2) % THUMB_COLORS.length], '#cfcfcf', seed * 13 + 9, 1.4);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = '54px Arial';
+    // Placeholder face — a soft white circle where the Gemini art will go.
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath(); ctx.arc(x + w / 2, y + h * 0.38, w * 0.32, 0, Math.PI * 2); ctx.fill();
+    // Title caption
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px Arial';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(data.e, x + w / 2, y + h * 0.42);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Arial';
     ctx.fillText(data.t, x + w / 2, y + h - 30);
     ctx.textAlign = 'left';
   }
