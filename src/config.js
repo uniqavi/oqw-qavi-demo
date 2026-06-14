@@ -72,10 +72,12 @@ export const PLAYER = {
 // SHIFT is the ONLY input that pushes scroll faster — DOWN is purely player
 // movement (towards viewport bottom = closer to enemy spawn = riskier dodge).
 export const SCROLL = {
-  slowSpeed:    48,    // px/sec for the first `slowDuration` seconds (very calm)
-  fastSpeed:    280,   // max base speed after the ramp completes
-  slowDuration: 14,    // seconds of calm intro before ramp begins
-  rampDuration: 30,    // seconds over which speed ramps slow → fast
+  // Overall slower than before so SHIFT-boosted player movement actually
+  // feels effective (the relative speed-up against the page is bigger).
+  slowSpeed:    34,    // px/sec for the first `slowDuration` seconds (very calm)
+  fastSpeed:    200,   // max base speed after the ramp completes
+  slowDuration: 16,    // seconds of calm intro before ramp begins
+  rampDuration: 32,    // seconds over which speed ramps slow → fast
   // NOTE: SHIFT no longer affects the scroll — it only boosts the player's
   // own movement (see PLAYER.boostMul). The scroll ramps purely on time.
 };
@@ -98,14 +100,25 @@ export const WAVE = {
   homeDuration:   1.0,   // seconds of homing before they stop tracking
 };
 
-// Powerup tuning — random pickups that grant 5s of a buff.
+// Powerup tuning. Four runtime types:
+//   • HP+    — PERMANENT +HP boost on pickup (no timer). If HP is already
+//              max, shows a floating "HP MAX" message at the pickup point.
+//   • FAST   — 5s player-speed buff.
+//   • SHIELD — long, RARE damage immunity.
+//   • MAGNET — long, RARE doc magnet.
+// Spawn cadence is the same for all; per-type weights make shield/magnet
+// uncommon, and per-type durations make them long when they DO appear.
 export const POWERUP = {
-  startInterval: 7,      // seconds between spawns at start
-  intervalJitter: 5,     // ± random padding so spawns feel organic
-  riseSpeed:      80,    // px/sec — pickups drift up gently so player can intercept
-  duration:       5,     // seconds each buff lasts
-  sizeMul:        1.85,  // SIZE+: window scaled by this much (a big, obvious buff)
+  startInterval: 10,     // seconds between spawns at start (was 7)
+  intervalJitter: 4,     // ± random padding so spawns feel organic
+  riseSpeed:      80,    // px/sec — pickups drift up gently
   speedMul:       1.55,  // FAST: player movement speed scaled
+  hpHeal:         22,    // HP+: heals this much on pickup (permanent)
+  sizeMul:        1.85,  // retained for the dev test panel only (not a runtime buff)
+  // Per-type durations (seconds) — `0` means "instant effect, no timer".
+  durations: { hp: 0, speed: 5, immune: 12, magnet: 12 },
+  // Weighted spawn table — higher = more common.
+  weights:   { hp: 6, speed: 5, immune: 1, magnet: 1 },
 };
 
 // Camera (zoom values overridden by resize fit-to-width)

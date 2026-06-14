@@ -809,6 +809,15 @@ export default class GameScene extends Phaser.Scene {
     const c = this.state.cam;
     c.zoom += (c.targetZoom - c.zoom) * Math.min(1, dt * CAMERA.zoomLerp);
 
+    // Floating world-space texts ("+22 HP", "HP MAX") — tick every frame so
+    // they animate even when the underlying logic is paused.
+    if (this.state.floatingTexts && this.state.floatingTexts.length) {
+      this.state.floatingTexts = this.state.floatingTexts.filter(ft => {
+        ft.age += dt;
+        return ft.age < ft.life;
+      });
+    }
+
     // Decay sparks/crumbs even outside playing state
     this.state.sparks = this.state.sparks.filter((s) => {
       s.life -= dt;
@@ -1667,6 +1676,25 @@ export default class GameScene extends Phaser.Scene {
     // Powerups drift up in the same world space — drawn after so they read
     // on top if they overlap.
     Powerups.draw(ctx, state);
+
+    // Floating world-space texts (rise + fade) from HP+ pickups etc.
+    if (state.floatingTexts) {
+      for (const ft of state.floatingTexts) {
+        const k = ft.age / ft.life;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, 1 - k);
+        ctx.fillStyle = ft.color || '#fff';
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+        ctx.lineWidth = 3;
+        ctx.font = "bold 700 22px 'Saira Condensed', sans-serif";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const y = ft.wy - k * 56;
+        ctx.strokeText(ft.text, ft.wx, y);
+        ctx.fillText(ft.text, ft.wx, y);
+        ctx.textAlign = 'left';
+        ctx.restore();
+      }
+    }
 
     // player
     {

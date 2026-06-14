@@ -84,7 +84,9 @@ export function createState() {
       hp: PLAYER.startHp,         // HP-bar damage model (replaces size shrink)
       maxHp: PLAYER.maxHp,
       // Active buff timers — each decremented per frame, drives effect.
-      buffs: { size: 0, speed: 0, immune: 0 },
+      // (`size` retained for backwards-compat with the test panel; no
+      // runtime powerup grants it anymore.)
+      buffs: { size: 0, speed: 0, immune: 0, magnet: 0 },
       // Testing-mode toggles (no time limit) — driven by the dev test panel.
       test: { immune: false, size: false, magnet: false },
     },
@@ -133,9 +135,11 @@ export function createState() {
     // before the first threat appears.
     waveEnemies: [],
     waveSpawnT: 2.5,
-    // Powerups — same shape, drift up; collide → grant buff.
+    // Powerups — same shape, drift up; collide → grant buff (or heal HP).
     powerups: [],
     powerupSpawnT: 4,           // first powerup ~4s in
+    // Floating world-space captions ("+22 HP", "HP MAX") that rise + fade.
+    floatingTexts: [],
     // Hidden docs — the runner's WIN condition. Spawn from bottom, proximity-
     // revealed, collect 5 to escape.
     hiddenDocs: [],
@@ -220,7 +224,8 @@ export function resetState(state) {
   state.quipShown = false;
   state.quip = null;
   state.gameOver = false;
-  p.buffs.size = 0; p.buffs.speed = 0; p.buffs.immune = 0;
+  p.buffs.size = 0; p.buffs.speed = 0; p.buffs.immune = 0; p.buffs.magnet = 0;
+  state.floatingTexts.length = 0;
 
   // X-ray scan fragments back to un-revealed (clear coverage bitmaps too)
   state.scanFragments.forEach(f => {

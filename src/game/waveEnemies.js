@@ -62,7 +62,10 @@ export function update(state, dt, viewH) {
   const p = state.player;
   const camY = state.scrollY;
   const list = state.waveEnemies;
-  const immune = p.buffs.immune > 0 || (p.test && p.test.immune);
+  // Immune to damage during the escape sequence too — once the docs are
+  // collected and the page is decelerating, leftover enemies shouldn't be
+  // able to chip away at the player.
+  const immune = p.buffs.immune > 0 || (p.test && p.test.immune) || !!state.escape;
 
   for (let i = list.length - 1; i >= 0; i--) {
     const e = list[i];

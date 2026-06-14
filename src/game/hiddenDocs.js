@@ -45,7 +45,8 @@ export function tick(state, dt, viewH) {
   const s = effectiveSize(p), ph = s * 0.75;
   const px = p.x - s / 2, py = p.y - ph / 2;
   const pcx = p.x, pcy = p.y;
-  const magnet = p.test && p.test.magnet;
+  // Magnet is active either via the MAGNET powerup buff OR the dev-panel toggle.
+  const magnet = (p.buffs && p.buffs.magnet > 0) || (p.test && p.test.magnet);
   const MAGNET_RANGE = 320;     // px — docs within this get pulled to the player
 
   for (let i = state.hiddenDocs.length - 1; i >= 0; i--) {
