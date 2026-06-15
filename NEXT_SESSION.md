@@ -1,63 +1,72 @@
 # Where we left off
 
-The runner-rework iteration just shipped these fixes (committed `b75d2de`,
-already pushed to `demo/main` → live on Netlify):
+Last session (2026-06-15) shipped three big things, all committed + pushed to
+`demo/main` (live on Netlify) and mirrored to `origin/qavi-demo`:
 
-- Slower scroll baseline so SHIFT player-boost feels more impactful.
-- SIZE+ powerup replaced with **HP+** (permanent +22 HP heal; floats
-  "HP MAX" caption at the pickup point if the player is already full).
-- **SHIELD** and **MAGNET** made rare (weighted spawn) but long-lasting
-  (12s each). MAGNET is now a real runtime powerup, not just a dev toggle.
-- Escape sequence (after collecting 5/5 docs) now grants damage immunity
-  so leftover in-flight enemies can't chip your HP while the page is
-  decelerating.
+1. **Level 1.1 reworked into a roaming-agent stealth level** (`HomeScene.js`).
+   - Scanning removed. HP bar (0 HP → "WINDOW CRASHED", `R` to retry). WASD + SHIFT dash.
+   - Three Mission-02 agents remapped onto the home feed: the **account avatar pulls
+     a gun** (one lethal shot, rush it), **two grid cards chase** you, the **search bar
+     fires shrapnel**. Agents stay inert until the intro narration is dismissed.
+   - Collect **4 evidence docs** → the boosted video pulses → dive in → Level 1.2.
+   - Enabled via small non-breaking edits: `combat.js` HP branch (`p.useHp`),
+     `chasingRecs` homes to `a.slot`, `gunShooter` bullets bound to `state.worldW`.
 
-Everything verified in the preview connector; live on Netlify.
+2. **Audio master volume + in-game pause menu.**
+   - `audio.js` owns the master volume (`oqw-volume`, default 0.7); music/sfx/voice
+     scale by it. `wireVolumeControl()` shared widget.
+   - **ESC pause menu** (`pauseMenu.js`) in all gameplay scenes — volume slider + mute
+     + RESUME + MAIN MENU. Freezes game time, logic, AND narration while open.
+
+3. **New opening: a Windows XP flow** (`MenuScene.js` + XP DOM/CSS).
+   - **XP welcome** screen = main menu. Click Administrator → **type your name as the
+     password** (= the codename Toto uses). Recreated in CSS to match the reference.
+   - **XP desktop** — Bliss wallpaper, icons, taskbar, Start menu, live clock, tray.
+   - **Toto incoming-call window** (anonymous avatar = a window inside the PFP) →
+     Accept → the old-friends dialogue plays → open **Internet Explorer** → Tutorial.
+   - Difficulty picker retired (defaults Easy). Only the browser advances the game;
+     other icons give a polite XP error ding.
+
+Everything verified in the preview connector (welcome → login → desktop → call →
+browser → tutorial; pause/volume; 1.1 agents/docs/portal). Build clean.
 
 ---
 
-# What's likely next
+# What's likely next (rough priority)
 
-In rough priority order, based on the conversation:
+1. **XP opening polish**
+   - Swap CSS-art icons for real XP icon PNGs (pixel-perfect) if assets are dropped in.
+   - Rename the disabled "Guest" tile → "Tim" to match `windows-xp-lock-Screen.png`.
+   - Remove the now-orphaned `settings-modal` / `help-modal` DOM (nothing opens them).
+   - Optional: a short fade on the desktop → tutorial handoff.
 
-1. **Playtest the runner tuning** — Qavi may want to nudge:
-   - `SCROLL.slowSpeed` / `fastSpeed` (currently 34 / 200)
-   - `POWERUP.weights` (currently hp:6 speed:5 immune:1 magnet:1)
-   - `POWERUP.durations` (shield/magnet 12s — could go longer or shorter)
-   - `POWERUP.hpHeal` (currently 22)
+2. **Desktop error-window cascade** — the "later" half of `Reference Home Screen.png`
+   (the storm of HUSH error popups on the desktop). User said to add this after 1.1
+   feels right. This is the originally-planned "escaping error windows" intro beat.
 
-2. **Tunnel-transition scene (1.2 → Level 2)** — this is the big one.
-   Qavi has SVG art from a teammate of a Windows-style window with eyes
-   and a set of expression SVGs (in love, confused, scared, neutral...).
-   The plan we agreed:
-   - Looping parallax tunnel background (Qavi to generate a tileable PNG
-     in Gemini; prompt is in the chat history — ask if needed)
-   - Window-with-eyes character floats through, expression swaps by
-     game state
-   - Antivirus hazards to dodge (reuse the runner's enemy art)
-   - At the end → transition into `Level2Scene`
-   Files needed before starting: SVGs in `public/window/`, tunnel PNG(s)
-   in `public/tunnel/`. Qavi will drop them in.
+3. **Level 1.1 tuning** (playtest) — `DOCS_TARGET`, doc positions in `buildDocs()`,
+   agent trigger ranges (chasers 380 / search 460 / gun 700 ×diff), `GUN_GRACE`,
+   chaser card picks. The gun is one-shot; consider re-arm on cooldown.
 
-3. **Gemini thumbnails for HomeScene** — the Shorts cards in 1.1 have
-   placeholder white circles in the colored frames waiting for art.
-   Featured + grid thumbnails are still solid-color rectangles. Once
-   Qavi drops images into `public/thumbs/` we can swap them in.
+4. **Tunnel transition (1.2 → 2.0)** — parallax antivirus tunnel, window-with-eyes
+   character with state-driven expressions, then into Level 2. Art → `public/window/`
+   + `public/tunnel/` (user will drop in).
 
-4. **Level 2 (SPYGRAM)** — currently just a scaffold scene. Design notes
-   in `docs/LEVEL2.md` (stale; uses old VEIL/Lattice/Warner naming
-   instead of HUSH/SPYGRAM/Lewis — needs a pass before building).
+5. **Level 2 (SPYGRAM)** — bring back the full Mission-02 mechanics (cookie jar,
+   gaze/cursor, drag-comment, subscribe) PLUS the runner/scroller layer. User's plan:
+   only after we're confident with 1.1. `reference/operation_quiet_window_mission_02.html`
+   is the design reference for those mechanics.
 
 ---
 
 # Critical context
 
-- We work on branch **`local-progress`**, which tracks remote
-  **`demo/main`** (`github.com/uniqavi/oqw-qavi-demo`).
-- **Never** push to `origin/dev` — that's the team repo and was
-  overwritten by a teammate's design pivot. Don't pull from it either.
-- Deploy: `git push demo local-progress:main` → Netlify auto-builds.
-- Verify visual changes in the Claude Preview connector before reporting
-  done. The dev-only `window.__game` handle lets you jump between scenes.
-- Full project background, file map, tunables, conventions, and gotchas
-  are in **`HANDOFF.md`** — read that first.
+- Branch **`local-progress`** tracks **`demo/main`** (`github.com/uniqavi/oqw-qavi-demo`).
+- Deploy: `git push demo local-progress:main` → Netlify.
+- Team mirror (non-destructive): `git push origin local-progress:qavi-demo`.
+- **NEVER push `origin/dev`** — a teammate's redesign lives there; we keep it untouched.
+- Verify visual changes in the Claude Preview connector before reporting done. The
+  dev-only `window.__game` handle jumps scenes (snippet in HANDOFF.md).
+- Build with `npx vite build`. Commit per logical change, lowercase verb start, end
+  with the `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` trailer.
+- Full file map, tunables, conventions, gotchas → **`HANDOFF.md`** (read first).

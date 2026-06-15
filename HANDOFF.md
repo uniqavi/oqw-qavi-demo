@@ -1,7 +1,7 @@
 # HANDOFF — Operation Quiet Window
 
 > Catch-up doc for a fresh Claude chat. Read this end-to-end before touching
-> code. Last updated: 2026-06-14.
+> code. Last updated: 2026-06-15.
 
 ---
 
@@ -15,7 +15,8 @@ non-gamers but rewarding for thorough players.
 **Stack:** Phaser 3 + Vite. Most game visuals are **hand-coded 2D canvas
 draws** to an overlay element (`#oqw`) layered above Phaser's canvas — not
 Phaser GameObjects. Phaser handles input + scene lifecycle; everything else
-is plain `ctx.fillRect(...)` etc.
+is plain `ctx.fillRect(...)` etc. The **opening (menu) and some UI are plain
+DOM/CSS** overlays (see XP opening below), shown while `body.menu-mode`.
 
 **Viewport:** logical 1920×1080, CSS-scaled to fit the browser window.
 
@@ -25,26 +26,25 @@ is plain `ctx.fillRect(...)` etc.
 
 | | URL | Used for |
 |---|---|---|
-| **Team repo** (origin) | `github.com/uniqavi/operation-quiet-window-web` | Other teammates push here. Local `dev` is stale; remote `dev` was overwritten by a teammate's redesign. **DO NOT pull or push origin/dev.** |
-| **Qavi's personal demo** (demo) | `github.com/uniqavi/oqw-qavi-demo` | The runner-rework version. Public. Auto-deploys to Netlify. **THIS is what we work on.** |
+| **Team repo** (origin) | `github.com/uniqavi/operation-quiet-window-web` | Other teammates push here. **`origin/dev` was overwritten by a teammate's redesign — DO NOT push/force/pull it.** Our work now also lives on a **new branch `origin/qavi-demo`** (safe, doesn't touch dev). |
+| **Qavi's personal demo** (demo) | `github.com/uniqavi/oqw-qavi-demo` | The runner-rework version. Public. Auto-deploys to Netlify. **THIS is what we deploy.** |
 
 **Local branch in use:** `local-progress` — tracks `demo/main`. All work
-goes here. Use `git push demo local-progress:main` to deploy.
-
-**Netlify live URL:** the Netlify site for `oqw-qavi-demo` (Qavi has the
-exact subdomain). `netlify.toml` is committed — auto-build from `npm run
-build`, publish `dist`.
+goes here.
+- Deploy: `git push demo local-progress:main` (→ Netlify).
+- Team mirror (non-destructive): `git push origin local-progress:qavi-demo`.
+- **Never** `git push origin …:dev` (would clobber the teammate's redesign).
 
 ---
 
-## Scene flow (post-rework)
+## Scene flow (current)
 
 ```
-BootScene → MenuScene (cutscene with codename input)
-          → TutorialScene (sandbox: move, scan, dodge)
-          → HomeScene (LEVEL 1.1: take down 5 propaganda videos)
-          → GameScene (LEVEL 1.2: runner — collect 5 evidence, escape)
-          → Level2Scene (SPYGRAM scaffold, not built into the flow yet)
+BootScene → MenuScene  (XP OPENING — DOM/CSS, see below)
+          → TutorialScene  (sandbox: move, scan, dodge)
+          → HomeScene   (LEVEL 1.1: roaming-agent stealth — collect docs, dive into the video)
+          → GameScene   (LEVEL 1.2: runner — collect 5 evidence, escape)
+          → Level2Scene (SPYGRAM scaffold, not wired into the flow yet)
 HUDScene runs alongside GameScene.
 ```
 
@@ -57,108 +57,135 @@ exposed in dev builds (`import.meta.env.DEV`) for jump-to-scene testing.
 
 ```
 src/
-  config.js              — ALL tunables (PLAYER, SCROLL, WAVE, POWERUP, SCAN, etc.)
+  config.js              — ALL tunables (PLAYER, SCROLL, WAVE, POWERUP, SCAN, AGENTS, etc.)
   main.js                — Phaser game + scene registration
-  style.css              — DOM UI (dialog, HUD frames, test panel, modals)
+  style.css              — DOM UI (XP opening, dialog, HUD frames, pause menu, modals)
   scenes/
     BootScene.js         — boot stub
-    MenuScene.js         — main menu + cutscene (codename input)
+    MenuScene.js         — XP OPENING controller (welcome login → desktop → Toto call → IE → tutorial)
     TutorialScene.js     — sandbox teaching scene
-    HomeScene.js         — LEVEL 1.1 (fake YT home, scan-to-takedown)
+    HomeScene.js         — LEVEL 1.1 (roaming agents on the home feed, HP, collect docs, portal)
     GameScene.js         — LEVEL 1.2 (auto-scroll runner)
     Level2Scene.js       — SPYGRAM scaffold (not in flow)
     HUDScene.js          — empty stub (HUD is DOM)
   game/
-    state.js             — central game state factory + reset
-    layout.js            — page chrome layout
+    state.js             — central game state factory + reset (the ported Mission-02 watch page)
+    layout.js            — page chrome layout + recSlots/commentSlots (960-space watch page)
+    combat.js            — damagePlayer; supports BOTH size-shrink and HP models (p.useHp)
     waveEnemies.js       — runner enemy spawn/update/draw (rec, ad, virus)
     powerups.js          — runner powerups (HP+, FAST, SHIELD, MAGNET)
     hiddenDocs.js        — runner collectible docs (proximity-revealed)
     playerSize.js        — shared effectiveSize(p) helper (HP-scaled)
-    scan.js              — shared X-ray scan coverage logic
-    audio.js             — beep/noise helpers (WebAudio synth)
-    music.js             — track loader + crossfade
-    voice.js             — voice clip loader (drop-in mp3s)
+    scan.js              — shared X-ray scan coverage logic (used by Tutorial; 1.1 no longer scans)
+    audio.js             — beep/noise (WebAudio) + MASTER VOLUME source of truth (oqw-volume)
+    music.js / sfx.js / voice.js — track/clip/voice loaders, all scaled by master volume
+    pauseMenu.js         — reusable ESC pause/volume overlay + wireVolumeControl() helper
     draw.js              — drawHandRect / drawRecCard / drawComment
-    physics.js           — wob (jitter) + dist helpers
+    physics.js           — wob / dist / aabb / playerBox(player) helpers
     endSequence.js       — old L1 ending FX (mostly unused in runner)
-    agents/              — OLD agents (chasingRecs, gunShooter, etc.)
-                            disabled in runner (config L1 flags all false)
-                            kept in tree so the discovery design can come back
-  game/menuEffects.js    — dust/rain/twinkles for the menu room
-public/                  — static assets (menu-bg.png, hole.png, music, voice)
-index.html               — DOM (browser-chrome frame, menus, dialogs, HUD frames)
+    agents/              — Mission-02 agents (chasingRecs, shootingSearch, gunShooter,
+                            fallingComment, explodingLike, crushingCookie). Phaser-free.
+                            Re-used by HomeScene (1.1); disabled in GameScene runner via L1 flags.
+  game/menuEffects.js    — dust/rain/twinkles for the OLD projector menu (now unused)
+public/                  — static assets:
+    windows-xp-Wallpaper.jpg          — desktop Bliss wallpaper (used by .xp-desktop)
+    windows-xp-lock-Screen.png        — reference only (the welcome screen is recreated in CSS)
+    Reference Home Screen.png         — reference only (XP desktop incl. the error-window cascade)
+    music/ sfx/ voice/ portraits/ ... — drop-in audio + art
+index.html               — DOM (browser-chrome frame, XP opening, HUD frames, pause menu, dialogs)
 netlify.toml             — build config (npm run build → dist)
 ```
+
+---
+
+## The XP opening (MenuScene) — NEW this session
+
+Replaces the old "projector dark-room" main menu + codename modal + cutscene.
+Pure DOM/CSS (in `index.html` + `style.css`), driven by `MenuScene.js`.
+
+Flow:
+1. **XP welcome screen** (`#xp-welcome`) = the main menu. Click **Administrator** →
+   a password box appears with the hint **"type your name."** Whatever you type is
+   stored as the codename (`localStorage 'oqw-name'`) Toto uses all game. Guest tile
+   is disabled (deny ding). "Turn off computer" = deny ding.
+2. **XP desktop** (`#xp-desktop`) — Bliss wallpaper, desktop icons (My Computer,
+   Recycle Bin, My Documents, readme.txt, Internet), taskbar (green Start, quick
+   launch, task buttons, system tray with live clock + volume + shield), Start menu.
+3. **Toto incoming-call window** (`#xp-call`) pops up after the desktop settles —
+   anonymous avatar = a little red browser window inside the profile picture.
+   **Accept** → the old-friends dialogue (`CALL_LINES` in MenuScene, reused from the
+   old cutscene) plays. After the call, the Internet path pulses.
+4. **Internet Explorer** (`#xp-browser`, desktop icon / Start / quick-launch) opens,
+   "loads," then → `TutorialScene`.
+
+Design choices (locked for now): only the browser advances the game; other
+icons/Start items give a polite XP error ding. **Difficulty picker retired —
+defaults to Easy** (`oqw-difficulty='easy'`). Pre-game volume is reachable from the
+system-tray speaker; in-game from the ESC pause menu. The desktop error-window
+cascade (see `Reference Home Screen.png`) is intentionally **NOT built yet**.
+
+Gotcha: the XP layers are DOM overlays, NOT tied to `menu-mode`, so MenuScene
+explicitly hides them on `enterTutorial()` / SHUTDOWN or they linger over the game.
+
+---
+
+## Audio + pause system — NEW this session
+
+- **Master volume** (0..1) lives in `audio.js` (`getMasterVolume`/`setMasterVolume`/
+  `onMasterVolumeChange`, persisted as `oqw-volume`, default 0.7). The synth routes
+  through a master `GainNode`; `music.js`/`sfx.js`/`voice.js` multiply by it and
+  live-apply. The old per-channel `oqw-audio` mute flag is retired (forced unmuted).
+- **`wireVolumeControl({slider,val,mute})`** (in `pauseMenu.js`) binds any
+  slider+%+mute widget to the master volume. Used by the XP tray popup and the
+  in-game ESC pause menu (and previously the menu settings).
+- **ESC pause menu** (`#pause-menu`, controller in `pauseMenu.js`): master-volume
+  slider + mute + RESUME + MAIN MENU. Wired into **HomeScene, GameScene,
+  TutorialScene, Level2Scene**. While open, the scene **freezes game time + logic,
+  and narration is frozen** (no click/key advance, typewriter halts). `isPauseOpen()`
+  gates scene `update()`; `resetPauseMenu()` on shutdown.
 
 ---
 
 ## Levels — current state
 
 ### Tutorial — `TutorialScene.js`
-- Wireframe "dev sandbox" page; teaches WASD → scan (X-ray reveal) →
-  collect doc → chaser enemy → gun avatar → INFILTRATE exit.
-- Spotlight pause when each enemy first activates.
-- Toto narration. After exit → goes to `HomeScene`.
+- Wireframe "dev sandbox" page; teaches WASD → scan → collect doc → chaser →
+  gun avatar → INFILTRATE exit. Toto narration. After exit → `HomeScene`.
 
-### Level 1.1 — `HomeScene.js` ("Take Down the Feed")
-- Fake YouTube home page, hand-drawn aesthetic. WASD + scrolls vertically
-  with the window (camera follows).
-- Several videos are viral propaganda with insane view counts (1.8B+);
-  rest are normal traffic.
-- **HOLD SPACE on a video to scan it down** (~3.5s). Hover shows view
-  count + `HOLD SPACE` prompt.
-- Take down 4 propaganda → go for the 5th (buried "What They Don't Want
-  You To See", 6.9B views) → it **fights back** → drops into 1.2.
-- **Scanning a normal video → EXPOSED → retry (R)**.
-- Narration: Toto + YOU exploring together; Toto loses connection on the
-  5th; YOU solo from there.
+### Level 1.1 — `HomeScene.js` ("Hidden Agents") — REWORKED this session
+- **Scanning removed.** The fake-YouTube home feed is now a hostile-UI playground.
+  WASD move + **SHIFT dash**; **HP bar** (same model as 1.2) — at 0 HP "WINDOW
+  CRASHED" → press `R` to retry.
+- Three re-enabled Mission-02 agents, remapped onto the 1920-wide feed:
+  - **gunShooter** = the account avatar — pulls a gun, aims (laser), fires ONE
+    lethal shot. Rush it to dodge. One-shot per level (then `spent`). `GUN_GRACE 4s`.
+  - **chasingRecs** = two grid cards (`videos[3]`, `videos[8]`) tear off and chase.
+  - **shootingSearch** = the top search bar fires autocomplete shrapnel near the top.
+  - Agents stay inert until the intro narration is dismissed (`this.started`).
+- **Collect 4 evidence docs** (`DOCS_TARGET`, `buildDocs()` positions) → the boosted
+  video ("What They Don't Want You To See") pulses green → move onto it → Toto loses
+  contact → drops into 1.2 (`GameScene`, `fromHomePage:true`).
+- Agents are the existing `src/game/agents/*` modules. Enabling edits made this
+  session: `combat.js` HP branch (`p.useHp`), `chasingRecs` homes to `a.slot`,
+  `gunShooter` bullets bound to `state.worldW`.
 
 ### Level 1.2 — `GameScene.js` (runner)
-- Infinite auto-scroll. Camera descends; player moves freely within
-  viewport (WASD); SHIFT = player-speed boost (does NOT affect scroll).
-- Enemies (3 types: small square `rec`, scam `ad` popup, fake `virus`
-  popup) spawn below the viewport and fly UP at the player. Constant
-  slow speed; brief X-homing then straight. Blast + vanish on hit.
-- 4 powerups:
-  - **HP+** (common) — permanent +22 HP. Shows floating "HP MAX" if full.
-  - **FAST** (common) — 5s player-speed buff.
-  - **SHIELD** (rare) — 12s damage immunity.
-  - **MAGNET** (rare) — 12s doc pull.
-- **Hidden docs** (5 to collect): spawn rarely from below, proximity-
-  revealed, deeper-gold tile so they're easy to spot on the white page.
-- Collecting 5th doc → **escape sequence**: scroll decelerates, a
-  weird grey `@hush_compliance` comment scrolls into frame, player
-  drags it aside → broken hole revealed → window enters → win flow.
-- During escape: damage is disabled (no enemy chip).
-- Win currently lands on the legacy "won" overlay — **placeholder** for
-  the tunnel-to-Level-2 transition the user is planning.
+- Infinite auto-scroll shmup. Collect 5 hidden docs → escape sequence → win.
+  Unchanged this session except the ESC pause wiring. (See git history for runner
+  tuning: slower scroll, HP+ powerup, rare-long shield/magnet, escape immunity.)
 
 ### Level 2 — `Level2Scene.js`
-- Telegram-style SPYGRAM scaffold. **Not** in the flow yet.
-- Will be the destination of the tunnel transition (planned).
+- Telegram-style SPYGRAM scaffold. Not in the flow yet. Now has ESC pause wired.
 
 ---
 
-## Key tunables (`src/config.js`)
+## Key tunables
 
-| | Value | Notes |
-|---|---|---|
-| `PLAYER.startSize` | 56 | base window size |
-| `PLAYER.baseSpeed` | 360 | player WASD speed |
-| `PLAYER.boostMul` | 1.9 | SHIFT player-only boost |
-| `PLAYER.maxHp` | 100 | runner HP |
-| `SCROLL.slowSpeed` | 34 | px/sec initial scroll (calm) |
-| `SCROLL.fastSpeed` | 200 | px/sec ramped max |
-| `SCROLL.slowDuration` | 16s | calm phase before ramp |
-| `SCROLL.rampDuration` | 32s | linear ramp slow → fast |
-| `WAVE.speed` | 85 | constant enemy upward speed |
-| `WAVE.startInterval` | 3.0s → 1.1s | spawn rate by depth |
-| `POWERUP.startInterval` | 10s ± 4s | spawn cadence |
-| `POWERUP.weights` | hp:6 speed:5 immune:1 magnet:1 | rarity |
-| `POWERUP.durations` | hp:0 speed:5 immune:12 magnet:12 | per-type buff length |
-| `POWERUP.hpHeal` | 22 | HP+ heal amount |
-| `SCAN.coverThreshold` | 0.85 | sweep coverage to latch |
+`src/config.js` holds runner/agent tunables (`PLAYER`, `SCROLL`, `WAVE`, `POWERUP`,
+`AGENTS`, `DAMAGE`, etc.). **Level 1.1 specifics live in `HomeScene.js`:**
+`DOCS_TARGET=4`, `GUN_GRACE=4`, doc positions in `buildDocs()`, agent trigger ranges
+(chasers 380 / search 460 / gun 700, ×difficulty mult), chaser card picks
+(`videos[3]`, `videos[8]`).
 
 ---
 
@@ -173,37 +200,33 @@ netlify.toml             — build config (npm run build → dist)
 | Video site (L1) | **TotallyNormalTube** |
 | Chat app (L2) | **SPYGRAM** |
 
-Player codename is entered at runtime, stored in `localStorage` under
-`oqw-name`. Dialog uses `{name}` placeholders, resolved at render time.
-
+Player codename entered at the XP login, stored in `localStorage 'oqw-name'`.
+Dialog uses `{name}` placeholders, resolved at render time.
 Per-speaker chip colors: TOTO red, YOU blue, SYSTEM green, MAX purple, PHONE grey.
 
 ---
 
 ## Conventions
 
-- **Edits, not new files.** Don't add new modules unless really needed.
-- **Tunables in `config.js`.** No magic numbers in scenes.
-- **Hand-drawn aesthetic.** Use `drawHandRect` for wobbly rectangles.
-- **No emojis in rendered text.** User is replacing thumbnails with Gemini
-  art. Page chrome is intentionally text-only / placeholder circles.
-- **Local commits ok, NEVER push to `origin/dev`.** Push to `demo/main`
-  only: `git push demo local-progress:main`.
-- **Commit messages:** lowercase verb start, then short body, end with
-  the Co-Authored-By trailer.
-- **Verify in the preview connector before reporting "done"** —
-  build-clean alone isn't proof. The dev-only `window.__game` handle is
-  exposed for this.
+- **Edits, not new files** unless really needed.
+- **Tunables in `config.js`** (or clearly at the top of the scene for level-specific).
+- **Hand-drawn aesthetic** for canvas — use `drawHandRect` for wobbly rectangles.
+- **No emojis in canvas-rendered game text** (DOM UI may use them).
+- **Local commits ok.** Deploy: `git push demo local-progress:main`. Team mirror:
+  `git push origin local-progress:qavi-demo`. **NEVER push origin/dev.**
+- **Commit messages:** lowercase verb start, short body, end with the
+  `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` trailer.
+- **Verify in the preview connector before reporting "done."** Use the dev-only
+  `window.__game` handle to jump scenes.
 
 ---
 
 ## Dev-mode jump-to-scene snippet
 
-Paste in the browser console (after Vite dev server is running) to skip
-the menu/cutscene:
+Paste in the browser console (Vite dev server running) to skip the opening:
 
 ```js
-['main-menu','diff-menu','intro','name-prompt'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+['xp-welcome','xp-desktop'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
 document.body.classList.remove('menu-mode');
 __game.scene.scenes.forEach(s => { if (s.scene.isActive() && s.scene.key !== 'BootScene') __game.scene.stop(s.scene.key); });
 // pick one:
@@ -212,73 +235,67 @@ __game.scene.start('HomeScene', { difficulty: 'easy' });       // Level 1.1
 // __game.scene.launch('HUDScene');                            // only for GameScene
 ```
 
-There's also a 🧪 TEST panel (top-right under the HP frame in GameScene)
-with IMMUNE / BIG SIZE / DOC MAGNET toggles for the dev demo.
+There's also a 🧪 TEST panel (GameScene) with IMMUNE / BIG SIZE / DOC MAGNET toggles.
 
 ---
 
 ## Pending / planned (priority order)
 
-1. **Tunnel transition between 1.2 and 2.0** — Qavi has SVG art of a
-   "window with eyes + expressions" from a teammate. Plan: parallax-
-   scrolling tunnel background (Gemini PNG), window-with-eyes character
-   floats through with state-driven expression swaps, antivirus hazards
-   to dodge, then arrive at Level 2.
-2. **Gemini-generated thumbnails for HomeScene** — replace the
-   color-block placeholders with real art. The Shorts cards already
-   have placeholder circles where the art goes.
-3. **Level 2 (SPYGRAM) gameplay** — currently just a scaffold. Design
-   notes still in `docs/LEVEL2.md` (uses old names: needs HUSH/SPYGRAM
-   pass).
-4. **Music + voice assets** — drop-in tracks/clips for menu, levels,
-   intro cutscene. README in `public/music/` + `public/voice/`.
-5. **Polish / playtest tuning** — scan time (1.1), powerup balance,
-   enemy spawn weights.
+1. **XP opening polish** — real XP icon PNGs (vs current CSS art); rename Guest→Tim
+   to match the reference; remove the now-orphaned `settings-modal`/`help-modal`
+   DOM (nothing opens them); optional fade on the desktop→tutorial handoff.
+2. **Desktop error-window cascade** — the "later" part of `Reference Home Screen.png`
+   (the storm of HUSH error popups). Not built yet.
+3. **Level 1.1 tuning** — playtest doc positions, agent trigger ranges, gun grace,
+   chaser picks. The gun is currently one-shot; could re-arm on a cooldown.
+4. **Tunnel transition 1.2 → 2.0** — SVG window-with-eyes char floating through a
+   parallax antivirus tunnel, then into Level 2. (Art to be dropped in
+   `public/window/` + `public/tunnel/`.)
+5. **Level 2 (SPYGRAM) gameplay** — currently a scaffold. Bring back the full
+   Mission-02 mechanics (cookie jar, gaze/cursor, drag-comment, subscribe) +
+   the runner/scroller layer. (User's stated plan: confident-on-1.1 first.)
+6. **Gemini thumbnails for HomeScene** cards.
 
 ---
 
 ## Recent commits (newest first)
 
 ```
-b75d2de Runner tuning: slower scroll, HP+ powerup, rare-long shield/magnet, escape immunity
-df88b21 1.1 polish: move HUD off the logo, manual scan, Toto+YOU narration
-1c91b19 Level 1.1 playable: take down viral propaganda by view count
-417c95f Add Level 1.1 home-page base layout + disable stale onboarding tips
-3febddd Add netlify.toml for one-click deploy
-bc70a59 Runner polish: enemy redesign, dev test panel, escape fixes, UI cleanup
-8375099 Infinite comment feed + scripted escape sequence after 5 docs
-95255d5 Runner tuning pass: slower start, slower enemies, smaller window, UI spacing
-8ee4dcc Runner rework: vertical shmup loop, HP-scaled size, task/HP HUD, hidden docs
-48ec9c9 Cutscene + dialog rework: codename, old-friends script, chip speakers
+77a4090 remove stale design docs; add intro-sequence notes
+5ec17a4 replace opening with a windows xp welcome + desktop flow
+056676c rework level 1.1 into a roaming-agent stealth level; add in-game pause menu
+1aba9aa add audio system: master volume, sfx module, music/voice integration
+d93e95f Add HANDOFF.md + NEXT_SESSION.md for cross-chat continuity
 ```
+
+(All pushed to `demo/main` → live on Netlify, and mirrored to `origin/qavi-demo`.)
 
 ---
 
 ## Known quirks / gotchas
 
-- `PH` in `config.js` is `1e9` — the runner page is effectively infinite.
-  Don't loop from `0` to `PH` anywhere (`for (let i=0; i<=PH; ...)`
-  will hang the renderer). Bound grid draws to the current viewport.
-- `state.player.test.{immune,size,magnet}` flags are dev-panel only.
-  Don't hide them — Qavi uses them while demoing.
-- `docs/DESIGN.md`, `LEVEL1.md`, `LEVEL2.md` are stale (deleted in
-  working tree) and describe the older discovery-mode design. The
-  runner rework supersedes most of it; reference for vibe only.
-- Linux line endings on save → Git complains about CRLF. Harmless.
-- Preview connector's `requestAnimationFrame` is throttled when the
-  preview tab is backgrounded. Many test eval loops won't progress unless
-  you screenshot (which forces a frame).
+- **XP overlays are DOM, not tied to `menu-mode`** — hide them explicitly on scene
+  handoff or they cover the game canvas. (MenuScene does this in `enterTutorial`.)
+- **The Mission-02 agents are 960-space.** `layout.js`/`state.js`/`combat.js`/
+  `agents/*` are the ported old watch page. HomeScene drives a subset on the wider
+  1920 feed by overriding agent coords + setting `player.size=120` so the shared
+  `playerBox()` hitbox matches the 120×90 window.
+- `PH` in `config.js` is `1e9` — the runner page is effectively infinite. Don't loop
+  `0..PH`.
+- `state.player.test.{immune,size,magnet}` flags are dev-panel only (GameScene).
+  `combat.damagePlayer` now also respects `p.test.immune`.
+- Preview connector throttles `requestAnimationFrame` when backgrounded — screenshot
+  to force a frame when an eval loop won't progress.
+- Linux line endings → Git CRLF warnings on save. Harmless.
 
 ---
 
 ## Quick build / dev commands
 
 ```bash
-npm install                   # one-time
-npm run dev                   # start Vite dev server (port 5173)
-npx vite build                # production build → dist/
-git push demo local-progress:main   # deploy to Netlify via personal repo
+npm install                          # one-time
+npm run dev                          # start Vite dev server (port 5173)
+npx vite build                       # production build → dist/
+git push demo local-progress:main    # deploy to Netlify
+git push origin local-progress:qavi-demo   # mirror to team repo (NOT dev)
 ```
-
-**Netlify build settings** are read from `netlify.toml` — no manual
-config needed when connecting the repo.
