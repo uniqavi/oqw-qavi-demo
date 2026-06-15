@@ -13,6 +13,10 @@
 //   setMusicMuted(bool)    — respects oqw-audio localStorage flag
 //
 // Settings: hooks into existing localStorage 'oqw-audio' flag from MenuScene.
+// Master volume comes from audio.js (the single source of truth); music sits
+// at MUSIC_MIX of that so it never drowns SFX/voice.
+
+import { getMasterVolume, onMasterVolumeChange } from './audio.js';
 
 const TRACKS = {
   menu:    '/music/menu.mp3',          // main menu theme
@@ -25,9 +29,19 @@ const TRACKS = {
 const audioElements = {};
 let currentTrack = null;
 let currentVolume = 0;
-let masterVolume = 0.5;          // tune this — music shouldn't drown SFX
+const MUSIC_MIX = 0.2;           // music's share of the master volume
 let muted = false;
 let fadeRaf = null;
+
+// Effective element volume for a given per-track level (0..1).
+function mix(level) { return level * MUSIC_MIX * getMasterVolume(); }
+
+// Live-apply master volume changes to the currently playing track.
+onMasterVolumeChange(() => {
+  if (currentTrack && audioElements[currentTrack] && !muted) {
+    audioElements[currentTrack].volume = mix(currentVolume);
+  }
+});
 
 // Preload all tracks once. Missing files fail silently — the audio element
 // just stays in an error state and play() will reject quietly.
@@ -51,19 +65,12 @@ export function setMusicMuted(value) {
   muted = !!value;
   // Apply immediately to current track
   if (currentTrack && audioElements[currentTrack]) {
-    audioElements[currentTrack].volume = muted ? 0 : currentVolume * masterVolume;
+    audioElements[currentTrack].volume = muted ? 0 : mix(currentVolume);
   }
 }
 
 export function isMusicMuted() {
   return muted;
-}
-
-export function setMasterVolume(v) {
-  masterVolume = Math.max(0, Math.min(1, v));
-  if (currentTrack && audioElements[currentTrack] && !muted) {
-    audioElements[currentTrack].volume = currentVolume * masterVolume;
-  }
 }
 
 // Play a track. Fades from current volume to target over `fadeMs`.
@@ -72,7 +79,10 @@ export function playMusic(name, opts = {}) {
   const fadeMs = opts.fadeMs ?? 800;
   const targetVol = opts.volume ?? 1.0;
 
-  if (name === currentTrack) return;
+  // Same track requested again — but it may be paused (e.g. the very first
+  // playMusic() was blocked by the autoplay policy before any user gesture).
+  // Resume it instead of no-opping, otherwise the game can get stuck silent.
+  if (name === currentTrack) { ensurePlaying(name, targetVol, fadeMs); return; }
 
   // Stop whatever's playing first (instant — playMusic doesn't crossfade,
   // call crossfadeTo() for that)
@@ -117,7 +127,7 @@ export function crossfadeTo(name, opts = {}) {
   const fadeMs = opts.fadeMs ?? 1200;
   const targetVol = opts.volume ?? 1.0;
 
-  if (name === currentTrack) return;
+  if (name === currentTrack) { ensurePlaying(name, targetVol, fadeMs); return; }
   const oldTrack = currentTrack;
   const oldEl = oldTrack ? audioElements[oldTrack] : null;
 
@@ -144,6 +154,20 @@ export function crossfadeTo(name, opts = {}) {
   currentVolume = targetVol;
 }
 
+// Internal: if the current track exists but isn't actually playing (autoplay
+// was blocked, or a tab pause), kick it back into life and fade it up. Safe to
+// call repeatedly — a track that's already playing is left alone.
+function ensurePlaying(name, targetVol = 1.0, fadeMs = 600) {
+  const el = audioElements[name];
+  if (!el) return;
+  if (el.paused) {
+    const p = el.play();
+    if (p && p.catch) p.catch(() => {});
+    startFade(name, el.volume, muted ? 0 : targetVol, fadeMs);
+    currentVolume = targetVol;
+  }
+}
+
 // Internal: fade a single track's volume.
 // `secondary` flag lets two fades coexist (one for old, one for new).
 const activeFades = {};
@@ -156,7 +180,7 @@ function startFade(trackName, fromVol, toVol, durationMs, onDone, secondary) {
   const tick = (now) => {
     const t = Math.min(1, (now - startT) / durationMs);
     const v = fromVol + (toVol - fromVol) * t;
-    el.volume = muted ? 0 : v * masterVolume;
+    el.volume = muted ? 0 : mix(v);
     if (t < 1) {
       activeFades[trackName] = requestAnimationFrame(tick);
     } else {

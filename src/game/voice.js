@@ -16,20 +16,27 @@
 //   memo-max-02.mp3
 //   memo-intercept-01.mp3
 
-const VOICE_VOLUME = 0.9;
+import { getMasterVolume, onMasterVolumeChange } from './audio.js';
+
+const VOICE_MIX = 0.9;          // voice's share of the master volume
 let muted = false;
 let currentClip = null;
 
+function voiceVol() { return muted ? 0 : VOICE_MIX * getMasterVolume(); }
+
+// Live-apply master-volume changes to the currently playing line.
+onMasterVolumeChange(() => { if (currentClip) currentClip.volume = voiceVol(); });
+
 export function setVoiceMuted(value) {
   muted = !!value;
-  if (currentClip) currentClip.volume = muted ? 0 : VOICE_VOLUME;
+  if (currentClip) currentClip.volume = voiceVol();
 }
 
 export function playVoice(id) {
   if (!id) return;
   stopVoice();
   const clip = new Audio('/voice/' + id + '.mp3');
-  clip.volume = muted ? 0 : VOICE_VOLUME;
+  clip.volume = voiceVol();
   // Suppress 404 console spam if the voice file hasn't been generated yet
   clip.addEventListener('error', () => { /* file not present, no problem */ });
   const p = clip.play();
