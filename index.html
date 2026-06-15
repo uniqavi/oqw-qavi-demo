@@ -64,6 +64,26 @@
             </div>
           </div>
 
+          <!-- ===== PAUSE / AUDIO MENU (opened with ESC) ===== -->
+          <div class="pause-menu hidden" id="pause-menu">
+            <div class="pause-panel">
+              <div class="pause-title">PAUSED</div>
+              <div class="pause-row">
+                <span class="pause-label">[ MASTER VOLUME ]</span>
+                <div class="pause-vol">
+                  <button class="pause-mute" id="pause-mute" type="button" aria-label="Mute / unmute">&#128266;</button>
+                  <input class="pause-slider" id="pause-volume" type="range" min="0" max="100" step="1" value="70" aria-label="Master volume">
+                  <span class="pause-vol-val" id="pause-volume-val">70%</span>
+                </div>
+              </div>
+              <div class="pause-actions">
+                <button class="pause-btn primary" id="pause-resume" type="button">[ RESUME ]</button>
+                <button class="pause-btn" id="pause-quit" type="button">[ MAIN MENU ]</button>
+              </div>
+              <div class="pause-hint">press ESC to resume</div>
+            </div>
+          </div>
+
           <!-- ===== MALWARE INSTALL / SHORT-CIRCUIT SEQUENCE ===== -->
           <div class="end-sequence hidden" id="end-sequence">
             <div class="malware-install" id="malware-install">
@@ -104,209 +124,163 @@
             <span class="pm-hint"><kbd>ESC</kbd> menu · <kbd>R</kbd> again</span>
           </div>
 
-          <!-- ===== MAIN MENU ===== -->
-          <div class="main-menu" id="main-menu">
-            <div class="dark-room">
-              <canvas class="menu-fx-canvas" id="menu-fx-canvas-main"></canvas>
-              <div class="fx-projection-flicker"></div>
-              <div class="fx-monitor-glow"></div>
-              <div class="fx-lamp-glow"></div>
-              <div class="fx-led"></div>
+          <!-- ===== XP WELCOME / LOGIN (main menu) ===== -->
+          <div class="xp-welcome" id="xp-welcome">
+            <div class="xpw-topbar"></div>
+            <div class="xpw-mid">
+              <div class="xpw-left">
+                <div class="xpw-logo">
+                  <span class="xpw-ms">Microsoft</span>
+                  <span class="xpw-win">Windows<span class="xpw-xp">xp</span></span>
+                </div>
+                <div class="xpw-prompt" id="xpw-prompt">To begin, click your user name</div>
+              </div>
+              <div class="xpw-divider"></div>
+              <div class="xpw-right">
+                <div class="xpw-user" id="xpw-admin" data-user="admin" role="button" tabindex="0">
+                  <div class="xpw-tile"><div class="xpw-avatar admin"></div></div>
+                  <div class="xpw-info">
+                    <div class="xpw-name">Administrator</div>
+                    <div class="xpw-pwwrap hidden" id="xpw-pwwrap">
+                      <input type="text" class="xpw-pw" id="xpw-pw" maxlength="18" autocomplete="off" spellcheck="false" placeholder="" aria-label="Type your name" />
+                      <button class="xpw-go" id="xpw-go" type="button" title="Log on">&rsaquo;</button>
+                      <div class="xpw-hint" id="xpw-hint">Hint: type your name</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="xpw-user disabled" data-user="guest" role="button" tabindex="-1">
+                  <div class="xpw-tile"><div class="xpw-avatar guest"></div></div>
+                  <div class="xpw-info"><div class="xpw-name">Guest</div></div>
+                </div>
+              </div>
             </div>
-            <div class="menu-overlay ink-layer" role="region" aria-label="Main menu">
-              <!-- Status bar at the top of the projection -->
-              <div class="status">
-                <div class="status-left">[OPERATIONAL STATUS: STANDBY]</div>
-                <div class="status-right">[DATE: 03.11.2039]</div>
-              </div>
-
-              <!-- Title -->
-              <h1 class="menu-title">
-                <span class="row">Operation</span>
-                <span class="row">Quiet Window</span>
-              </h1>
-
-              <!-- Classification tagline -->
-              <div class="tagline">
-                <span class="tag-chip">[DEEP-COVER OPS]</span>
-                <span>TIER-IV CLEARANCE /</span>
-                <span class="tag-chip">[ACTIVE HUSH PROTOCOL]</span>
-              </div>
-
-              <!-- Buttons -->
-              <nav class="menu-buttons" aria-label="Main">
-                <button class="menu-btn" type="button" id="btn-start">
-                  <span class="label"><span class="br">[</span>START NEW MISSION<span class="br">]</span></span>
-                  <span class="chev">&rsaquo;</span>
-                  <span class="icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-                      <circle cx="12" cy="12" r="7" />
-                      <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
-                      <path d="M12 2v4 M12 18v4 M2 12h4 M18 12h4" />
-                    </svg>
-                  </span>
-                </button>
-
-                <button class="menu-btn" type="button" id="btn-settings">
-                  <span class="label"><span class="br">[</span>SYSTEM SETTINGS / PROTOCOLS<span class="br">]</span></span>
-                  <span class="chev" style="visibility:hidden">&rsaquo;</span>
-                  <span class="icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M19.43 12.98a7.9 7.9 0 0 0 0-1.96l2.02-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a8.06 8.06 0 0 0-1.7-.98l-.36-2.54A.5.5 0 0 0 14.1 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.6.24-1.17.57-1.7.98l-2.39-.96a.5.5 0 0 0-.6.22L2.79 8.52a.5.5 0 0 0 .12.64l2.02 1.58a7.9 7.9 0 0 0 0 1.96L2.91 14.28a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.42.34.66.22l2.39-.96c.53.41 1.1.74 1.7.98l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.6-.24 1.17-.57 1.7-.98l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.02-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
-                    </svg>
-                  </span>
-                </button>
-
-                <button class="menu-btn" type="button" id="btn-help">
-                  <span class="label"><span class="br">[</span>OPERATIONAL HELP / INTEL<span class="br">]</span></span>
-                  <span class="chev" style="visibility:hidden">&rsaquo;</span>
-                  <span class="icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2 4 5v6c0 5 3.5 9.3 8 11 4.5-1.7 8-6 8-11V5l-8-3z"/>
-                      <text x="12" y="15.5" text-anchor="middle" font-family="Saira Condensed, sans-serif" font-weight="800" font-size="11" fill="#e9ecec">?</text>
-                    </svg>
-                  </span>
-                </button>
-              </nav>
-
-              <!-- Footer -->
-              <div class="ink-footer">OPS-TERM v1.4</div>
-              <div class="ink-glyphs">. . .</div>
+            <div class="xpw-bottombar">
+              <button class="xpw-turnoff" id="xpw-turnoff" type="button">
+                <span class="xpw-power">&#9211;</span> Turn off computer
+              </button>
+              <div class="xpw-help">After you log on, you can add or change accounts.<br>Just go to Control Panel and click User Accounts.</div>
             </div>
           </div>
 
-          <!-- ===== DIFFICULTY SELECT (after pressing START) ===== -->
-          <div class="diff-menu hidden" id="diff-menu">
-            <div class="dark-room">
-              <canvas class="menu-fx-canvas" id="menu-fx-canvas-diff"></canvas>
-              <div class="fx-projection-flicker"></div>
-              <div class="fx-monitor-glow"></div>
-              <div class="fx-lamp-glow"></div>
-              <div class="fx-led"></div>
+          <!-- ===== XP DESKTOP (home screen) ===== -->
+          <div class="xp-desktop hidden" id="xp-desktop">
+            <!-- Desktop icons -->
+            <div class="xp-icons" id="xp-icons">
+              <div class="xp-icon" data-app="mycomputer" tabindex="0"><div class="xpi-img mycomputer"></div><span>My Computer</span></div>
+              <div class="xp-icon" data-app="bin" tabindex="0"><div class="xpi-img bin"></div><span>Recycle Bin</span></div>
+              <div class="xp-icon" data-app="docs" tabindex="0"><div class="xpi-img folder"></div><span>My Documents</span></div>
+              <div class="xp-icon" data-app="readme" tabindex="0"><div class="xpi-img txt"></div><span>readme.txt</span></div>
+              <div class="xp-icon" data-app="browser" tabindex="0"><div class="xpi-img ie"></div><span>Internet</span></div>
             </div>
-            <div class="diff-overlay ink-layer" role="region" aria-label="Mission configuration">
-              <!-- Status bar -->
-              <div class="status">
-                <div class="status-left">[MISSION CONFIG: PENDING]</div>
-                <div class="status-right">[CLEARANCE: TIER-IV]</div>
+
+            <!-- Toto incoming-call window -->
+            <div class="xp-win xpwin-call hidden" id="xp-call">
+              <div class="xpwin-bar">
+                <span class="xpwin-bar-ico call"></span>
+                <span class="xpwin-bar-title">VoIP — incoming call</span>
+                <span class="xpwin-bar-btns"><i class="b min">_</i><i class="b max">□</i><i class="b cls" id="xp-call-x">×</i></span>
               </div>
-
-              <!-- Title -->
-              <h1 class="menu-title">
-                <span class="row">Threat</span>
-                <span class="row">Profile</span>
-              </h1>
-
-              <!-- Tagline -->
-              <div class="tagline">
-                <span class="tag-chip">[CALIBRATION REQUIRED]</span>
-                <span>SELECT MISSION PARAMETERS</span>
+              <div class="xpwin-inner call-inner">
+                <div class="call-avatar" aria-hidden="true">
+                  <div class="call-av-window"><span class="cav-bar"></span></div>
+                </div>
+                <div class="call-meta">
+                  <div class="call-who">TOTO</div>
+                  <div class="call-sub" id="call-sub">unknown number · ringing…</div>
+                </div>
+                <div class="call-dialogue hidden" id="call-dialogue">
+                  <span class="call-speaker" id="call-speaker">TOTO</span>
+                  <div class="call-line" id="call-line"></div>
+                  <div class="call-advance" id="call-advance">click or press SPACE to continue ▸</div>
+                </div>
+                <div class="call-actions" id="call-actions">
+                  <button class="call-btn accept" id="call-accept" type="button"><span class="ph">&#9742;</span> Accept</button>
+                  <button class="call-btn decline" id="call-decline" type="button"><span class="ph">&#9742;</span> Decline</button>
+                </div>
               </div>
-
-              <!-- Three difficulty cards -->
-              <div class="diff-cards">
-                <button class="diff-card" data-diff="easy">
-                  <span class="diff-level"><span class="br">[</span>EASY<span class="br">]</span></span>
-                  <span class="diff-stars">▸</span>
-                  <span class="diff-desc">Slow agents. Gentle damage. For first runs.</span>
-                </button>
-                <button class="diff-card" data-diff="normal">
-                  <span class="diff-level"><span class="br">[</span>NORMAL<span class="br">]</span></span>
-                  <span class="diff-stars">▸▸</span>
-                  <span class="diff-desc">As designed. Recommended.</span>
-                </button>
-                <button class="diff-card" data-diff="hard">
-                  <span class="diff-level"><span class="br">[</span>HARD<span class="br">]</span></span>
-                  <span class="diff-stars">▸▸▸</span>
-                  <span class="diff-desc">Faster. Deadlier. For practiced infiltrators.</span>
-                </button>
-              </div>
-
-              <!-- Action buttons -->
-              <div class="diff-actions">
-                <button class="menu-btn ghost" type="button" id="diff-back">
-                  <span class="label"><span class="br">[</span>◀ BACK<span class="br">]</span></span>
-                </button>
-                <button class="menu-btn" type="button" id="diff-confirm" disabled>
-                  <span class="label"><span class="br">[</span>BEGIN INFILTRATION<span class="br">]</span></span>
-                  <span class="chev">&rsaquo;</span>
-                  <span class="icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <line x1="5" y1="12" x2="19" y2="12"/>
-                      <polyline points="12 5 19 12 12 19"/>
-                    </svg>
-                  </span>
-                </button>
-              </div>
-
-              <!-- Footer -->
-              <div class="ink-footer">OPS-TERM v1.4 · DIFF.SEL</div>
-              <div class="ink-glyphs">. . .</div>
             </div>
-          </div>
 
-          <!-- ===== NAME PROMPT (after BEGIN INFILTRATION, before cutscene) ===== -->
-          <div class="modal hidden" id="name-prompt">
-            <div class="modal-panel ink-layer" role="dialog" aria-label="Codename">
-              <div class="status">
-                <div class="status-left">[OPERATIVE REGISTRATION]</div>
-                <div class="status-right">[ENCRYPTED CHANNEL]</div>
+            <!-- IE-style browser window (opens, "loads", then enters the tutorial) -->
+            <div class="xp-win xpwin-ie hidden" id="xp-browser">
+              <div class="xpwin-bar ie">
+                <span class="xpwin-bar-ico ie"></span>
+                <span class="xpwin-bar-title">Internet Explorer</span>
+                <span class="xpwin-bar-btns"><i class="b min">_</i><i class="b max">□</i><i class="b cls" id="xp-browser-x">×</i></span>
               </div>
-
-              <h1 class="menu-title">
-                <span class="row">Identify</span>
-                <span class="row">Yourself</span>
-              </h1>
-
-              <div class="tagline">
-                <span class="tag-chip">[CODENAME REQUIRED]</span>
-                <span>WHAT SHOULD TOTO CALL YOU?</span>
+              <div class="ie-toolbar">
+                <span class="ie-nav">&larr;</span><span class="ie-nav">&rarr;</span><span class="ie-nav">&#10227;</span>
+                <span class="ie-addr-label">Address</span>
+                <div class="ie-addr" id="ie-addr">about:blank</div>
+                <span class="ie-go">Go</span>
               </div>
-
-              <div class="name-row">
-                <input type="text" id="name-input" maxlength="16" autocomplete="off"
-                       spellcheck="false" placeholder="enter codename..." />
-                <div class="name-note" id="name-note">▸ type a codename to continue</div>
+              <div class="ie-page" id="ie-page">
+                <div class="ie-loading" id="ie-loading">
+                  <div class="ie-spinner"></div>
+                  <div class="ie-loading-text" id="ie-loading-text">Connecting…</div>
+                  <div class="ie-progress"><div class="ie-progress-fill" id="ie-progress-fill"></div></div>
+                </div>
               </div>
-
-              <div class="diff-actions">
-                <button class="menu-btn ghost" type="button" id="name-back">
-                  <span class="label"><span class="br">[</span>◀ BACK<span class="br">]</span></span>
-                </button>
-                <button class="menu-btn" type="button" id="name-confirm" disabled>
-                  <span class="label"><span class="br">[</span>CONFIRM<span class="br">]</span></span>
-                  <span class="chev">&rsaquo;</span>
-                  <span class="icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <line x1="5" y1="12" x2="19" y2="12"/>
-                      <polyline points="12 5 19 12 12 19"/>
-                    </svg>
-                  </span>
-                </button>
-              </div>
-
-              <div class="ink-footer">OPS-TERM v1.4 · ID.REG</div>
-              <div class="ink-glyphs">. . .</div>
             </div>
-          </div>
 
-          <!-- ===== INTRO CUTSCENE ===== -->
-          <div class="intro hidden" id="intro">
-            <div class="dark-room">
-              <canvas class="menu-fx-canvas" id="menu-fx-canvas-intro"></canvas>
-              <div class="fx-projection-flicker"></div>
-              <div class="fx-monitor-glow"></div>
-              <div class="fx-lamp-glow"></div>
-              <div class="fx-led"></div>
-            </div>
-            <div class="dialogue">
-              <img class="dialogue-portrait" id="dialogue-portrait" alt="" />
-              <div class="dialogue-body">
-                <div class="dialogue-speaker" id="dialogue-speaker"></div>
-                <div class="dialogue-line" id="dialogue-line"></div>
-                <div class="dialogue-hint" id="dialogue-hint">▸ click or press SPACE to continue</div>
+            <!-- Start menu -->
+            <div class="xp-startmenu hidden" id="xp-startmenu">
+              <div class="xpsm-header">
+                <div class="xpsm-avatar"></div>
+                <div class="xpsm-user" id="xpsm-user">Administrator</div>
               </div>
-              <button id="intro-skip" class="dialogue-skip-btn">SKIP LOG ↗</button>
+              <div class="xpsm-body">
+                <div class="xpsm-col left">
+                  <div class="xpsm-item launch" data-app="browser"><span class="xpsm-ico ie"></span><div class="xpsm-txt"><b>Internet</b><small>Internet Explorer</small></div></div>
+                  <div class="xpsm-item" data-app="email"><span class="xpsm-ico mail"></span><div class="xpsm-txt"><b>E-mail</b><small>Outlook Express</small></div></div>
+                  <div class="xpsm-sep"></div>
+                  <div class="xpsm-item" data-app="notepad"><span class="xpsm-ico txt"></span><div class="xpsm-txt"><b>Notepad</b></div></div>
+                  <div class="xpsm-item" data-app="mediaplayer"><span class="xpsm-ico media"></span><div class="xpsm-txt"><b>Windows Media Player</b></div></div>
+                  <div class="xpsm-item" data-app="paint"><span class="xpsm-ico paint"></span><div class="xpsm-txt"><b>Paint</b></div></div>
+                  <div class="xpsm-allprogs" data-app="allprogs"><b>All Programs</b> <span class="xpsm-arrow">&#9656;</span></div>
+                </div>
+                <div class="xpsm-col right">
+                  <div class="xpsm-item r" data-app="docs">My Documents</div>
+                  <div class="xpsm-item r" data-app="mycomputer">My Computer</div>
+                  <div class="xpsm-sep"></div>
+                  <div class="xpsm-item r" data-app="controlpanel">Control Panel</div>
+                  <div class="xpsm-item r" data-app="help">Help and Support</div>
+                  <div class="xpsm-item r" data-app="search">Search</div>
+                </div>
+              </div>
+              <div class="xpsm-footer">
+                <button class="xpsm-foot-btn" id="xpsm-logoff"><span class="xpsm-foot-ico logoff"></span> Log Off</button>
+                <button class="xpsm-foot-btn" id="xpsm-shutdown"><span class="xpsm-foot-ico power"></span> Turn Off Computer</button>
+              </div>
+            </div>
+
+            <!-- System-tray volume popup -->
+            <div class="xp-volpop hidden" id="xp-volpop">
+              <div class="xp-volpop-title">Volume</div>
+              <div class="xp-volpop-row">
+                <button class="xp-volpop-mute" id="xp-vol-mute" type="button" aria-label="Mute / unmute">&#128266;</button>
+                <input class="xp-volpop-slider" id="xp-vol-slider" type="range" min="0" max="100" step="1" value="70" aria-label="Master volume" />
+                <span class="xp-volpop-val" id="xp-vol-val">70%</span>
+              </div>
+            </div>
+
+            <!-- Taskbar -->
+            <div class="xp-taskbar">
+              <button class="xp-start" id="xp-start" type="button">
+                <span class="xps-flag"></span><span class="xps-label">start</span>
+              </button>
+              <div class="xp-quicklaunch">
+                <span class="xpql ie" data-app="browser" title="Launch Internet Explorer"></span>
+                <span class="xpql showdesktop" title="Show Desktop"></span>
+              </div>
+              <div class="xp-tasks" id="xp-tasks">
+                <button class="xp-task" data-app="docs"><span class="xptask-ico folder"></span>My Documents</button>
+                <button class="xp-task" data-app="mediaplayer"><span class="xptask-ico media"></span>Windows Media Player</button>
+              </div>
+              <div class="xp-tray">
+                <span class="xp-tray-ico volume" id="xp-vol" title="Volume" tabindex="0"></span>
+                <span class="xp-tray-ico shield" title="Security Center"></span>
+                <span class="xp-clock" id="xp-clock">9:41 AM</span>
+              </div>
             </div>
           </div>
 
@@ -335,9 +309,10 @@
               <div class="settings-rows">
                 <div class="setting-row">
                   <span class="setting-label">[ AUDIO ]</span>
-                  <div class="diff-options">
-                    <button class="diff-btn" data-audio="on">[ ON ]</button>
-                    <button class="diff-btn" data-audio="off">[ MUTE ]</button>
+                  <div class="menu-vol">
+                    <button class="menu-mute" id="menu-mute" type="button" aria-label="Mute / unmute">&#128266;</button>
+                    <input class="menu-slider" id="menu-volume" type="range" min="0" max="100" step="1" value="70" aria-label="Master volume">
+                    <span class="menu-vol-val" id="menu-volume-val">70%</span>
                   </div>
                 </div>
               </div>
