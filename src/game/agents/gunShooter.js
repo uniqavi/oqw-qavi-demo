@@ -6,6 +6,7 @@
 import { PW, PH, AGENTS, DAMAGE } from '../../config.js';
 import { dist } from '../physics.js';
 import { beep, noise } from '../audio.js';
+import { playSfx } from '../sfx.js';
 import { damagePlayer } from '../combat.js';
 
 const T = AGENTS.gunShooter;
@@ -70,6 +71,7 @@ export function update(agent, dt, state) {
     noise(0.18, 0.2);
     beep(220, 0.18, 'square', 0.16);
     beep(80, 0.3, 'sawtooth', 0.12);
+    playSfx('gun');
     agent.state = 'spent';
     agent.spentT = 0;
   } else if (agent.state === 'spent') {
@@ -102,7 +104,8 @@ export function updateProjectiles(state, dt) {
         });
       }
     }
-    if (b.x < 0 || b.x > PW || b.y < 0 || b.y > PH) b.life = 0;
+    const worldW = state.worldW || PW;
+    if (b.x < 0 || b.x > worldW || b.y < 0 || b.y > PH) b.life = 0;
   }
   for (let i = state.bullets.length - 1; i >= 0; i--) {
     if (state.bullets[i].life <= 0) state.bullets.splice(i, 1);

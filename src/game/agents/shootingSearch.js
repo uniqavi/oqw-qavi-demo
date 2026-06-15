@@ -5,6 +5,7 @@
 import { AGENTS, DAMAGE } from '../../config.js';
 import { dist, playerBox } from '../physics.js';
 import { beep, noise } from '../audio.js';
+import { playSfx } from '../sfx.js';
 import { damagePlayer } from '../combat.js';
 
 const T = AGENTS.shootingSearch;
@@ -35,6 +36,7 @@ export function update(agent, dt, state) {
       agent.state = 'firing';
       agent.cooldown = 0;
       agent.shotsLeft = T.shotsPerVolley;
+      playSfx('burst');
     }
   } else if (agent.state === 'firing') {
     agent.cooldown -= dt;

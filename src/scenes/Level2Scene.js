@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { initAudio, beep } from '../game/audio.js';
 import { crossfadeTo } from '../game/music.js';
+import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
 
 // LEVEL 2 — SPYGRAM (HUSH's "private" chat. dark mode. obviously logged.)
 //
@@ -103,14 +104,11 @@ export default class Level2Scene extends Phaser.Scene {
       right: Phaser.Input.Keyboard.KeyCodes.D,
     });
 
-    // ESC → main menu
+    // ESC → pause / audio menu (MAIN MENU button quits)
     this.onKey = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        crossfadeTo('menu', { fadeMs: 800 });
-        document.body.classList.add('menu-mode');
-        this.scene.stop();
-        this.scene.start('MenuScene');
+        togglePauseMenu({ onQuit: () => this.quitToMenu() });
       }
     };
     document.addEventListener('keydown', this.onKey);
@@ -118,6 +116,7 @@ export default class Level2Scene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       window.removeEventListener('resize', this.handleResize);
       document.removeEventListener('keydown', this.onKey);
+      resetPauseMenu();
     });
   }
 
@@ -135,8 +134,17 @@ export default class Level2Scene extends Phaser.Scene {
     this.VH = h;
   }
 
+  quitToMenu() {
+    resetPauseMenu();
+    crossfadeTo('menu', { fadeMs: 800 });
+    document.body.classList.add('menu-mode');
+    this.scene.stop();
+    this.scene.start('MenuScene');
+  }
+
   update(_time, deltaMs) {
     const dt = Math.min(0.05, deltaMs / 1000);
+    if (isPauseOpen()) { this.render(); return; }   // frozen while paused
     this.time += dt;
     this.credentialTimer = Math.max(0, this.credentialTimer - dt);
 

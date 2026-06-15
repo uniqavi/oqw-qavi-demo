@@ -20,6 +20,7 @@ import { startEndSequence, updateEndSequence, drawArcs, PHASE_DURATIONS } from '
 import { crossfadeTo, stopMusic } from '../game/music.js';
 import { playSfx } from '../game/sfx.js';
 import { playVoice, stopVoice } from '../game/voice.js';
+import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
 
 // First-time onboarding tips. Direction A voice — has personality but
 // still tells you what to do. Keyed in localStorage so veterans never see.
@@ -269,6 +270,13 @@ export default class GameScene extends Phaser.Scene {
         this.advanceIntel();
         return;
       }
+      // ESC during play → pause / audio menu (MAIN MENU button quits).
+      if (e.key === 'Escape' && this.state.status === 'playing'
+          && !this.state.tipShowing && !this.state.intelDialog && !this.state.narration) {
+        e.preventDefault();
+        togglePauseMenu({ onQuit: () => this.backToMenu() });
+        return;
+      }
       if (this.state.status === 'won') {
         if (e.key === 'Escape') { e.preventDefault(); this.backToMenu(); }
         else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); this.restart(); }
@@ -324,6 +332,7 @@ export default class GameScene extends Phaser.Scene {
       if (this.revealTimers) this.revealTimers.forEach(clearTimeout);
       if (this.tipTimer) clearTimeout(this.tipTimer);
       if (this.intelTypeTimer) clearTimeout(this.intelTypeTimer);
+      resetPauseMenu();
       // Reset end-sequence + intel DOM so nothing leaks across re-entries
       this.endDom?.wrap?.classList.add('hidden');
       this.endDom?.install?.classList.remove('show');
@@ -615,6 +624,10 @@ export default class GameScene extends Phaser.Scene {
         this.intelDom.hint?.classList.add('show');
         return;
       }
+      if (isPauseOpen()) {            // hold the typewriter while paused
+        this.intelTypeTimer = setTimeout(tick, 90);
+        return;
+      }
       if (chars < text.length) {
         chars++;
         if (this.intelDom.line) this.intelDom.line.textContent = text.slice(0, chars);
@@ -631,6 +644,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   advanceIntel() {
+    if (isPauseOpen()) return;          // frozen while the pause menu is open
     const dialog = this.state.intelDialog;
     if (!dialog) return;
     if (dialog.typing) {
@@ -803,7 +817,7 @@ export default class GameScene extends Phaser.Scene {
     const dt = Math.min(0.05, deltaMs / 1000);
     // Don't accrue game time while a tip or the intel memo is on-screen.
     // The run-time stat shouldn't punish players for reading.
-    if (!this.state.intelDialog && !this.state.tipShowing && !this.state.narration) this.state.time += dt;
+    if (!this.state.intelDialog && !this.state.tipShowing && !this.state.narration && !isPauseOpen()) this.state.time += dt;
 
     // Smooth zoom toward target
     const c = this.state.cam;
@@ -835,7 +849,9 @@ export default class GameScene extends Phaser.Scene {
       return cr.life > 0;
     });
 
-    if (this.state.status === 'playing' && !this.state.intelDialog && !this.state.tipShowing && !this.state.narration) {
+    if (isPauseOpen()) {
+      // Paused — hold the world; render the frozen frame below.
+    } else if (this.state.status === 'playing' && !this.state.intelDialog && !this.state.tipShowing && !this.state.narration) {
       this.runGameLogic(dt);
       this.updateOnboardingTips();
     } else if (this.state.status === 'playing' && !this.state.intelDialog && this.state.tipShowing) {
@@ -1239,6 +1255,10 @@ export default class GameScene extends Phaser.Scene {
         if (this.intelDom.line) this.intelDom.line.textContent = text;
         return;
       }
+      if (isPauseOpen()) {            // hold the typewriter while paused
+        this.narrationTimer = setTimeout(tick, 90);
+        return;
+      }
       if (chars < text.length) {
         chars++;
         if (this.intelDom.line) this.intelDom.line.textContent = text.slice(0, chars);
@@ -1251,6 +1271,7 @@ export default class GameScene extends Phaser.Scene {
     tick();
   }
   advanceNarration() {
+    if (isPauseOpen()) return;          // frozen while the pause menu is open
     const n = this.state.narration;
     if (!n) return;
     if (n.typing) {

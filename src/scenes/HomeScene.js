@@ -1,22 +1,31 @@
 import Phaser from 'phaser';
 import { initAudio, beep, noise } from '../game/audio.js';
 import { drawHandRect } from '../game/draw.js';
-import { COLORS, PLAYER } from '../config.js';
+import { dist } from '../game/physics.js';
+import { COLORS, PLAYER, AGENTS } from '../config.js';
+import * as ChasingRecs from '../game/agents/chasingRecs.js';
+import * as ShootingSearch from '../game/agents/shootingSearch.js';
+import * as GunShooter from '../game/agents/gunShooter.js';
+import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
 
-// LEVEL 1.1 — TOTALLYNORMALTUBE HOME PAGE ("Take Down the Feed")
+// LEVEL 1.1 — TOTALLYNORMALTUBE HOME PAGE ("Hidden Agents")
 //
-// The home page is packed with videos. A few are viral PROPAGANDA with insane
-// view counts (billions), hidden among normal low-view videos. You move the red
-// window (WASD) over the page and HOLD it over a video to scan it down (~3.5s).
-//   • Scan a propaganda video → taken down. Take down 4.
-//   • Complete a scan on a NORMAL video → EXPOSED → retry.
-//   • Go for the 5th (the boosted doc video) → it fights back → Level 1.2.
+// The home page LOOKS innocent, but its UI is hostile. You pilot the red
+// window (WASD, SHIFT to dash) around the page and:
+//   • the account avatar (top-right) pulls a gun and fires one lethal shot —
+//     rush it to dodge;
+//   • two video cards tear off the page and CHASE you;
+//   • the search bar fires autocomplete shrapnel when you get near the top.
+// Survive, collect the scattered EVIDENCE DOCS, then dive into the boosted
+// video ("What They Don't Want You To See") to drop into Level 1.2.
 //
-// Same control + scan feel as the tutorial and the 1.2 runner (you are the
-// window). Camera follows the window down the tall page.
+// No scanning — taking damage drains an HP bar (same model as 1.2). At 0 HP
+// the window crashes → retry (R). Agents are the ported Mission-02 modules,
+// re-coordinated onto this 1920-wide layout (see src/game/agents/*).
 
 const DW = 1920;                       // logical design width (fit to canvas width)
-const SCAN_TIME = 3.5;                 // seconds to fully scan a video
+const DOCS_TARGET = 4;                 // evidence docs to collect before the exit opens
+const GUN_GRACE = 4;                   // seconds before the avatar can fire (learn the controls)
 
 const LAYOUT = {
   topBar: { h: 56 },
@@ -25,6 +34,11 @@ const LAYOUT = {
   content:{ x: 264, top: 128, right: 40 },
 };
 const CONTENT_W = DW - LAYOUT.content.x - LAYOUT.content.right;
+
+// Search bar + account avatar rects in world space — must match where
+// drawTopBar paints them, since the agents trigger/aim off these.
+const SEARCH_RECT  = { x: DW / 2 - 320, y: 12, w: 560, h: 32 };
+const ACCOUNT_RECT = { x: DW - 142, y: 16, w: 24, h: 24 }; // avatar circle centers ~(DW-130, 28)
 
 const CHIPS = ['All', 'Brain Rot', 'Distractions', 'Outrage', 'Compliance',
   'Nothing', 'Mixes', 'Live', 'Comply', 'Trending', 'New to you'];
@@ -36,8 +50,8 @@ const RAIL = [
 const THUMB_COLORS = [COLORS.blue, COLORS.purple, COLORS.green, COLORS.yellow,
   COLORS.red, '#0fa3b1', '#e07a5f', '#3d5a80'];
 
-// `p` = propaganda (insane views, takedown target). `target` = the 5th that
-// fights back. Everything else is normal traffic (scanning it = EXPOSED).
+// `p` (propaganda) just tints the view count red — purely cosmetic now.
+// `target` is the boosted video that is the EXIT into 1.2.
 const FEATURED = [
   { t: "I BET YOU DIDN'T KNOW THIS", c: 'MindBlown Daily', v: '2.1B', d: '0:42', p: true },
   { t: 'MAKE DINOSAURS GREAT AGAIN', c: 'PrehistoricPolitics', v: '1.8B', d: '8:00', p: true, art: 'turtle' },
@@ -78,27 +92,49 @@ export default class HomeScene extends Phaser.Scene {
 
     this.time = 0;
     this.camY = 0;
-    this.taken = 0;             // propaganda taken down (0..4 in 1.1)
-    this.target = 5;           // total across 1.1 + 1.2
-    this.scanVid = null;       // video currently being scanned
-    this.scanT = 0;            // 0..1
+    this.docsCollected = 0;
     this.failed = false;
-    this.fighting = false;
-    this.fightT = 0;
+    this.entering = false;        // portal dive in progress (waiting on narration)
+    this.started = false;         // agents stay inert until the intro is dismissed
+    this.startT = 0;              // game time when play actually began (for gun grace)
 
-    this.buildVideos();        // sets this.videos + this.worldH
+    this.buildVideos();           // sets this.videos + this.worldH
 
-    // Player window (same feel as 1.2). Start in the gap BELOW the featured
-    // row (not over any card) so it doesn't auto-scan on spawn.
+    // Player window — HP model (same as the 1.2 runner). size=120 makes the
+    // shared playerBox() hitbox exactly match the 120×90 window the agents
+    // collide against. Start in the gap below the featured row.
     const fth = ((CONTENT_W - 48) / 3) * 9 / 16;
-    this.player = { x: DW / 2, y: LAYOUT.content.top + fth + 46, w: 120, h: 90 };
+    const player = {
+      x: DW / 2, y: LAYOUT.content.top + fth + 46,
+      w: 120, h: 90, size: 120,
+      hp: PLAYER.maxHp, maxHp: PLAYER.maxHp, useHp: true,
+      invuln: 0, hitFlash: 0,
+      test: { immune: false },
+    };
+    this.player = player;
+
+    // Shared state object the ported agents + combat helper consume. Mirrors
+    // the shape of game/state.js (player, layout, projectiles/bullets/sparks,
+    // stats, status) but only the fields these three agents touch.
+    this.gs = {
+      player,
+      layout: { search: SEARCH_RECT, account: ACCOUNT_RECT },
+      projectiles: [], bullets: [], sparks: [],
+      stats: { damageTaken: 0, hitsReceived: 0, endedAt: 0 },
+      status: 'playing', lostReason: '',
+      time: 0, worldW: DW,
+      agents: this.buildAgents(),
+    };
+
+    this.docs = this.buildDocs();
+    this.portalVid = this.videos.find(v => v.target);
 
     // Input
     this.cursors = this.input.keyboard.createCursorKeys();
     this.wasd = this.input.keyboard.addKeys({
       up: Phaser.Input.Keyboard.KeyCodes.W, left: Phaser.Input.Keyboard.KeyCodes.A,
       down: Phaser.Input.Keyboard.KeyCodes.S, right: Phaser.Input.Keyboard.KeyCodes.D,
-      scan: Phaser.Input.Keyboard.KeyCodes.SPACE,
+      shift: Phaser.Input.Keyboard.KeyCodes.SHIFT,
     });
     this.onKey = (e) => {
       // Narration takes priority — SPACE/Enter advance the line
@@ -107,30 +143,32 @@ export default class HomeScene extends Phaser.Scene {
       }
       if (e.key === 'Escape') {
         e.preventDefault();
-        document.body.classList.add('menu-mode');
-        this.scene.stop(); this.scene.start('MenuScene');
+        togglePauseMenu({ onQuit: () => this.quitToMenu() });
       } else if (this.failed && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault(); this.scene.restart({ difficulty: this.difficulty });
       }
     };
     document.addEventListener('keydown', this.onKey);
 
-    // Reuse the runner's OBJECTIVE frame for the counter.
+    // HUD — reuse the runner's OBJECTIVE frame (docs counter) + HP frame.
     this.taskFrame = document.getElementById('task-frame');
     this.taskLine = document.getElementById('task-line');
     this.taskProg = document.getElementById('task-progress');
+    this.hpFrame = document.getElementById('hp-frame');
+    this.hpFill = document.getElementById('hp-fill');
+    this.hpNumber = document.getElementById('hp-number');
     this.taskFrame?.classList.remove('hidden');
+    this.hpFrame?.classList.remove('hidden');
 
-    // Narration: reuse the intel-dialog DOM (same look as the runner's
-    // narration). Click anywhere or SPACE/Enter advances. While narration is
-    // active the level is paused (no movement, no scan).
+    // Narration: reuse the intel-dialog DOM. Click anywhere or SPACE/Enter
+    // advances. While narration is active the level is paused.
     this.intelDom = {
       wrap:    document.getElementById('intel-dialog'),
       speaker: document.getElementById('intel-speaker'),
       line:    document.getElementById('intel-line'),
       hint:    document.getElementById('intel-hint'),
     };
-    this.narration = null;          // { lines, idx, typing, onDone, char, text }
+    this.narration = null;
     this.narrationTimer = null;
     this.onNarrationClick = (e) => {
       if (this.narration) { e.stopPropagation(); this.advanceNarration(); }
@@ -138,8 +176,7 @@ export default class HomeScene extends Phaser.Scene {
     document.addEventListener('click', this.onNarrationClick);
 
     // Beat tracking — flag-driven narration so the same beat can't replay.
-    this.beats = { intro: false, first: false, third: false, fourth: false, lost: false };
-    // Kick off the intro narration after a short pause.
+    this.beats = { intro: false, first: false, allDocs: false, lost: false };
     setTimeout(() => this.playIntroNarration(), 600);
 
     this.handleResize();
@@ -150,10 +187,67 @@ export default class HomeScene extends Phaser.Scene {
       document.removeEventListener('keydown', this.onKey);
       document.removeEventListener('click', this.onNarrationClick);
       if (this.narrationTimer) clearTimeout(this.narrationTimer);
+      resetPauseMenu();
       this.taskFrame?.classList.add('hidden');
+      this.hpFrame?.classList.add('hidden');
       this.intelDom?.wrap?.classList.add('hidden');
       this.intelDom?.wrap?.classList.remove('show');
     });
+  }
+
+  // Two video cards tear off the page and chase you; the avatar pulls a gun;
+  // the search bar shoots. Trigger ranges are bumped from the 960-space
+  // defaults to feel right on this wider page.
+  buildAgents() {
+    const tMul = { easy: 0.8, normal: 1, hard: 1.15 }[this.difficulty] || 0.8;
+    const gs = AGENTS.gunShooter;
+    return {
+      // recIdx only drives drawRecCard's color/title; slot is the card's rect.
+      chasingRecs: [],   // filled by linkChasers() once video rects exist
+      shootingSearch: {
+        state: 'idle', cooldown: 0, charge: 0, shotsLeft: 0,
+        triggerR: 460 * tMul,
+      },
+      gunShooter: {
+        state: 'idle',
+        baseX: ACCOUNT_RECT.x + 12, baseY: ACCOUNT_RECT.y + 12,
+        triggerR: 700 * tMul,
+        armLength: 0,
+        currentAngle: gs.initialAngle,
+        awakenT: 0, aimT: 0, spentT: 0,
+        rotateSpeed: gs.rotateSpeed,
+      },
+    };
+  }
+
+  // Pick two cards to become chasers and wire each to an agent + back-ref.
+  // Deliberately grid cards LOWER on the page (not the featured row) so they
+  // don't ambush the window where it spawns — you have to walk into them.
+  linkChasers(tMul) {
+    const picks = [this.videos[3], this.videos[8]].filter(Boolean); // grid: top-left + mid-right
+    const recIdx = [4, 1];
+    this.gs.agents.chasingRecs = picks.map((v, i) => {
+      const slot = { x: v.x, y: v.y, w: v.w, h: v.th };
+      const a = {
+        recIdx: recIdx[i % recIdx.length], slot,
+        state: 'idle', x: slot.x, y: slot.y, w: slot.w, h: slot.h,
+        vx: 0, vy: 0, life: 0,
+        triggerR: 380 * tMul,
+      };
+      v._agent = a;
+      return a;
+    });
+  }
+
+  buildDocs() {
+    // Scattered down the page in walkable gaps. r is generous so pickup feels
+    // forgiving. Tuned by eye against the layout; nudge in preview.
+    return [
+      { x: 1500, y: 470,  r: 18, taken: false, takeT: 0 },
+      { x: 470,  y: 560,  r: 18, taken: false, takeT: 0 },
+      { x: 980,  y: 1180, r: 18, taken: false, takeT: 0 },
+      { x: 1520, y: 1560, r: 18, taken: false, takeT: 0 },
+    ];
   }
 
   // Precompute world-space rects for every video card.
@@ -167,7 +261,7 @@ export default class HomeScene extends Phaser.Scene {
     FEATURED.forEach((d, i) => vids.push(this.mkVid(d, x0 + i * (fw + gap), y, fw, fth, i)));
     y += fth + 92;
 
-    // shorts row (decorative, not takedown-able)
+    // shorts row (decorative)
     this.shortsY = y;
     const sw = (CONTENT_W - gap * 4) / 5;
     this.shortsH = sw * 16 / 9;
@@ -185,7 +279,7 @@ export default class HomeScene extends Phaser.Scene {
     this.worldH = y + 60;
   }
   mkVid(d, x, y, w, th, seed) {
-    return { ...d, x, y, w, th, seed, removed: false, removeT: 0 };
+    return { ...d, x, y, w, th, seed, removed: false, removeT: 0, _agent: null };
   }
 
   handleResize() {
@@ -200,107 +294,103 @@ export default class HomeScene extends Phaser.Scene {
     this.VW = w; this.VH = h;
     this.scale1 = w / DW;
     this.viewHW = h / this.scale1;       // viewport height in world units
+    // Chasers depend on video rects existing — link them once, after first sizing.
+    if (this.gs && this.gs.agents.chasingRecs.length === 0) {
+      const tMul = { easy: 0.8, normal: 1, hard: 1.15 }[this.difficulty] || 0.8;
+      this.linkChasers(tMul);
+    }
+  }
+
+  quitToMenu() {
+    resetPauseMenu();
+    document.body.classList.add('menu-mode');
+    this.scene.stop();
+    this.scene.start('MenuScene');
   }
 
   update(_t, dms) {
     const dt = Math.min(0.05, dms / 1000);
+    // Paused (ESC menu open) — freeze time + logic, keep the last frame drawn.
+    if (isPauseOpen()) { this.render(); return; }
     this.time += dt;
+    this.gs.time = this.time;
 
-    if (this.fighting) { this.updateFight(dt); this.render(); this.updateHud(); return; }
-    if (this.failed) { this.render(); return; }
+    // Sparks decay every frame (even when paused / failed).
+    this.gs.sparks = this.gs.sparks.filter(s => {
+      s.life -= dt;
+      if (s.vx !== undefined) { s.x += s.vx * dt; s.y += s.vy * dt; s.vx *= 0.92; s.vy *= 0.92; }
+      return s.life > 0;
+    });
+
+    if (this.gs.status === 'lost') this.failed = true;
+    if (this.failed) { this.render(); this.updateHud(); return; }
+    if (this.entering) { this.render(); this.updateHud(); return; }
     if (this.narration) { this.render(); this.updateHud(); return; }   // paused for narration
 
-    // ── Player movement (WASD / arrows) ──
     const p = this.player;
-    const speed = PLAYER.baseSpeed;
+
+    // ── Player movement (WASD / arrows, SHIFT to dash) ──
+    const boosting = this.wasd.shift.isDown;
+    const speed = PLAYER.baseSpeed * (boosting ? PLAYER.boostMul : 1);
     let vx = 0, vy = 0;
     if (this.wasd.left.isDown || this.cursors.left.isDown) vx -= 1;
     if (this.wasd.right.isDown || this.cursors.right.isDown) vx += 1;
     if (this.wasd.up.isDown || this.cursors.up.isDown) vy -= 1;
     if (this.wasd.down.isDown || this.cursors.down.isDown) vy += 1;
-    const moving = vx || vy;
-    if (moving) { const l = Math.hypot(vx, vy); vx /= l; vy /= l; }
+    if (vx || vy) { const l = Math.hypot(vx, vy); vx /= l; vy /= l; }
     p.x += vx * speed * dt; p.y += vy * speed * dt;
     p.x = Phaser.Math.Clamp(p.x, LAYOUT.content.x + p.w / 2, DW - LAYOUT.content.right - p.w / 2);
     p.y = Phaser.Math.Clamp(p.y, LAYOUT.chips.y + LAYOUT.chips.h + p.h / 2, this.worldH - p.h / 2);
 
+    if (p.invuln > 0) p.invuln -= dt;
+    if (p.hitFlash > 0) p.hitFlash -= dt;
+
     // ── Camera follows the window ──
     this.camY = Phaser.Math.Clamp(p.y - this.viewHW * 0.42, 0, Math.max(0, this.worldH - this.viewHW));
 
-    // ── Scan: hover over a video shows the readout; HOLD SPACE to scan it.
-    //  • Releasing SPACE (or moving off) resets progress — commitment matters.
-    //  • The readout shows view count + SUSPICIOUS/normal so you can judge
-    //    BEFORE committing.
-    const hover = this.videoAt(p.x, p.y);
-    this.hoverVid = hover;
-    const holding = this.wasd.scan.isDown;
-    if (holding && hover) {
-      if (hover !== this.scanVid) { this.scanVid = hover; this.scanT = 0; }
-      this.scanT += dt / SCAN_TIME;
-      if (Math.random() < 0.18) beep(1400 + Math.random() * 500, 0.004, 'square', 0.01);
-      if (this.scanT >= 1) this.resolveScan(this.scanVid);
-    } else {
-      // released or moved off — reset
-      if (this.scanVid && this.scanT > 0) beep(220, 0.05, 'square', 0.03);
-      this.scanVid = null; this.scanT = 0;
+    // ── Hostile UI agents (inert until the intro is dismissed) ──
+    if (this.started) {
+      ChasingRecs.updateAll(this.gs.agents.chasingRecs, dt, this.gs);
+      ShootingSearch.update(this.gs.agents.shootingSearch, dt, this.gs);
+      if (this.time >= this.startT + GUN_GRACE) GunShooter.update(this.gs.agents.gunShooter, dt, this.gs);
+    }
+    // Projectile/bullet motion always ticks so in-flight shots clear cleanly.
+    ShootingSearch.updateProjectiles(this.gs, dt);
+    GunShooter.updateProjectiles(this.gs, dt);
+
+    // ── Evidence docs ──
+    for (const d of this.docs) {
+      if (d.taken) continue;
+      if (dist(p.x, p.y, d.x, d.y) < d.r + p.h * 0.42) this.collectDoc(d);
+    }
+
+    // ── Exit portal: once all docs are in, dive into the boosted video ──
+    if (this.docsCollected >= DOCS_TARGET && this.portalVid && this.overlapsVid(p, this.portalVid)) {
+      this.startEnter();
     }
 
     this.render();
     this.updateHud();
   }
 
-  // Which (non-removed) video contains a world point.
-  videoAt(x, y) {
-    for (const v of this.videos) {
-      if (v.removed) continue;
-      if (x >= v.x && x <= v.x + v.w && y >= v.y && y <= v.y + v.th) return v;
-    }
-    return null;
+  overlapsVid(p, v) {
+    return p.x + p.w / 2 > v.x && p.x - p.w / 2 < v.x + v.w &&
+           p.y + p.h / 2 > v.y && p.y - p.h / 2 < v.y + v.th;
   }
 
-  resolveScan(v) {
-    this.scanVid = null; this.scanT = 0;
-    if (v.target) {
-      if (this.taken >= 4) this.startFight(v);
-      else { /* the big one resists until the others are down */ this.bounceTarget(v); }
-      return;
-    }
-    if (v.p) {                       // propaganda → taken down
-      v.removed = true; v.removeT = this.time;
-      this.taken++;
-      beep(523, 0.09, 'sine', 0.1); setTimeout(() => beep(784, 0.14, 'sine', 0.1), 90);
-      // Contextual narration beats
-      if (this.taken === 1) setTimeout(() => this.playFirstTakedownNarration(), 350);
-      else if (this.taken === 3) setTimeout(() => this.playThirdTakedownNarration(), 350);
-      else if (this.taken === 4) setTimeout(() => this.playFourthTakedownNarration(), 350);
-    } else {                         // legitimate traffic → exposed
-      this.failLevel(v);
-    }
+  collectDoc(d) {
+    d.taken = true; d.takeT = this.time;
+    this.docsCollected++;
+    beep(880, 0.08, 'sine', 0.13); setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
+    if (this.docsCollected === 1) setTimeout(() => this.playFirstDocNarration(), 300);
+    else if (this.docsCollected >= DOCS_TARGET) setTimeout(() => this.playAllDocsNarration(), 300);
   }
 
-  // Target scanned too early — it shrugs you off.
-  bounceTarget() {
-    noise(0.12, 0.1); beep(160, 0.2, 'sawtooth', 0.08);
-    this.flash = { t: 0.6, text: "It's too well-defended. Bring down the others first." };
-  }
-
-  failLevel() {
-    this.failed = true;
-    noise(0.4, 0.18); beep(90, 0.5, 'square', 0.12);
-  }
-
-  startFight(v) {
-    this.fighting = true; this.fightT = 0; this.fightVid = v;
+  startEnter() {
+    if (this.entering) return;
+    this.entering = true;
     noise(0.5, 0.2); beep(120, 0.5, 'sawtooth', 0.1);
-    // Trigger the lost-contact narration. When the player dismisses the last
-    // line, drop into 1.2 with `fromHomePage` so it plays its own intro.
-    setTimeout(() => this.playLostContactNarration(() => {
-      this.transitionToRunner();
-    }), 450);
-  }
-  updateFight(dt) {
-    this.fightT += dt;
-    // Wait for narration to finish — transition is owned by playLostContact.
+    setTimeout(() => this.playLostContactNarration(() => this.transitionToRunner()), 450);
   }
   transitionToRunner() {
     this.scene.stop();
@@ -310,11 +400,18 @@ export default class HomeScene extends Phaser.Scene {
 
   updateHud() {
     if (this.taskLine) {
-      this.taskLine.textContent = this.taken >= 4
-        ? 'Take down the BIG one (6.9B views).'
-        : 'Take down the viral propaganda.';
+      this.taskLine.textContent = this.docsCollected >= DOCS_TARGET
+        ? 'Dive into the boosted video.'
+        : 'Collect the evidence. Dodge the page.';
     }
-    if (this.taskProg) this.taskProg.textContent = this.taken + ' / ' + this.target;
+    if (this.taskProg) this.taskProg.textContent = this.docsCollected + ' / ' + DOCS_TARGET;
+    const p = this.player;
+    const pct = Phaser.Math.Clamp(p.hp / p.maxHp, 0, 1);
+    if (this.hpFill) {
+      this.hpFill.style.width = (pct * 100) + '%';
+      this.hpFill.style.background = pct > 0.5 ? '#2D8659' : pct > 0.25 ? '#F4D35E' : '#E63946';
+    }
+    if (this.hpNumber) this.hpNumber.textContent = Math.max(0, Math.round(p.hp));
   }
 
   // ===== Render =====
@@ -331,86 +428,156 @@ export default class HomeScene extends Phaser.Scene {
 
     // page bg
     ctx.fillStyle = '#f7f7f7'; ctx.fillRect(0, 0, DW, this.worldH);
-    // rail (full height) + top chrome
     this.drawRail(ctx);
     this.drawChips(ctx);
     this.drawTopBar(ctx);
 
-    // shorts row (decorative)
     this.drawShortsRow(ctx);
-    // videos
-    for (const v of this.videos) this.drawVideoCard(ctx, v);
+    // video cards — skip any card whose chaser agent has left its slot
+    for (const v of this.videos) {
+      if (v._agent && v._agent.state !== 'idle') this.drawEmptyCard(ctx, v);
+      else this.drawVideoCard(ctx, v);
+    }
+
+    // evidence docs
+    for (const d of this.docs) this.drawDoc(ctx, d);
+
+    // chasing cards (active agents) drawn over the page
+    ChasingRecs.drawAgents(ctx, this.gs.agents.chasingRecs, this.gs);
+
+    // account avatar + gun arm (replaces the static avatar in drawTopBar)
+    GunShooter.drawAvatar(ctx, this.gs.agents.gunShooter, this.gs);
+    // search-bar threat overlay (only while it's winding up / firing)
+    this.drawSearchThreat(ctx);
+
+    // projectiles + bullets + sparks
+    ShootingSearch.drawProjectiles(ctx, this.gs);
+    GunShooter.drawProjectiles(ctx, this.gs);
+    this.drawSparks(ctx);
+
+    // exit highlight on the boosted video once docs are done
+    if (this.docsCollected >= DOCS_TARGET && this.portalVid) this.drawPortal(ctx, this.portalVid);
 
     // player window
     this.drawWindow(ctx);
 
-    // scan meter on the scanning video
-    if (this.scanVid) this.drawScanMeter(ctx, this.scanVid);
-
-    // fight glitch
-    if (this.fighting) this.drawFight(ctx);
-
     ctx.restore();
 
-    // screen-space: view-count readout + flash + fail overlay
-    this.drawReadout(ctx);
-    if (this.flash) {
-      this.flash.t -= 1 / 60;
-      if (this.flash.t <= 0) this.flash = null;
-      else this.drawCaption(ctx, this.flash.text, '#E63946');
-    }
+    // hint + fail overlay (screen space)
     if (this.failed) this.drawFail(ctx);
-
-    // hint
-    ctx.fillStyle = '#9a9a9a'; ctx.font = '12px Consolas, monospace'; ctx.textBaseline = 'middle';
-    ctx.fillText('WASD to move  ·  HOLD SPACE on a video to scan it down  ·  ESC to exit', 18, VH - 16);
+    else {
+      ctx.fillStyle = '#9a9a9a'; ctx.font = '12px Consolas, monospace'; ctx.textBaseline = 'middle';
+      ctx.fillText('WASD move  ·  SHIFT dash  ·  rush the avatar to dodge its shot  ·  ESC to exit', 18, VH - 16);
+    }
   }
 
-  // ===== Narration (Toto + YOU exploring the level together) =====
+  drawSparks(ctx) {
+    for (const s of this.gs.sparks) {
+      ctx.fillStyle = s.hit ? 'rgba(230,57,70,' + (s.life * 1.5) + ')' : 'rgba(0,0,0,' + (s.life * 0.15) + ')';
+      ctx.fillRect(s.x, s.y, s.hit ? 2 : 1, s.hit ? 2 : 1);
+    }
+  }
+
+  // Red pulsing readout over the search bar while it's charging/firing.
+  drawSearchThreat(ctx) {
+    const ag = this.gs.agents.shootingSearch;
+    if (ag.state !== 'charging' && ag.state !== 'firing') return;
+    const s = SEARCH_RECT;
+    const pulse = 1 + Math.sin(this.time * 25) * 0.3;
+    ctx.strokeStyle = 'rgba(230,57,70,' + (0.45 * pulse) + ')';
+    ctx.lineWidth = 3; ctx.strokeRect(s.x - 2, s.y - 2, s.w + 4, s.h + 4);
+    ctx.fillStyle = '#E63946'; ctx.font = 'bold 13px ui-monospace, monospace';
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    ctx.fillText('searching for: targets…', s.x + 12, s.y + s.h / 2);
+  }
+
+  drawDoc(ctx, d) {
+    if (d.taken) {
+      const a = this.time - d.takeT;
+      if (a < 0.4) {
+        ctx.strokeStyle = 'rgba(244,211,94,' + (1 - a / 0.4) + ')'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(d.x, d.y, d.r + a * 70, 0, Math.PI * 2); ctx.stroke();
+      }
+      return;
+    }
+    const pulse = 1 + Math.sin(this.time * 4) * 0.12;
+    ctx.save();
+    ctx.translate(d.x, d.y); ctx.scale(pulse, pulse);
+    ctx.fillStyle = 'rgba(244,211,94,0.4)';
+    ctx.beginPath(); ctx.arc(0, 0, d.r + 10, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#F4D35E'; ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.5;
+    ctx.fillRect(-d.r, -d.r * 0.7, d.r * 2, d.r * 1.5);
+    ctx.strokeRect(-d.r, -d.r * 0.7, d.r * 2, d.r * 1.5);
+    ctx.fillRect(-d.r, -d.r * 0.95, d.r * 0.9, d.r * 0.3);
+    ctx.strokeRect(-d.r, -d.r * 0.95, d.r * 0.9, d.r * 0.3);
+    ctx.fillStyle = '#1a1a1f'; ctx.font = 'bold 9px ui-monospace, monospace';
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    ctx.fillText('DOC', 0, 3);
+    ctx.restore();
+    ctx.textAlign = 'left';
+  }
+
+  // A card that has torn off the page leaves a dashed "gone" frame.
+  drawEmptyCard(ctx, v) {
+    drawHandRect(ctx, v.x, v.y, v.w, v.th, '#efefef', '#d6d6d6', v.seed * 11 + 5, 1.2);
+    ctx.strokeStyle = '#cdcdcd'; ctx.lineWidth = 1.4; ctx.setLineDash([6, 5]);
+    ctx.strokeRect(v.x + 6, v.y + 6, v.w - 12, v.th - 12); ctx.setLineDash([]);
+    ctx.fillStyle = '#b5b5b5'; ctx.font = 'bold 14px ui-monospace, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('[ recommendation left the page ]', v.x + v.w / 2, v.y + v.th / 2);
+    ctx.textAlign = 'left';
+  }
+
+  drawPortal(ctx, v) {
+    const pulse = 0.5 + Math.sin(this.time * 5) * 0.5;
+    ctx.strokeStyle = 'rgba(45,134,89,' + (0.55 + pulse * 0.4) + ')';
+    ctx.lineWidth = 5; ctx.strokeRect(v.x - 3, v.y - 3, v.w + 6, v.th + 6);
+    ctx.fillStyle = 'rgba(45,134,89,0.9)';
+    const label = '▶ DIVE IN';
+    ctx.font = 'bold 20px ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const lw = ctx.measureText(label).width + 28;
+    ctx.fillRect(v.x + v.w / 2 - lw / 2, v.y - 36, lw, 28);
+    ctx.fillStyle = '#fff'; ctx.fillText(label, v.x + v.w / 2, v.y - 21);
+    ctx.textAlign = 'left';
+  }
+
+  // ===== Narration (Toto + YOU) =====
   playIntroNarration() {
     if (this.beats.intro) return;
     this.beats.intro = true;
     this.startNarration([
-      { speaker: 'TOTO', text: "Okay — I patched into HUSH's algorithm. You're standing on their home page." },
-      { speaker: 'YOU',  text: "Yeah, I see it. It's all... clickbait. Endless." },
-      { speaker: 'TOTO', text: "That's the point. The good stuff is buried in noise." },
-      { speaker: 'TOTO', text: "Look at the view counts. Anything in the BILLIONS is a HUSH boost — that's the propaganda. Take down five of those." },
-      { speaker: 'YOU',  text: "How do I take one down?" },
-      { speaker: 'TOTO', text: "Move your window over a target and HOLD SPACE to scan it. Three and a half seconds, you're in." },
-      { speaker: 'TOTO', text: "But scan a normal video by mistake and HUSH will flag you. Read the view counts. Be sure before you commit." },
-      { speaker: 'YOU',  text: "Got it. Starting the sweep." },
-    ]);
+      { speaker: 'TOTO', text: "Okay — I patched into HUSH's home page. Looks harmless, right?" },
+      { speaker: 'YOU',  text: "Just a wall of clickbait. What am I looking for?" },
+      { speaker: 'TOTO', text: "Evidence. Four files are scattered across this page. Grab all four." },
+      { speaker: 'YOU',  text: "And the catch?" },
+      { speaker: 'TOTO', text: "The page bites. That account avatar pulls a GUN — one shot, lethal at range. Rush it and the shot misses." },
+      { speaker: 'TOTO', text: "Some video cards will tear off and chase you. The search bar fires too if you linger up top. SHIFT to dash." },
+      { speaker: 'YOU',  text: "Charming. Where do the files go once I have them?" },
+      { speaker: 'TOTO', text: "Into the big one — 'What They Don't Want You To See.' Get the evidence, then dive into that video." },
+    ], () => { this.started = true; this.startT = this.time; });
   }
-  playFirstTakedownNarration() {
+  playFirstDocNarration() {
     if (this.beats.first) return;
     this.beats.first = true;
     this.startNarration([
-      { speaker: 'YOU',  text: "One down." },
-      { speaker: 'TOTO', text: "Nice. The algorithm just lost a load-bearing piece. Keep going." },
+      { speaker: 'YOU',  text: "Got the first file." },
+      { speaker: 'TOTO', text: "Three to go. Keep moving — standing still is how the avatar lines you up." },
     ]);
   }
-  playThirdTakedownNarration() {
-    if (this.beats.third) return;
-    this.beats.third = true;
+  playAllDocsNarration() {
+    if (this.beats.allDocs) return;
+    this.beats.allDocs = true;
     this.startNarration([
-      { speaker: 'YOU',  text: "These view counts are insane." },
-      { speaker: 'TOTO', text: "Manufactured. Every one of these is a bot farm pretending to be culture." },
+      { speaker: 'TOTO', text: "That's all four. The boosted video's pulsing green now — that's your way in." },
+      { speaker: 'YOU',  text: "Diving in." },
     ]);
   }
-  playFourthTakedownNarration() {
-    if (this.beats.fourth) return;
-    this.beats.fourth = true;
-    this.startNarration([
-      { speaker: 'TOTO', text: "Four down. The last one's the big one — 'What They Don't Want You To See.' That's the doc we've been after." },
-      { speaker: 'YOU',  text: "Going for it." },
-    ]);
-  }
-  // Triggered when scanning the target after 4 are down — Toto cuts out.
+  // Triggered when the player enters the portal — Toto cuts out.
   playLostContactNarration(onDone) {
     if (this.beats.lost) return;
     this.beats.lost = true;
     this.startNarration([
-      { speaker: 'TOTO', text: "Wait — it's pushing back. Something's wrong, I'm—" },
+      { speaker: 'TOTO', text: "Wait — it's pulling you in deeper than I thought. Something's wrong, I'm—" },
       { speaker: 'SYSTEM', text: '> CONNECTION LOST: toto.handler' },
       { speaker: 'YOU',  text: "Toto? Toto, do you copy?" },
       { speaker: 'YOU',  text: "...okay. Just me, then." },
@@ -445,6 +612,10 @@ export default class HomeScene extends Phaser.Scene {
         if (this.intelDom.line) this.intelDom.line.textContent = text;
         return;
       }
+      if (isPauseOpen()) {            // hold the typewriter while paused
+        this.narrationTimer = setTimeout(tick, 90);
+        return;
+      }
       if (chars < text.length) {
         chars++;
         if (this.intelDom.line) this.intelDom.line.textContent = text.slice(0, chars);
@@ -457,6 +628,7 @@ export default class HomeScene extends Phaser.Scene {
     tick();
   }
   advanceNarration() {
+    if (isPauseOpen()) return;          // frozen while the pause menu is open
     const n = this.narration;
     if (!n) return;
     if (n.typing) {
@@ -482,75 +654,17 @@ export default class HomeScene extends Phaser.Scene {
 
   drawWindow(ctx) {
     const p = this.player, x = p.x - p.w / 2, y = p.y - p.h / 2;
-    drawHandRect(ctx, x, y, p.w, p.h, 'rgba(17,2,20,0.30)', '#1a1a1f', 50, 2);
+    ctx.save();
+    // blink during invulnerability frames
+    if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.45;
+    const body = p.hitFlash > 0 ? '#ffffff' : 'rgba(17,2,20,0.30)';
+    drawHandRect(ctx, x, y, p.w, p.h, body, '#1a1a1f', 50, 2);
     ctx.fillStyle = '#1a1a1f'; ctx.fillRect(x + 2, y + 2, p.w - 4, 18);
     ctx.fillStyle = '#E63946'; ctx.fillRect(x + p.w - 18, y + 5, 12, 12);
     ctx.fillStyle = '#fff'; ctx.font = '10px ui-monospace, monospace';
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-    ctx.fillText('SCANNER.exe', x + 7, y + 11);
-    // cyan border glow when over a scannable video
-    if (this.scanVid) {
-      const pulse = 0.5 + Math.sin(this.time * 8) * 0.5;
-      ctx.strokeStyle = 'rgba(122,208,235,' + (0.5 + pulse * 0.4) + ')';
-      ctx.lineWidth = 3; ctx.strokeRect(x - 2, y - 2, p.w + 4, p.h + 4);
-    }
-  }
-
-  drawScanMeter(ctx, v) {
-    const cx = v.x + v.w / 2, by = v.y + v.th + 6;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(v.x + 20, by, v.w - 40, 10);
-    ctx.fillStyle = '#7ad0eb'; ctx.fillRect(v.x + 20, by, (v.w - 40) * this.scanT, 10);
-    ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1; ctx.strokeRect(v.x + 20, by, v.w - 40, 10);
-    ctx.fillStyle = '#1a1a1f'; ctx.font = 'bold 12px ui-monospace, monospace';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('SCANNING ' + Math.round(this.scanT * 100) + '%', cx, by + 24);
-    ctx.textAlign = 'left';
-  }
-
-  // Read out the hovered video's view count near the window so the player can
-  // judge propaganda (insane views) vs normal traffic before committing.
-  drawReadout(ctx) {
-    const v = this.scanVid || this.hoverVid;
-    if (!v) return;
-    const s = this.scale1;
-    const sx = (this.player.x) * s, sy = (this.player.y - this.player.h / 2 - this.camY) * s - 14;
-    const big = v.p || v.target;
-    const verb = this.scanVid ? 'SCANNING' : 'HOLD SPACE';
-    const text = v.v + ' views' + (big ? '  [!] SUSPICIOUS' : '  · normal traffic') + '   ' + verb;
-    ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const w = ctx.measureText(text).width + 28;
-    ctx.fillStyle = big ? 'rgba(120,20,28,0.92)' : 'rgba(10,12,20,0.88)';
-    ctx.fillRect(sx - w / 2, sy - 16, w, 26);
-    ctx.fillStyle = big ? '#ffd5d8' : '#cfe8ff';
-    ctx.fillText(text, sx, sy - 3);
-    ctx.textAlign = 'left';
-  }
-
-  drawCaption(ctx, text, color) {
-    const { VW } = this;
-    ctx.font = "italic 600 24px 'Saira Condensed', sans-serif";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const w = ctx.measureText(text).width + 40;
-    ctx.fillStyle = 'rgba(10,12,20,0.88)'; ctx.fillRect(VW / 2 - w / 2, 64, w, 40);
-    ctx.fillStyle = color || '#fff'; ctx.fillText(text, VW / 2, 85);
-    ctx.textAlign = 'left';
-  }
-
-  drawFight(ctx) {
-    // glitch bars across the target video
-    const v = this.fightVid;
-    const k = Math.min(1, this.fightT / 1.4);
-    for (let i = 0; i < 14; i++) {
-      ctx.fillStyle = i % 2 ? 'rgba(230,57,70,' + (0.3 + k * 0.5) + ')' : 'rgba(74,123,200,' + (0.3 + k * 0.5) + ')';
-      const yy = v.y + Math.random() * v.th;
-      ctx.fillRect(v.x - 10, yy, v.w + 20, 2 + Math.random() * 6);
-    }
-    ctx.fillStyle = 'rgba(0,0,0,' + (k * 0.6) + ')';
-    ctx.fillRect(v.x - 10, v.y - 10, v.w + 20, v.th + 20);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px ui-monospace, monospace';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText("IT'S FIGHTING BACK", v.x + v.w / 2, v.y + v.th / 2);
-    ctx.textAlign = 'left';
+    ctx.fillText('PRIMITIVE_ERROR.exe', x + 7, y + 11);
+    ctx.restore();
   }
 
   drawFail(ctx) {
@@ -558,9 +672,9 @@ export default class HomeScene extends Phaser.Scene {
     ctx.fillStyle = 'rgba(20,2,6,0.82)'; ctx.fillRect(0, 0, VW, VH);
     ctx.fillStyle = '#E63946'; ctx.font = "bold 40px 'Saira Condensed', sans-serif";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('EXPOSED', VW / 2, VH / 2 - 40);
+    ctx.fillText('WINDOW CRASHED', VW / 2, VH / 2 - 40);
     ctx.fillStyle = '#f0f0f0'; ctx.font = "20px 'Saira Condensed', sans-serif";
-    ctx.fillText("That was legitimate traffic. HUSH flagged the takedown.", VW / 2, VH / 2 + 4);
+    ctx.fillText("The page's security caught up with you.", VW / 2, VH / 2 + 4);
     ctx.fillStyle = '#9a9a9a'; ctx.font = '14px ui-monospace, monospace';
     ctx.fillText('press  R  to retry   ·   ESC for menu', VW / 2, VH / 2 + 44);
     ctx.textAlign = 'left';
@@ -577,7 +691,7 @@ export default class HomeScene extends Phaser.Scene {
     ctx.moveTo(76, 22); ctx.lineTo(88, 28); ctx.lineTo(76, 34); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#1a1a1f'; ctx.font = 'bold 20px Arial'; ctx.textBaseline = 'middle';
     ctx.fillText('TotallyNormalTube', 108, 28);
-    const sx = DW / 2 - 320, sw = 560;
+    const sx = SEARCH_RECT.x, sw = SEARCH_RECT.w;
     drawHandRect(ctx, sx, 12, sw, 32, '#f7f7f7', '#cfcfcf', 40, 1.4);
     ctx.fillStyle = '#9a9a9a'; ctx.font = '14px Arial'; ctx.fillText('Search', sx + 16, 29);
     drawHandRect(ctx, sx + sw, 12, 56, 32, '#f0f0f0', '#cfcfcf', 70, 1.4);
@@ -589,9 +703,7 @@ export default class HomeScene extends Phaser.Scene {
     ctx.beginPath(); ctx.arc(DW - 188, 28, 7, Math.PI, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(DW - 195, 28); ctx.lineTo(DW - 181, 28); ctx.stroke();
     ctx.beginPath(); ctx.arc(DW - 188, 32, 2, 0, Math.PI); ctx.stroke();
-    ctx.fillStyle = COLORS.purple; ctx.beginPath(); ctx.arc(DW - 130, 28, 16, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px Arial'; ctx.textAlign = 'center';
-    ctx.fillText('R', DW - 130, 29); ctx.textAlign = 'left';
+    // NOTE: the account avatar is drawn by GunShooter.drawAvatar (it's an agent).
   }
   drawChips(ctx) {
     const y = LAYOUT.chips.y;
@@ -631,14 +743,6 @@ export default class HomeScene extends Phaser.Scene {
 
   drawVideoCard(ctx, v) {
     const x = v.x, y = v.y, w = v.w, th = v.th;
-    // removed → "REMOVED" tombstone
-    if (v.removed) {
-      drawHandRect(ctx, x, y, w, th, '#ededed', '#d6d6d6', v.seed * 11 + 5, 1.4);
-      ctx.fillStyle = '#bdbdbd'; ctx.font = 'bold 18px ui-monospace, monospace';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('▢ REMOVED', x + w / 2, y + th / 2); ctx.textAlign = 'left';
-      return;
-    }
     drawHandRect(ctx, x, y, w, th, THUMB_COLORS[v.seed % THUMB_COLORS.length], '#cfcfcf', v.seed * 11 + 5, 1.4);
     ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, th); ctx.clip();
     if (v.art === 'turtle') this.drawTurtle(ctx, x + w / 2, y + th * 0.52, th * 0.42);
@@ -649,14 +753,13 @@ export default class HomeScene extends Phaser.Scene {
     ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(x + w - bw - 22, y + th - 22, bw + 14, 16);
     ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText(v.d, x + w - bw - 15, y + th - 14);
-    // avatar + title + channel + VIEWS (the tell)
+    // avatar + title + channel + views
     const ay = y + th + 14;
     ctx.fillStyle = THUMB_COLORS[(v.seed + 3) % THUMB_COLORS.length];
     ctx.beginPath(); ctx.arc(x + 18, ay + 6, 16, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#0f0f0f'; ctx.font = 'bold 15px Arial'; ctx.textBaseline = 'top';
     this.wrap(ctx, v.t, x + 46, ay - 6, w - 50, 19, 2);
     ctx.fillStyle = '#606060'; ctx.font = '13px Arial'; ctx.fillText(v.c, x + 46, ay + 34);
-    // view count — propaganda gets a bold red insane number
     const big = v.p || v.target;
     ctx.fillStyle = big ? '#c0392b' : '#606060';
     ctx.font = (big ? 'bold ' : '') + '13px Arial';
@@ -665,10 +768,8 @@ export default class HomeScene extends Phaser.Scene {
 
   drawShortCard(ctx, x, y, w, h, data, seed) {
     drawHandRect(ctx, x, y, w, h, THUMB_COLORS[(seed + 2) % THUMB_COLORS.length], '#cfcfcf', seed * 13 + 9, 1.4);
-    // Placeholder face — a soft white circle where the Gemini art will go.
     ctx.fillStyle = 'rgba(255,255,255,0.18)';
     ctx.beginPath(); ctx.arc(x + w / 2, y + h * 0.38, w * 0.32, 0, Math.PI * 2); ctx.fill();
-    // Title caption
     ctx.fillStyle = '#fff'; ctx.font = 'bold 18px Arial';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(data.t, x + w / 2, y + h - 30);

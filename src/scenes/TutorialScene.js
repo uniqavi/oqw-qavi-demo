@@ -4,6 +4,7 @@ import { initAudio, beep, noise } from '../game/audio.js';
 import { crossfadeTo } from '../game/music.js';
 import { drawHandRect } from '../game/draw.js';
 import { markScanCoverage } from '../game/scan.js';
+import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
 
 // LEVEL 1.0 — TUTORIAL
 //
@@ -60,7 +61,10 @@ export default class TutorialScene extends Phaser.Scene {
     const urlBar = document.getElementById('browser-url');
     if (urlBar) urlBar.textContent = 'about:blank — totallynormaltube.gov.??/_dev/sandbox';
 
-    crossfadeTo('level1', { fadeMs: 1200 });
+    // Tutorial opens CALM — the chiptune/menu track keeps playing. It only
+    // flips to the driving "chase" track once the first enemy wakes and starts
+    // chasing the player (see endSpotlight).
+    crossfadeTo('menu', { fadeMs: 1200 });
 
     this.player = { x: W / 2, y: 130, size: PLAYER.startSize, invuln: 0, hitFlash: 0 };
     this.cam = { x: 0, y: 0, zoom: 1, baseZoom: 1 };
@@ -132,12 +136,14 @@ export default class TutorialScene extends Phaser.Scene {
 
     // Click / Space: dismiss the spotlight, OR confirm the exit. ESC skips.
     this.onPointer = () => {
+      if (isPauseOpen()) return;
       if (this.spot.active) this.endSpotlight();
       else if (this.atExit) this.finishTutorial(false);
     };
     this.input.on('pointerdown', this.onPointer);
     this.onKey = (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); this.finishTutorial(true); return; }
+      if (e.key === 'Escape') { e.preventDefault(); togglePauseMenu({ onQuit: () => this.finishTutorial(true) }); return; }
+      if (isPauseOpen()) return;          // swallow other keys while paused
       if (this.spot.active && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); this.endSpotlight(); return; }
       if (this.atExit && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); this.finishTutorial(false); }
     };
@@ -155,6 +161,7 @@ export default class TutorialScene extends Phaser.Scene {
       this.input.off('pointerdown', this.onPointer);
       this.dlg.skip?.removeEventListener('click', this.onSkip);
       if (this.typeTimer) clearTimeout(this.typeTimer);
+      resetPauseMenu();
       this.dlg.wrap?.classList.add('hidden');
     });
   }
@@ -199,6 +206,7 @@ export default class TutorialScene extends Phaser.Scene {
 
   update(_time, deltaMs) {
     const dt = Math.min(0.05, deltaMs / 1000);
+    if (isPauseOpen()) { this.render(); return; }   // frozen while paused
     this.time += dt;
     if (this.introFade > 0) this.introFade = Math.max(0, this.introFade - dt * 1.4);
     if (this.player.invuln > 0) this.player.invuln -= dt;
