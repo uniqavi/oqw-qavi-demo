@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import BootScene from './scenes/BootScene.js';
 import MenuScene from './scenes/MenuScene.js';
-import TutorialScene from './scenes/TutorialScene.js';
 import HomeScene from './scenes/HomeScene.js';
 import GameScene from './scenes/GameScene.js';
 import Level2Scene from './scenes/Level2Scene.js';
@@ -12,7 +11,7 @@ const config = {
   type: Phaser.AUTO,
   parent: 'game',
   backgroundColor: '#181818',
-  scene: [BootScene, MenuScene, TutorialScene, HomeScene, GameScene, Level2Scene, DashboardScene, HUDScene],
+  scene: [BootScene, MenuScene, HomeScene, GameScene, Level2Scene, DashboardScene, HUDScene],
   scale: {
     mode: Phaser.Scale.RESIZE,
     width: '100%',
@@ -58,7 +57,6 @@ function buildDevJumpPanel(game) {
   // [label, sceneKey, launchHUDScene?] — null key = the opening flow
   const TARGETS = [
     ['Opening (XP)', null],
-    ['Tutorial', 'TutorialScene'],
     ['1.1 Home feed', 'HomeScene'],
     ['1.2 Runner', 'GameScene', true],
     ['2.0 Dashboard', 'DashboardScene'],
