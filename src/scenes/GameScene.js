@@ -1177,14 +1177,17 @@ export default class GameScene extends Phaser.Scene {
         beep(523, 0.1, 'sine', 0.1);
         setTimeout(() => beep(659, 0.1, 'sine', 0.1), 90);
         setTimeout(() => beep(784, 0.2, 'sine', 0.12), 200);
-        // PLACEHOLDER for the next level / dark-tunnel transition. For now,
-        // a final narration then flip to 'won' so the run resolves cleanly.
+        // Slip through the gap into the tunnel → emerge in Level 2 (the HUSH
+        // analytics dashboard). DashboardScene opens with a tunnel-exit iris.
         this.startNarration([
           { speaker: 'SYSTEM', text: '> slipping through the gap...' },
-          { speaker: 'SYSTEM', text: '> [ next level + tunnel animation goes here ]' },
+          { speaker: 'SYSTEM', text: '> falling through the tunnel...' },
         ], () => {
           state.status = 'won';
           state.stats.endedAt = state.time;
+          this.scene.stop('HUDScene');
+          this.scene.stop();
+          this.scene.start('DashboardScene', { difficulty: this.difficulty });
         });
       }
     }
