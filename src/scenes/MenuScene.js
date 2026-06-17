@@ -6,6 +6,12 @@ import Phaser from 'phaser';
  * All graphics are generated programmatically using Phaser's Graphics object.
  */
 
+// Fixed design dimensions — must match the viewport (index.html: 1920×1080).
+// Using constants instead of this.scale.width/height ensures the desktop scene
+// renders at exactly the same resolution as the game levels on every device.
+const DW = 1920;
+const DH = 1080;
+
 export default class MenuScene extends Phaser.Scene {
     constructor() {
         super('MenuScene');
@@ -199,22 +205,10 @@ export default class MenuScene extends Phaser.Scene {
     }
 
     createBackground() {
-        // Classic blue desktop wallpaper
+        // Classic blue desktop wallpaper — use fixed design dims
         const bg = this.add.graphics();
         bg.fillGradientStyle(0x3a6ea5, 0x3a6ea5, 0x123456, 0x123456, 1);
-        bg.fillRect(0, 0, this.scale.width, this.scale.height);
-        
-        // Ensure background resizes
-        this.scale.on('resize', (gameSize) => {
-            bg.clear();
-            bg.fillGradientStyle(0x3a6ea5, 0x3a6ea5, 0x123456, 0x123456, 1);
-            bg.fillRect(0, 0, gameSize.width, gameSize.height);
-            
-            if (this.notepadTextarea && this.activeWindow && this.activeWindow.name === 'notepad') {
-                // Keep text area synced on resize if it exists
-                this.updateTextareaPosition();
-            }
-        });
+        bg.fillRect(0, 0, DW, DH);
     }
 
     createDesktopIcon(x, y, textureKey, labelText, onClickCallback) {
@@ -280,10 +274,10 @@ export default class MenuScene extends Phaser.Scene {
     triggerShutdown() {
         const overlay = this.add.graphics();
         overlay.fillStyle(0x000000, 1);
-        overlay.fillRect(0, 0, this.scale.width, this.scale.height);
+        overlay.fillRect(0, 0, DW, DH);
         overlay.setDepth(9999);
 
-        const shutdownText = this.add.text(this.scale.width / 2, this.scale.height / 2, 'System Shutting Down...', {
+        const shutdownText = this.add.text(DW / 2, DH / 2, 'System Shutting Down...', {
             fontFamily: 'Courier New', fontSize: '24px', color: '#ffffff'
         }).setOrigin(0.5).setDepth(10000);
 
@@ -311,8 +305,8 @@ export default class MenuScene extends Phaser.Scene {
 
         const winWidth = 450;
         const winHeight = 350;
-        const targetX = (this.scale.width - winWidth) / 2;
-        const targetY = (this.scale.height - winHeight) / 2;
+        const targetX = (DW - winWidth) / 2;
+        const targetY = (DH - winHeight) / 2;
 
         const windowContainer = this.add.container(startX, startY);
         windowContainer.name = 'notepad';
@@ -462,8 +456,8 @@ export default class MenuScene extends Phaser.Scene {
         // Phaser scene coords → pixel coords inside the game div.
         // The Phaser canvas fills the #game div, so the scale factor is
         // gameDiv-pixel-width / phaser-scene-width.
-        const scaleX = gameRect.width / this.scale.width;
-        const scaleY = gameRect.height / this.scale.height;
+        const scaleX = gameRect.width / DW;
+        const scaleY = gameRect.height / DH;
 
         const x = this.activeWindow.x + padding;
         const y = this.activeWindow.y + headerHeight + padding;
