@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { loadSfx, playSfx } from '../game/sfx.js';
 
 /**
  * MeTube Desktop Parody - Phaser 3 Implementation
@@ -30,6 +31,7 @@ export default class MenuScene extends Phaser.Scene {
         });
         // Keep menu-mode on body so browser tabs/urlbar stay hidden
         document.body.classList.add('menu-mode');
+        loadSfx();
 
         this.generateTextures();
         this.createBackground();
@@ -257,6 +259,7 @@ export default class MenuScene extends Phaser.Scene {
         // Double click simulation
         let lastTime = 0;
         icon.on('pointerdown', () => {
+            playSfx('desktopClick');
             let clickDelay = this.time.now - lastTime;
             lastTime = this.time.now;
             if (clickDelay < 350) {
@@ -418,6 +421,7 @@ export default class MenuScene extends Phaser.Scene {
         });
 
         closeBtn.on('pointerdown', () => {
+            playSfx('desktopClick');
             if (this.notepadTextarea) {
                 this.notepadTextarea.remove();
                 this.notepadTextarea = null;
