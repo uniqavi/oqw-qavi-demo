@@ -5,6 +5,8 @@ import { dist, aabb } from '../game/physics.js';
 import { damagePlayer } from '../game/combat.js';
 import { PLAYER } from '../config.js';
 import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
+import { loadMusic, crossfadeTo } from '../game/music.js';
+import { loadSfx, playSfx, playSfxLoop, stopAllSfxLoops } from '../game/sfx.js';
 
 // LEVEL 2 — "THE DASHBOARD" (HUSH's corrupted SEO / analytics backend)
 //
@@ -244,6 +246,8 @@ export default class DashboardScene extends Phaser.Scene {
 
     this.handleResize();
     initAudio();
+    loadMusic(); loadSfx();
+    crossfadeTo('level2', { fadeMs: 1500 });
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       window.removeEventListener('resize', this.handleResize);
@@ -251,6 +255,7 @@ export default class DashboardScene extends Phaser.Scene {
       document.removeEventListener('click', this.onNarrationClick);
       if (this.narrationTimer) clearTimeout(this.narrationTimer);
       resetPauseMenu();
+      stopAllSfxLoops();
       this.taskFrame?.classList.add('hidden');
       this.hpFrame?.classList.add('hidden');
       this.intelDom?.wrap?.classList.add('hidden');
@@ -360,6 +365,8 @@ export default class DashboardScene extends Phaser.Scene {
 
   quitToMenu() {
     resetPauseMenu();
+    stopAllSfxLoops();
+    crossfadeTo('menu', { fadeMs: 800 });
     document.body.classList.add('menu-mode');
     this.scene.stop();
     this.scene.start('MenuScene');
@@ -439,7 +446,10 @@ export default class DashboardScene extends Phaser.Scene {
     });
 
     if (this.gs.status === 'lost') this.failed = true;
-    if (this.failed) { if (!this.crashShown) this.showCrash(); this.render(); this.updateHud(); return; }
+    if (this.failed) {
+      if (!this.crashShown) { this.showCrash(); playSfx('gameOver'); stopAllSfxLoops(); }
+      this.render(); this.updateHud(); return;
+    }
     if (this.done) { this.render(); this.updateHud(); return; }
     if (this.narration) { this.render(); this.updateHud(); return; }
 
@@ -484,6 +494,7 @@ export default class DashboardScene extends Phaser.Scene {
     if (dist(px, py, c.x, c.y) < range) {
       hz.activated = true; hz.alertT = 0;
       hz.panel.hostileActive = true; hz.panel.shake = 1;
+      playSfx('hostileAlert');
       beep(240, 0.16, 'sawtooth', 0.07); setTimeout(() => beep(180, 0.2, 'square', 0.06), 110);
     }
   }
@@ -515,6 +526,8 @@ export default class DashboardScene extends Phaser.Scene {
         hz.dir = p.x >= cx ? 1 : -1;
         hz.x = cx; hz.y = hz.panel.y + hz.panel.h - hz.r - 2;
         hz.vx = hz.dir * hz.rollSpeed; hz.vy = 0;
+        playSfx('boulderLaunch');
+        hz.rollLoop = playSfxLoop('boulderRoll', { volume: 0.0 });
         noise(0.25, 0.12); beep(90, 0.4, 'square', 0.09);
       }
       return;
@@ -535,12 +548,21 @@ export default class DashboardScene extends Phaser.Scene {
     if (hz.x < hz.r) { hz.x = hz.r; hz.dir = 1; }
     if (hz.x > WORLD_W - hz.r) { hz.x = WORLD_W - hz.r; hz.dir = -1; }
     hz.spin += hz.vx / hz.r * dt;
+    // proximity-based roll volume — louder when the boulder is on-screen near you
+    if (hz.rollLoop) {
+      const d = dist(p.x, p.y, hz.x, hz.y);
+      const vol = Math.max(0, Math.min(1, 1 - d / 900));
+      hz.rollLoop.setVolume(vol);
+    }
     if (p.invuln <= 0 && dist(p.x, p.y, hz.x, hz.y) < hz.r + p.h * 0.4) {
       damagePlayer(this.gs, DMG.pie, (p.x - hz.x) >= 0 ? 70 : -70, -18);
       this.resolveStuck(p);
     }
     hz.t += dt;
-    if (hz.t > 9) { hz.state = 'idle'; hz.cooldown = 3; hz.x = cx; hz.y = cy; hz.vx = hz.vy = 0; }
+    if (hz.t > 9) {
+      hz.state = 'idle'; hz.cooldown = 3; hz.x = cx; hz.y = cy; hz.vx = hz.vy = 0;
+      if (hz.rollLoop) { hz.rollLoop.stop(); hz.rollLoop = null; }
+    }
   }
 
   updateBar(hz, dt, p) {
@@ -549,8 +571,16 @@ export default class DashboardScene extends Phaser.Scene {
     if (!hz.activated) return;
     const pb = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h };
     for (const pis of hz.pistons) {
+      const prevExt = pis.ext ?? 0;
       const ext = pistonExt((this.time / hz.period + pis.phase) % 1);
       pis.ext = ext;
+      // crusher slam: triggered on the rising edge crossing 0.99 (one shot per cycle).
+      // attenuate by camera distance so a far-off gauntlet isn't deafening.
+      if (ext >= 0.99 && prevExt < 0.99) {
+        const d = dist(p.x, p.y, pis.x, hz.corridorTop);
+        const vol = Math.max(0.18, Math.min(1, 1 - d / 1100));
+        playSfx('crusherSlam', { volume: vol });
+      }
       if (ext > 0.5) {
         const len = ext * hz.maxLen;
         const rect = { x: pis.x - pis.w / 2, y: hz.corridorTop, w: pis.w, h: len };
@@ -568,7 +598,11 @@ export default class DashboardScene extends Phaser.Scene {
       if (hz.cooldown > 0) hz.cooldown -= dt;
       // idle drift so the needle isn't frozen
       hz.angle += Math.sin(this.time * 0.7 + hz.cx) * dt * 0.3;
-      if (hz.activated && near && hz.cooldown <= 0) { hz.state = 'aim'; hz.t = 0; hz.panel.shake = 0.6; beep(300, 0.25, 'sine', 0.06); }
+      if (hz.activated && near && hz.cooldown <= 0) {
+        hz.state = 'aim'; hz.t = 0; hz.panel.shake = 0.6;
+        playSfx('laserCharge');
+        beep(300, 0.25, 'sine', 0.06);
+      }
       return;
     }
     if (hz.state === 'aim') {
@@ -581,6 +615,7 @@ export default class DashboardScene extends Phaser.Scene {
       if (hz.t > hz.aimDur * 0.66 && Math.random() < 0.4) beep(500 + hz.t * 220, 0.03, 'sine', 0.05);
       if (hz.t > hz.aimDur) {
         hz.state = 'fire'; hz.beamT = 0.2; hz.fireAngle = hz.angle;
+        playSfx('laserFire');
         noise(0.2, 0.1); beep(1200, 0.08, 'square', 0.13);
         const tip = this.gaugeTip(hz, hz.fireAngle);
         if (p.invuln <= 0 && this.rayHitsPlayer(tip.x, tip.y, hz.fireAngle, hz.beamLen, p.h * 0.6 + 8, p)) {
@@ -616,6 +651,7 @@ export default class DashboardScene extends Phaser.Scene {
     if (!hz.mineSet.has(col + ',' + row)) return;
     const ccx = g.x + (col + 0.5) * g.cw, ccy = g.y + (row + 0.5) * g.ch;
     if (Math.abs(p.x - ccx) < g.cw * 0.4 && Math.abs(p.y - ccy) < g.ch * 0.4) {
+      playSfx('mineBoom');
       this.killPlayer('STEPPED ON A MINE');
     }
   }
@@ -641,6 +677,7 @@ export default class DashboardScene extends Phaser.Scene {
   }
   collectDoc(d) {
     d.taken = true; d.takeT = this.time;
+    playSfx('docScan');
     beep(880, 0.08, 'sine', 0.13); setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
     if (d.required) this.captured++;
     if (this.captured === 1 && d.required) setTimeout(() => this.playFirstDocNarration(), 250);
@@ -661,6 +698,7 @@ export default class DashboardScene extends Phaser.Scene {
     if (this.exportT >= EXPORT_TIME && !this.escapeReady) {
       this.escapeReady = true;
       this.exit = { x: this.exitPanel.x + this.exitPanel.w / 2, y: this.exitPanel.y + this.exitPanel.h / 2, r: 78 };
+      playSfx('exportReady');
       beep(523, 0.1, 'sine', 0.1); setTimeout(() => beep(784, 0.2, 'sine', 0.12), 120);
     }
     if (this.escapeReady && this.exit && dist(p.x, p.y, this.exit.x, this.exit.y) < this.exit.r) this.finishLevel();
