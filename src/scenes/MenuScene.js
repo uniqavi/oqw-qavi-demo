@@ -201,7 +201,15 @@ export default class MenuScene extends Phaser.Scene {
     }
 
     createBackground() {
+<<<<<<< HEAD
         // Classic blue desktop wallpaper
+=======
+        // Classic blue desktop wallpaper. Draws to the fixed 1920×1080 design
+        // surface — using this.scale.width/height was unreliable on Safari/Mac
+        // flex layouts (could measure smaller than the design size and leave a
+        // dark gap on the right). The DW/DH constants are shared with the other
+        // fixed-coord callsites (shutdown overlay, notepad center).
+>>>>>>> 53e8cc764c4e564f1caaffbe717da0b06767c768
         const bg = this.add.graphics();
         bg.fillGradientStyle(0x3a6ea5, 0x3a6ea5, 0x123456, 0x123456, 1);
         bg.fillRect(0, 0, this.scale.width, this.scale.height);
