@@ -201,19 +201,20 @@ export default class MenuScene extends Phaser.Scene {
     }
 
     createBackground() {
-        // Classic blue desktop wallpaper
+        // Classic blue desktop wallpaper. We draw to the fixed 1920×1080 design
+        // surface (the .viewport CSS transform handles fit-to-screen). Using
+        // this.scale.width/height directly was unreliable on Safari/Mac flex
+        // layouts — it could measure smaller than the design size and leave a
+        // dark gap on the right/bottom.
+        const DESIGN_W = 1920, DESIGN_H = 1080;
         const bg = this.add.graphics();
         bg.fillGradientStyle(0x3a6ea5, 0x3a6ea5, 0x123456, 0x123456, 1);
-        bg.fillRect(0, 0, this.scale.width, this.scale.height);
-        
-        // Ensure background resizes
-        this.scale.on('resize', (gameSize) => {
-            bg.clear();
-            bg.fillGradientStyle(0x3a6ea5, 0x3a6ea5, 0x123456, 0x123456, 1);
-            bg.fillRect(0, 0, gameSize.width, gameSize.height);
-            
+        bg.fillRect(0, 0, DESIGN_W, DESIGN_H);
+
+        // Re-anchor the notepad textarea on resize (its absolute position is
+        // derived from the live canvas rect — see updateTextareaPosition).
+        this.scale.on('resize', () => {
             if (this.notepadTextarea && this.activeWindow && this.activeWindow.name === 'notepad') {
-                // Keep text area synced on resize if it exists
                 this.updateTextareaPosition();
             }
         });

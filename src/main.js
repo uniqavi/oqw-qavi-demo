@@ -13,9 +13,16 @@ const config = {
   backgroundColor: '#181818',
   scene: [BootScene, MenuScene, HomeScene, GameScene, Level2Scene, DashboardScene, HUDScene],
   scale: {
-    mode: Phaser.Scale.RESIZE,
-    width: '100%',
-    height: '100%',
+    // Fixed 1920×1080 internal canvas. The `.viewport` div in index.html is
+    // already CSS-scaled to fit the browser window, so we use Scale.NONE to
+    // stop Phaser from also resizing/scaling the canvas — RESIZE used to
+    // under-measure the parent on Safari/Mac and left the MenuScene desktop
+    // background only filling ~75% of the screen, and FIT double-scaled it.
+    // Gameplay scenes draw to the separate #oqw overlay canvas (their own
+    // resize logic) so they're unaffected by this.
+    mode: Phaser.Scale.NONE,
+    width: 1920,
+    height: 1080,
   },
 };
 
