@@ -76,7 +76,23 @@ const PANEL_SPECS = [
   { kind: 'table', label: 'FLAGGED STORIES',     c1: 0, r1: 5, c2: 1, r2: 5 },
   { kind: 'kpi',   label: 'COMPLIANCE',          c1: 2, r1: 5, c2: 2, r2: 5 },
   { kind: 'gauge', label: 'CAMPAIGN HEALTH',     c1: 6, r1: 5, c2: 6, r2: 5 },
+  // filler widgets — these also wall off shortcut blocks to force the route
+  { kind: 'kpi',   label: 'AD SPEND',            c1: 5, r1: 0, c2: 5, r2: 0 },
+  { kind: 'donut', label: 'TRAFFIC MIX',         c1: 5, r1: 1, c2: 5, r2: 1 },
+  { kind: 'kpi',   label: 'SESSIONS',            c1: 5, r1: 2, c2: 5, r2: 2 },
+  { kind: 'kpi',   label: 'QUEUE DEPTH',         c1: 1, r1: 2, c2: 1, r2: 2 },
+  { kind: 'area',  label: 'INCIDENTS',           c1: 3, r1: 3, c2: 3, r2: 3 },
 ];
+
+// ── Forced route — the corridor grid is otherwise wide open, so we seal all
+// but one alternating vertical connector per panel-row to make a boustrophedon
+// snake: spawn → gauntlet#3 → gauntlet#2 → gauntlet#1 → gauge → exit. The
+// minefield is an optional bonus detour off the lower lanes. ──
+const GAPS = [
+  { x: 450, w: 110 }, { x: 860, w: 110 }, { x: 1270, w: 110 },
+  { x: 1680, w: 110 }, { x: 2090, w: 110 }, { x: 2500, w: 110 },
+];
+const OPEN_CONNECTOR = { 0: 5, 1: 3, 2: 0, 3: 5, 4: 2, 5: 1 };  // open GAPS index per row
 
 // ── Spreadsheet minefield — a walkable Excel grid (NOT a wall). ──
 const MINE_GRID = {
@@ -170,7 +186,8 @@ export default class DashboardScene extends Phaser.Scene {
 
     this.panels = PANEL_SPECS.map(s => ({ ...s, ...blockRect(s.c1, s.r1, s.c2, s.r2), shake: 0, collapsed: 0, hostileActive: false }));
     this.panels.forEach(p => { p.data = genData(p); });
-    this.solids = this.panels;
+    this.seals = this.buildSeals();
+    this.solids = this.panels.concat(this.seals);
     this.exitPanel = this.panels.find(p => p.exit);
 
     this.hazards = this.buildHazards();
@@ -295,16 +312,35 @@ export default class DashboardScene extends Phaser.Scene {
   }
 
   buildDocs() {
-    // Required (4) → one inside each gauntlet corridor + one up top by the gauge.
-    // Bonus (2) → a side corridor and deep in the minefield.
+    // Required (4) → one behind each hazard along the forced snake.
+    // Bonus (2) → both in the minefield (an optional, deadly detour).
     return [
-      { x: 2350, y: 300,  required: true,  taken: false, takeT: 0 },  // top-right, by the gauge
+      { x: 2555, y: 300,  required: true,  taken: false, takeT: 0 },  // by the gauge (snake end)
       { x: 1100, y: 750,  required: true,  taken: false, takeT: 0 },  // gauntlet #1 corridor
       { x: 2140, y: 1350, required: true,  taken: false, takeT: 0 },  // gauntlet #2 corridor
       { x: 900,  y: 1650, required: true,  taken: false, takeT: 0 },  // gauntlet #3 corridor
-      { x: 2350, y: 900,  required: false, taken: false, takeT: 0 },  // bonus — side corridor
+      { x: 1740, y: 1890, required: false, taken: false, takeT: 0 },  // bonus — minefield cell (2,2)
       { x: 2004, y: 1790, required: false, taken: false, takeT: 0 },  // bonus — minefield cell (4,1)
     ];
+  }
+
+  // Seal every vertical connector except one alternating gap per panel-row.
+  buildSeals() {
+    const inPanel = (x, y) => this.panels.some(p => x > p.x && x < p.x + p.w && y > p.y && y < p.y + p.h);
+    const seals = [];
+    for (let r = 0; r < 6; r++) {
+      const y = 200 + r * 300;
+      for (let g = 0; g < 6; g++) {
+        if (g === OPEN_CONNECTOR[r]) continue;
+        const gap = GAPS[g];
+        if (inPanel(gap.x + gap.w / 2, y + 100)) continue;   // already walled by a panel
+        seals.push({ x: gap.x, y, w: gap.w, h: 200, collapsed: 0 });
+      }
+    }
+    // page side-rails (the open margins outside the columns)
+    seals.push({ x: 0, y: 110, w: COLX[0], h: WORLD_H - 110, collapsed: 0, margin: true });
+    seals.push({ x: 2910, y: 110, w: WORLD_W - 2910, h: WORLD_H - 110, collapsed: 0, margin: true });
+    return seals;
   }
 
   handleResize() {
@@ -717,6 +753,7 @@ export default class DashboardScene extends Phaser.Scene {
     for (let gy = gy0; gy < this.camY + this.viewHW; gy += 80) { ctx.beginPath(); ctx.moveTo(this.camX, gy); ctx.lineTo(this.camX + this.viewWW, gy); ctx.stroke(); }
 
     this.drawHeader(ctx);
+    this.drawSeals(ctx, view);
     this.drawMinefield(ctx, view);
     for (const pnl of this.panels) { if (aabb(view, pnl) || pnl.collapsed > 0) this.drawPanel(ctx, pnl); }
 
@@ -761,6 +798,19 @@ export default class DashboardScene extends Phaser.Scene {
     for (const t of tabs) { ctx.fillStyle = t === 'Dashboards' ? C.blue : C.sub; ctx.fillText(t, tx, 54); tx += ctx.measureText(t).width + 34; }
     ctx.fillStyle = '#9aa6bd'; ctx.font = '13px Consolas, monospace'; ctx.textAlign = 'right';
     ctx.fillText('INTERNAL // DO NOT DISTRIBUTE', WORLD_W - 30, 54); ctx.textAlign = 'left';
+  }
+
+  drawSeals(ctx, view) {
+    for (const s of this.seals) {
+      if (!aabb(view, s)) continue;
+      if (s.margin) {
+        ctx.fillStyle = '#e7ecf4'; ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.strokeStyle = C.panelBd; ctx.lineWidth = 1; ctx.strokeRect(s.x, s.y, s.w, s.h);
+      } else {
+        // a blank "spacer" card so the gap reads as solid dashboard chrome
+        drawHandRect(ctx, s.x, s.y + 6, s.w, s.h - 12, '#eef2f8', C.panelBd, s.x + s.y, 1.5);
+      }
+    }
   }
 
   drawPanel(ctx, pnl) {
