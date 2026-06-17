@@ -7,12 +7,6 @@ import { loadSfx, playSfx } from '../game/sfx.js';
  * All graphics are generated programmatically using Phaser's Graphics object.
  */
 
-// Fixed design dimensions — must match the viewport (index.html: 1920×1080).
-// Using constants instead of this.scale.width/height ensures the desktop scene
-// renders at exactly the same resolution as the game levels on every device.
-const DW = 1920;
-const DH = 1080;
-
 export default class MenuScene extends Phaser.Scene {
     constructor() {
         super('MenuScene');
@@ -207,10 +201,22 @@ export default class MenuScene extends Phaser.Scene {
     }
 
     createBackground() {
-        // Classic blue desktop wallpaper — use fixed design dims
+        // Classic blue desktop wallpaper
         const bg = this.add.graphics();
         bg.fillGradientStyle(0x3a6ea5, 0x3a6ea5, 0x123456, 0x123456, 1);
-        bg.fillRect(0, 0, DW, DH);
+        bg.fillRect(0, 0, this.scale.width, this.scale.height);
+        
+        // Ensure background resizes
+        this.scale.on('resize', (gameSize) => {
+            bg.clear();
+            bg.fillGradientStyle(0x3a6ea5, 0x3a6ea5, 0x123456, 0x123456, 1);
+            bg.fillRect(0, 0, gameSize.width, gameSize.height);
+            
+            if (this.notepadTextarea && this.activeWindow && this.activeWindow.name === 'notepad') {
+                // Keep text area synced on resize if it exists
+                this.updateTextareaPosition();
+            }
+        });
     }
 
     createDesktopIcon(x, y, textureKey, labelText, onClickCallback) {
@@ -277,10 +283,10 @@ export default class MenuScene extends Phaser.Scene {
     triggerShutdown() {
         const overlay = this.add.graphics();
         overlay.fillStyle(0x000000, 1);
-        overlay.fillRect(0, 0, DW, DH);
+        overlay.fillRect(0, 0, this.scale.width, this.scale.height);
         overlay.setDepth(9999);
 
-        const shutdownText = this.add.text(DW / 2, DH / 2, 'System Shutting Down...', {
+        const shutdownText = this.add.text(this.scale.width / 2, this.scale.height / 2, 'System Shutting Down...', {
             fontFamily: 'Courier New', fontSize: '24px', color: '#ffffff'
         }).setOrigin(0.5).setDepth(10000);
 
@@ -308,8 +314,8 @@ export default class MenuScene extends Phaser.Scene {
 
         const winWidth = 450;
         const winHeight = 350;
-        const targetX = (DW - winWidth) / 2;
-        const targetY = (DH - winHeight) / 2;
+        const targetX = (this.scale.width - winWidth) / 2;
+        const targetY = (this.scale.height - winHeight) / 2;
 
         const windowContainer = this.add.container(startX, startY);
         windowContainer.name = 'notepad';
@@ -399,9 +405,10 @@ export default class MenuScene extends Phaser.Scene {
             "  - Double click a game icon to launch that mission.\n" +
             "  - ESC pauses during gameplay.\n" +
             "\nGood luck, operative. Don't get caught.";
-        // Append inside the canvas-wrap so it inherits the viewport CSS transform
-        const canvasWrap = document.querySelector('.canvas-wrap') || document.body;
-        canvasWrap.appendChild(this.notepadTextarea);
+        // Append inside #game so the textarea shares the same coordinate
+        // origin as the Phaser canvas element.
+        const gameEl = document.getElementById('game') || document.body;
+        gameEl.appendChild(this.notepadTextarea);
         
         // Hide initially for animation
         this.notepadTextarea.style.display = 'none';
@@ -447,31 +454,34 @@ export default class MenuScene extends Phaser.Scene {
         if (!this.activeWindow || !this.notepadTextarea) return;
 
         const padding = 2;
-        const headerHeight = 50; // title bar + menu bar
+        const headerHeight = 50; // title bar (30) + menu bar (20)
         const winWidth = 450;
         const winHeight = 350;
 
-        // The Phaser canvas is inside the #game div inside .canvas-wrap.
-        // We need the position relative to the canvas-wrap, which is the
-        // textarea's offsetParent thanks to its position:relative.
-        const gameEl = document.getElementById('game');
-        const gameRect = gameEl ? gameEl.getBoundingClientRect() : { left: 0, top: 0, width: 1, height: 1 };
+        // Map Phaser scene coords → CSS pixels inside #game.
+        // The ratio is: (actual rendered element size) / (Phaser logical size).
+        // This mathematically perfectly aligns the DOM textarea over the Phaser
+        // graphics regardless of how the browser or Phaser resizes the canvas.
+        const phaserCanvas = this.sys.game.canvas;
+        const canvasW = phaserCanvas.clientWidth || phaserCanvas.offsetWidth || this.scale.width;
+        const canvasH = phaserCanvas.clientHeight || phaserCanvas.offsetHeight || this.scale.height;
+        const sx = canvasW / this.scale.width;
+        const sy = canvasH / this.scale.height;
 
-        // Phaser scene coords → pixel coords inside the game div.
-        // The Phaser canvas fills the #game div, so the scale factor is
-        // gameDiv-pixel-width / phaser-scene-width.
-        const scaleX = gameRect.width / DW;
-        const scaleY = gameRect.height / DH;
+        // Account for any offset the canvas has within #game
+        const canvasLeft = phaserCanvas.offsetLeft || 0;
+        const canvasTop = phaserCanvas.offsetTop || 0;
 
         const x = this.activeWindow.x + padding;
         const y = this.activeWindow.y + headerHeight + padding;
         const w = winWidth - padding * 2;
         const h = winHeight - headerHeight - padding * 2;
 
-        this.notepadTextarea.style.left = `${x}px`;
-        this.notepadTextarea.style.top = `${y}px`;
-        this.notepadTextarea.style.width = `${w}px`;
-        this.notepadTextarea.style.height = `${h}px`;
+        this.notepadTextarea.style.left = `${canvasLeft + x * sx}px`;
+        this.notepadTextarea.style.top = `${canvasTop + y * sy}px`;
+        this.notepadTextarea.style.width = `${w * sx}px`;
+        this.notepadTextarea.style.height = `${h * sy}px`;
+        this.notepadTextarea.style.fontSize = `${Math.max(10, Math.round(14 * sy))}px`;
         
         // Handle scaling during animation
         const scale = this.activeWindow.scaleX;
