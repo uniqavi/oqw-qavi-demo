@@ -669,14 +669,17 @@ export default class DashboardScene extends Phaser.Scene {
     this.captureTarget = target;
     if (target && holding) {
       this.captureProg += dt / CAPTURE_TIME;
+      if (!this._scanLoop) this._scanLoop = playSfxLoop('docScanLoop', { volume: 0.9 });
       if (Math.random() < 0.3) beep(1400 + Math.random() * 400, 0.01, 'square', 0.02);
       if (this.captureProg >= 1) { this.collectDoc(target); this.captureProg = 0; }
     } else {
       this.captureProg = Math.max(0, this.captureProg - dt * 2);
+      if (this._scanLoop) { this._scanLoop.stop(); this._scanLoop = null; }
     }
   }
   collectDoc(d) {
     d.taken = true; d.takeT = this.time;
+    if (this._scanLoop) { this._scanLoop.stop(); this._scanLoop = null; }
     playSfx('docScan');
     beep(880, 0.08, 'sine', 0.13); setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
     if (d.required) this.captured++;

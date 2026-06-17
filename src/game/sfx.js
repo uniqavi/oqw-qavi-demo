@@ -29,6 +29,7 @@ const SFX = {
   docScan:       '/sfx/doc-scan.mp3',       // hold-SPACE doc capture completes
   hostileAlert:  '/sfx/hostile-alert.mp3',  // widget activation / turns red
   exportReady:   '/sfx/export-ready.mp3',   // EXPORTING complete / exit opens
+  docScanLoop:   '/sfx/DOC_Scan_WHEN_SPACE_PRESSED.mp3', // played (looped) while HOLD SPACE captures
 };
 
 const clips = {};
