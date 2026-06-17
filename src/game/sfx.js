@@ -30,6 +30,7 @@ const SFX = {
   hostileAlert:  '/sfx/hostile-alert.mp3',  // widget activation / turns red
   exportReady:   '/sfx/export-ready.mp3',   // EXPORTING complete / exit opens
   docScanLoop:   '/sfx/DOC_Scan_WHEN_SPACE_PRESSED.mp3', // played (looped) while HOLD SPACE captures
+  desktopClick:  '/sfx/meme_Mouse_click.mp3',            // desktop icon / window click
 };
 
 const clips = {};
