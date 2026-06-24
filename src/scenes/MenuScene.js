@@ -34,13 +34,31 @@ export default class MenuScene extends Phaser.Scene {
         this.activeWindow = null;
         this.notepadTextarea = null;
 
+        // Determine progression
+        const lvl1Cleared = localStorage.getItem('oqw-level1-cleared') === 'true';
+        const lvl2Cleared = localStorage.getItem('oqw-level2-cleared') === 'true';
+
+        let currentY = 60;
+
         // Create Desktop Icons — each game icon launches its level directly
-        this.metubeGroup = this.createDesktopIcon(60, 60, 'icon_metube', 'Quiet Window', () => this.launchLevel('HomeScene'));
-        this.hush2Group = this.createDesktopIcon(60, 160, 'icon_hush_2', '2 Hush 2 Quiet', () => this.launchLevel('GameScene', true));
-        this.hush3Group = this.createDesktopIcon(60, 260, 'icon_hush_3', 'The Quiet: Hush', () => this.launchLevel('DashboardScene'));
-        this.logoutGroup = this.createDesktopIcon(60, 360, 'logout_icon', 'Log Out', () => this.triggerShutdown());
-        this.recycleBinGroup = this.createDesktopIcon(60, 460, 'recycle_icon', 'Recycle Bin', () => console.log('Recycle Bin clicked'));
-        this.manualGroup = this.createDesktopIcon(60, 560, 'manual_icon', 'Manual', (x, y) => this.openNotepadWindow(x, y));
+        this.metubeGroup = this.createDesktopIcon(60, currentY, 'icon_metube', 'Quiet Window', () => this.launchLevel('HomeScene'));
+        currentY += 100;
+
+        if (lvl1Cleared) {
+            this.hush2Group = this.createDesktopIcon(60, currentY, 'icon_hush_2', '2 Hush 2 Quiet', () => this.launchLevel('GameScene', true));
+            currentY += 100;
+        }
+
+        if (lvl2Cleared) {
+            this.hush3Group = this.createDesktopIcon(60, currentY, 'icon_hush_3', 'The Quiet: Hush', () => this.launchLevel('DashboardScene'));
+            currentY += 100;
+        }
+
+        this.logoutGroup = this.createDesktopIcon(60, currentY, 'logout_icon', 'Log Out', () => this.triggerShutdown());
+        currentY += 100;
+        this.recycleBinGroup = this.createDesktopIcon(60, currentY, 'recycle_icon', 'Recycle Bin', () => console.log('Recycle Bin clicked'));
+        currentY += 100;
+        this.manualGroup = this.createDesktopIcon(60, currentY, 'manual_icon', 'Manual', (x, y) => this.openNotepadWindow(x, y));
     }
 
     /**

@@ -183,22 +183,36 @@
           </div>
 
           <!-- ===== PAUSE / AUDIO MENU (opened with ESC) ===== -->
-          <div class="pause-menu hidden" id="pause-menu">
-            <div class="pause-panel">
-              <div class="pause-title">PAUSED</div>
-              <div class="pause-row">
-                <span class="pause-label">[ MASTER VOLUME ]</span>
-                <div class="pause-vol">
-                  <button class="pause-mute" id="pause-mute" type="button" aria-label="Mute / unmute">&#128266;</button>
-                  <input class="pause-slider" id="pause-volume" type="range" min="0" max="100" step="1" value="70" aria-label="Master volume">
-                  <span class="pause-vol-val" id="pause-volume-val">70%</span>
+          <div class="pause-menu hidden" id="pause-menu" style="background: rgba(0,0,0,0.5); backdrop-filter: none;">
+            <div class="pause-panel" style="width: 450px; max-width: 90vw; background-color: #f0f0f0; border: 2px solid #888888; display: flex; flex-direction: column; font-family: Arial, sans-serif; padding: 0; text-align: left; border-radius: 0; clip-path: none;">
+              <!-- Title Bar -->
+              <div style="background-color: #000080; height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px;">
+                <span style="color: #ffffff; font-size: 14px;">Manual - Pause</span>
+                <button id="pause-close-btn" style="background: #cc0000; color: white; border: 2px outset #ffcccc; width: 20px; height: 20px; line-height: 16px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; padding: 0;">X</button>
+              </div>
+
+              <!-- Content Area -->
+              <div style="padding: 2px;">
+                <div style="background-color: #ffffff; border: 1px solid #888888; box-shadow: inset 1px 1px 2px rgba(0,0,0,0.1); padding: 15px; font-family: 'Courier New', Courier, monospace; color: #000000; font-size: 14px; min-height: 200px; display: flex; flex-direction: column; justify-content: space-between;">
+                  <div>
+                    <div style="font-weight: bold; margin-bottom: 15px; border-bottom: 1px dashed #ccc; padding-bottom: 5px;">=== SYSTEM PAUSED ===</div>
+                    
+                    <div class="pause-row" style="margin-bottom: 20px; text-align: left;">
+                      <span class="pause-label" style="display: block; margin-bottom: 5px; color: #000; font-size: 14px;">[ MASTER VOLUME ]</span>
+                      <div class="pause-vol" style="display: flex; gap: 10px; align-items: center;">
+                        <button class="pause-mute" id="pause-mute" type="button" aria-label="Mute / unmute" style="background: #e0e0e0; border: 2px outset #fff; border-bottom-color: #888; border-right-color: #888; padding: 2px 8px; cursor: pointer; color: black; font-family: Arial; min-width: 30px;">&#128266;</button>
+                        <input class="pause-slider" id="pause-volume" type="range" min="0" max="100" step="1" value="70" aria-label="Master volume" style="flex: 1;">
+                        <span class="pause-vol-val" id="pause-volume-val" style="width: 40px; text-align: right; color: #000;">70%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="pause-actions" style="display: flex; gap: 10px; flex-direction: row; justify-content: flex-end;">
+                    <button class="pause-btn primary" id="pause-resume" type="button" style="background: #e0e0e0; border: 2px outset #fff; border-bottom-color: #888; border-right-color: #888; padding: 5px 15px; cursor: pointer; color: black; font-family: Arial; font-size: 12px; margin: 0; min-width: 80px;">RESUME</button>
+                    <button class="pause-btn" id="pause-quit" type="button" style="background: #e0e0e0; border: 2px outset #fff; border-bottom-color: #888; border-right-color: #888; padding: 5px 15px; cursor: pointer; color: black; font-family: Arial; font-size: 12px; margin: 0; min-width: 80px;">MAIN MENU</button>
+                  </div>
                 </div>
               </div>
-              <div class="pause-actions">
-                <button class="pause-btn primary" id="pause-resume" type="button">[ RESUME ]</button>
-                <button class="pause-btn" id="pause-quit" type="button">[ MAIN MENU ]</button>
-              </div>
-              <div class="pause-hint">press ESC to resume</div>
             </div>
           </div>
 

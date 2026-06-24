@@ -393,6 +393,7 @@ export default class HomeScene extends Phaser.Scene {
     setTimeout(() => this.playLostContactNarration(() => this.transitionToRunner()), 450);
   }
   transitionToRunner() {
+    try { localStorage.setItem('oqw-level1-cleared', 'true'); } catch (e) {}
     this.scene.stop();
     this.scene.start('GameScene', { difficulty: this.difficulty, fromHomePage: true });
     this.scene.launch('HUDScene');

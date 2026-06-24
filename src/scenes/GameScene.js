@@ -593,6 +593,7 @@ export default class GameScene extends Phaser.Scene {
     cam.x += (targetX - cam.x) * Math.min(1, dt * 3);
   }
   finishEndSequence() {
+    try { localStorage.setItem('oqw-level2-cleared', 'true'); } catch (e) {}
     // Hide overlays + apply post-mission dim
     this.endDom.wrap?.classList.add('hidden');
     this.endDom.sweep?.classList.remove('run');

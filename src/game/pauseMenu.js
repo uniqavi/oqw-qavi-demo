@@ -63,6 +63,7 @@ function ensureInit() {
     mute:   document.getElementById('pause-mute'),
     resume: document.getElementById('pause-resume'),
     quit:   document.getElementById('pause-quit'),
+    closeBtn: document.getElementById('pause-close-btn'),
   };
   inited = true;
 
@@ -75,6 +76,7 @@ function ensureInit() {
   dom.wrap.addEventListener('click', (e) => e.stopPropagation());
 
   dom.resume?.addEventListener('click', () => closePauseMenu());
+  dom.closeBtn?.addEventListener('click', () => closePauseMenu());
   dom.quit?.addEventListener('click', () => {
     const cb = onQuitCb;
     hide();
