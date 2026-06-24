@@ -9,8 +9,6 @@ import {
   createTruth,
   createLooseCookies,
   createScanFragments,
-  createGazeProps,
-  createGazeTruths,
 } from './layout.js';
 
 // Initial agent data. Each agent's update logic will live in src/game/agents/<name>.js
@@ -160,10 +158,13 @@ export function createState() {
     narration: null,
     // Two-phase level model.
     //   'static'   — pre-checkpoint hostile YouTube page. All 6 static agents
-    //                active, gaze/cursor active, 5 fixed-position docs to grab.
-    //                Scroll is locked at 0; no Waves/Powerups/HiddenDocs.
-    //   'scroller' — post-checkpoint runner. Current GameScene behavior.
+    //                active, camera follows the player around a 960×1200
+    //                world, 5 fixed-position docs to grab, then the cookie
+    //                banner at the bottom is the checkpoint trigger.
+    //   'scroller' — post-checkpoint runner. Current GameScene behavior,
+    //                starting from the player's current scroll position.
     phase: 'static',
+    cookieReady: false,        // becomes true after 5 docs; cookie banner = exit
     agents: createAgents(),
     layout: createLayout(),
     docs: createDocs(),
@@ -172,10 +173,6 @@ export function createState() {
     truth: createTruth(),
     looseCookies: createLooseCookies(),
     scanFragments: createScanFragments(),
-    // Phase-A-only — draggable propaganda windows and the hidden trackers
-    // they're meant to cover. Uncovered trackers drive the gaze meter.
-    gazeProps: createGazeProps(),
-    gazeTruths: createGazeTruths(),
   };
 }
 
@@ -280,10 +277,7 @@ export function resetState(state) {
 
   // Phase + Phase-A-only state
   state.phase = 'static';
-  state.gazeProps.forEach(g => {
-    g.x = g.homeX; g.y = g.homeY;
-    g.dragging = false; g.dox = 0; g.doy = 0;
-  });
+  state.cookieReady = false;
 
   state.status = 'playing';
 }

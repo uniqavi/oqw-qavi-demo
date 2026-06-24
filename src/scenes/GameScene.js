@@ -94,39 +94,21 @@ export default class GameScene extends Phaser.Scene {
     this.state.gunGraceUntil = this.diffMod.gunGrace;
 
     // ── Phase A setup ────────────────────────────────────────────────────
-    // The Phase-A static page has a much smaller visible viewport than the
-    // scroller (the scroller's PH is ~1e9, so the cookie banner and most
-    // comment slots are normally off-screen). Override anchor positions so
-    // all 6 agents land inside the visible ~960×450 viewport.
+    // Match the old build (reference/operation_quiet_window_mission_02.html)
+    // verbatim: 960×1200 page, cookie banner pinned at the very bottom
+    // (PH-40 = 1160), all six agents in their original slots, camera
+    // follows the player as they scroll up/down through the page.
     {
-      // Cookie banner: home at y=420 (just below the player y-clamp top of ~378)
-      this.state.layout.cookie.y = 420;
+      this.PH_PHASE_A = 1200;
+      // Cookie banner at world y=1160 — reachable only by scrolling all
+      // the way down (i.e., after grabbing the docs).
+      this.state.layout.cookie.y = this.PH_PHASE_A - 40;
       this.state.layout.cookie.h = 40;
       const cc = this.state.agents.crushingCookie;
-      cc.homeY = 420;
+      cc.homeY = this.PH_PHASE_A - 40;
       cc.homeH = 40;
-      // Triggered when the player drops to roughly the bottom third
-      cc.triggerR = 130 * this.diffMod.triggerRange;
-
-      // Falling comment: replace the off-screen commentSlots row with a
-      // visible row right below the description / button area.
-      const fc = this.state.agents.fallingComment;
-      fc.slotOverride = { x: 24, y: 380, w: 580, h: 56 };
-      fc.x = fc.slotOverride.x;
-      fc.y = fc.slotOverride.y;
-      fc.w = fc.slotOverride.w;
-      fc.h = fc.slotOverride.h;
-
-      // Chasing recs: instances are recIdx 1 (visible at y=166) and 4
-      // (off-screen at y=454). Override the second one with a visible slot.
-      const cr2 = this.state.agents.chasingRecs[1];
-      if (cr2) {
-        cr2.slot = { x: 620, y: 262, w: 320, h: 86 };
-        cr2.x = cr2.slot.x;
-        cr2.y = cr2.slot.y;
-        cr2.w = cr2.slot.w;
-        cr2.h = cr2.slot.h;
-      }
+      // Old build triggerR = 250 at base; scale by difficulty as usual.
+      cc.triggerR = 250 * this.diffMod.triggerRange;
     }
 
     // Swap menu music → L1 theme. Crossfade so it feels continuous.
@@ -443,24 +425,9 @@ export default class GameScene extends Phaser.Scene {
     initAudio();
     this.updateMouseCoords(pointer);
     this.state.mouse.down = true;
-    const m = this.state.mouse;
-    // Phase A — drag the propaganda ads aside to reach docs (which exposes
-    // the trackers beneath and starts the gaze meter rising).
-    if (this.state.phase === 'static') {
-      for (let i = this.state.gazeProps.length - 1; i >= 0; i--) {
-        const g = this.state.gazeProps[i];
-        if (m.x >= g.x && m.x <= g.x + g.w && m.y >= g.y && m.y <= g.y + g.h) {
-          g.dragging = true;
-          g.dox = m.x - g.x;
-          g.doy = m.y - g.y;
-          beep(420, 0.04, 'square', 0.04);
-          return;
-        }
-      }
-      return;
-    }
     // The suspicious comment is only draggable during the escape's 'drag' step.
     if (!this.state.escape || this.state.escape.step !== 'drag') return;
+    const m = this.state.mouse;
     for (let i = this.state.propaganda.length - 1; i >= 0; i--) {
       const p = this.state.propaganda[i];
       if (m.x >= p.x && m.x <= p.x + p.w && m.y >= p.y && m.y <= p.y + p.h) {
@@ -477,12 +444,6 @@ export default class GameScene extends Phaser.Scene {
     this.state.propaganda.forEach((p) => {
       if (p.dragging) {
         p.dragging = false;
-        beep(280, 0.04, 'square', 0.03);
-      }
-    });
-    this.state.gazeProps.forEach((g) => {
-      if (g.dragging) {
-        g.dragging = false;
         beep(280, 0.04, 'square', 0.03);
       }
     });
@@ -954,16 +915,17 @@ export default class GameScene extends Phaser.Scene {
     // escape the scroll is owned by updateEscapeScroll. dScroll = actual
     // camera delta this frame, used to auto-advance the player.
     //
-    // Phase A (static) — scroll locked at 0 while the player fights the
-    // 6 static agents and collects 5 fixed-position docs. The scroller ramp
-    // only starts after the checkpoint flips state.phase to 'scroller', and
-    // state.phaseTime resets to 0 so the slow→fast ramp starts fresh.
+    // Phase A (static) — camera FOLLOWS the player around a bounded
+    // 960×1200 page (matches the old build). Player moves freely with WASD;
+    // the camera tracks their Y position so the page scrolls naturally.
+    // scrollY isn't updated here — it's updated AFTER the player moves
+    // (in the clamp block below) so it reads the post-move position.
     const viewW = this.VW / c.zoom;
     const viewH = this.VH / c.zoom;
     const prevScrollY = state.scrollY;
     if (state.phase === 'static') {
-      state.scrollY = 0;
       state.scrollSpeed = 0;
+      // scrollY held until the post-movement camera update
     } else if (state.escape) {
       this.updateEscapeScroll(dt, viewH);
     } else {
@@ -986,8 +948,9 @@ export default class GameScene extends Phaser.Scene {
 
     // ── Player movement (auto-follow + WASD) ──────────────────────────────
     // Step 1: auto-advance the player WITH the camera so they keep their
-    // viewport-relative Y when no input.
-    p.y += dScroll;
+    // viewport-relative Y when no input (Phase B only; Phase A has no
+    // auto-scroll so dScroll = 0 there).
+    if (state.phase !== 'static') p.y += dScroll;
 
     // Step 2: WASD / arrows for free movement. SHIFT boosts the PLAYER's
     // movement speed only (the scroll is untouched). The FAST powerup also
@@ -1007,15 +970,25 @@ export default class GameScene extends Phaser.Scene {
     p.x += vx * speed * dt;
     p.y += vy * speed * dt;
 
-    // Step 3: clamp horizontally to the page; vertically to the viewport.
-    // The bottom clamp is intentional — the player can ride at the bottom
-    // edge, but they're then directly in the enemy-spawn line. effSize is
-    // HP-scaled + buff-scaled so the window literally shrinks with damage.
+    // Step 3: clamp. Phase A — bounded to the 960×1200 page; camera
+    // follows the player. Phase B — clamped to the current viewport; the
+    // player can ride the bottom edge into the spawn line.
     const effSize = effectiveSize(p);
     p.x = Phaser.Math.Clamp(p.x, effSize / 2, PW - effSize / 2);
-    const viewTop = state.scrollY + 30;
-    const viewBot = state.scrollY + viewH - 30 - effSize * 0.75;
-    p.y = Phaser.Math.Clamp(p.y, viewTop, viewBot);
+    if (state.phase === 'static') {
+      const phMax = this.PH_PHASE_A ?? 1200;
+      p.y = Phaser.Math.Clamp(p.y, effSize * 0.4, phMax - effSize * 0.4);
+      // Camera follows the player; lerp gently so it doesn't snap.
+      const maxScrollY = Math.max(0, phMax - viewH);
+      const target = Math.max(0, Math.min(maxScrollY, p.y - viewH / 2));
+      state.scrollY += (target - state.scrollY) * Math.min(1, dt * 6);
+      state.scrollY = Math.max(0, Math.min(maxScrollY, state.scrollY));
+      c.y = state.scrollY;
+    } else {
+      const viewTop = state.scrollY + 30;
+      const viewBot = state.scrollY + viewH - 30 - effSize * 0.75;
+      p.y = Phaser.Math.Clamp(p.y, viewTop, viewBot);
+    }
 
     if (p.invuln > 0) p.invuln -= dt;
     if (p.hitFlash > 0) p.hitFlash -= dt;
@@ -1087,9 +1060,10 @@ export default class GameScene extends Phaser.Scene {
     // (Old auto-reveal of the suspicious comment removed — the escape
     // sequence now owns the weird-comment → hole reveal. See updateEscape.)
 
-    // Cursor (gaze enforcer) — Phase A enables it (it's the signature
-    // mission_02 hunter); Phase B leaves it off per the L1 accessibility pass.
-    if ((state.phase === 'static' || L1.gazeEnforcer) && state.gaze >= GAZE.threshold && !state.cursor) {
+    // Cursor (gaze enforcer) — disabled in L1 for accessibility (config L1).
+    // The lethal hunter debuts in L2. Gaze can still rise/fall as feedback,
+    // it just never spawns the cursor here.
+    if (L1.gazeEnforcer && state.gaze >= GAZE.threshold && !state.cursor) {
       state.cursor = { x: -40, y: 50, vx: 0, vy: 0, born: 0 };
       state.stats.gazeMaxed = true;
       noise(0.35, 0.16);
@@ -1152,7 +1126,7 @@ export default class GameScene extends Phaser.Scene {
     if (inStatic || L1.fallingComment) FallingComment.update(state.agents.fallingComment, dt, state);
     if (inStatic || L1.explodingLike) ExplodingLike.update(state.agents.explodingLike, dt, state);
     ExplodingLike.updateProjectiles(state, dt);
-    if (inStatic || L1.crushingCookie) CrushingCookie.update(state.agents.crushingCookie, dt, state);
+    if ((inStatic && !state.cookieReady) || L1.crushingCookie) CrushingCookie.update(state.agents.crushingCookie, dt, state);
     // Gun shooter — gated by the difficulty grace period so new players get a
     // chance to learn the controls before it can fire.
     if ((inStatic || L1.gunShooter) && state.time >= state.gunGraceUntil) {
@@ -1166,39 +1140,12 @@ export default class GameScene extends Phaser.Scene {
   // ===== PHASE A — static-page combat (pre-checkpoint) =====
   // Runs every frame while state.phase === 'static'. Drives:
   //   - the 5 fixed-position doc pickups (state.docs)
-  //   - the gaze meter (uncovered gazeTruths add gaze; cursor at 100)
-  //   - prop-drag follows the mouse (mirrors the propaganda-drag in Phase B)
-  //   - checkpoint trigger when all 5 docs are taken
+  //   - on the 5th doc, flips state.cookieReady so the cookie banner
+  //     becomes the exit (instead of crushing the player)
+  //   - touching the now-friendly cookie banner triggers the checkpoint
   updateStaticPhase(dt) {
     const state = this.state;
     const p = state.player;
-
-    // Drag any gaze-prop that's currently grabbed.
-    for (const g of state.gazeProps) {
-      if (g.dragging) {
-        g.x = Phaser.Math.Clamp(state.mouse.x - g.dox, 0, PW - g.w);
-        g.y = Phaser.Math.Clamp(state.mouse.y - g.doy, 60, PH - g.h);
-      }
-    }
-
-    // Gaze: any tracker NOT covered by SOME prop adds to the meter.
-    let exposed = 0;
-    for (const t of state.gazeTruths) {
-      const cx = t.x + t.w / 2, cy = t.y + t.h / 2;
-      let covered = false;
-      for (const g of state.gazeProps) {
-        if (cx >= g.x && cx <= g.x + g.w && cy >= g.y && cy <= g.y + g.h) {
-          covered = true; break;
-        }
-      }
-      if (!covered) exposed++;
-    }
-    if (exposed > 0) {
-      state.gaze = Math.min(100, state.gaze + 22 * exposed * dt);
-      if (Math.random() < 0.04) beep(180 + state.gaze * 5, 0.06, 'triangle', 0.018);
-    } else {
-      state.gaze = Math.max(0, state.gaze - 9 * dt);
-    }
 
     // Doc collection — proximity-pickup on the 5 fixed-position docs.
     for (const d of state.docs) {
@@ -1208,30 +1155,48 @@ export default class GameScene extends Phaser.Scene {
         state.docsCollected++;
         beep(880, 0.08, 'sine', 0.13);
         setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
-        if (state.docsCollected >= state.docsTarget) this.triggerCheckpoint();
+        if (state.docsCollected >= state.docsTarget && !state.cookieReady) {
+          state.cookieReady = true;
+          // Pacify the cookie banner so the player can accept it.
+          state.agents.crushingCookie.state = 'returning';
+          this.startNarration([
+            { speaker: 'YOU', text: "Got everything I came for. Now to get out clean." },
+            { speaker: 'YOU', text: "Scroll all the way down — those cookies are the exit." },
+          ]);
+        }
       }
+    }
+
+    // Touching the cookie banner once cookieReady → checkpoint. Generous
+    // hit-band (40px above the banner) so the player doesn't have to thread
+    // a needle — descend into the banner zone and you're "accepting."
+    if (state.cookieReady) {
+      const cb = state.layout.cookie;
+      if (p.y > cb.y - 40 && p.y < cb.y + cb.h + 8) this.triggerCheckpoint();
     }
   }
 
   // ===== Checkpoint — flip Phase A → Phase B =====
   // Plays a short toto line, then on dismiss flips the phase and resets the
-  // doc counter so Phase B can count to 5 again. Static agents naturally
-  // return to idle once the player leaves their trigger range, but we also
-  // clear in-flight projectiles + cursor so the scroller starts clean.
+  // doc counter so Phase B can count to 5 again. The scroller picks up from
+  // the player's CURRENT scroll position (they're at the cookie banner near
+  // y=1160), not from the page top — the runner just keeps going from here.
   triggerCheckpoint() {
     const state = this.state;
     if (state.phase !== 'static') return;
+    state.phase = 'transitioning';   // guard against re-entry from agent updates
     // Lock further damage during the transition — no cheap deaths between
-    // the last doc grab and the scroller starting up.
+    // accepting the cookies and the scroller starting up.
     state.player.invuln = Math.max(state.player.invuln, 2.0);
     beep(523, 0.1, 'sine', 0.1);
     setTimeout(() => beep(659, 0.1, 'sine', 0.1), 90);
     setTimeout(() => beep(784, 0.2, 'sine', 0.12), 200);
     this.startNarration([
-      { speaker: 'YOU', text: "That's five. The page is going to start reacting — fast." },
-      { speaker: 'YOU', text: "Time to ride this out and find the way out." },
+      { speaker: 'YOU', text: "Cookies accepted. Of course they are." },
+      { speaker: 'YOU', text: "Now ride the page out and find a real exit." },
     ], () => {
-      // Flip phase
+      // Flip phase — KEEP the current scrollY and player position so the
+      // scroller continues from where the player is (per user request).
       state.phase = 'scroller';
       state.phaseTime = 0;
       state.docsCollected = 0;
@@ -1241,10 +1206,6 @@ export default class GameScene extends Phaser.Scene {
       state.projectiles.length = 0;
       state.bullets.length = 0;
       state.debris.length = 0;
-      // Re-seat the player to the scroller's starting position so they're
-      // not stuck at the bottom of the static page when the camera kicks in.
-      state.player.x = PLAYER.startX;
-      state.player.y = PLAYER.startY;
       // Reset scroller-spawn timers so the runner doesn't dump a backlog
       state.waveSpawnT = 2.5;
       state.powerupSpawnT = 4;
@@ -1554,120 +1515,67 @@ export default class GameScene extends Phaser.Scene {
     //  of on the hole art — looks cleaner. See updateHUD.)
   }
 
-  // ===== Phase A overlays — fixed docs + gaze props + gaze trackers =====
+  // ===== Phase A overlays — fixed-position docs (rectangular, same style
+  // as the scroller's hiddenDocs gold-paper look) plus a pulse on the
+  // cookie banner once all 5 docs are collected.
   drawPhaseAOverlays(ctx) {
     const state = this.state;
     const t = state.time;
 
-    // Gaze trackers — visible only when EXPOSED (no prop on top). They pulse
-    // red to tell the player "I'm what's filling the meter, cover me back up."
-    for (const trk of state.gazeTruths) {
-      const cx = trk.x + trk.w / 2, cy = trk.y + trk.h / 2;
-      let covered = false;
-      for (const g of state.gazeProps) {
-        if (cx >= g.x && cx <= g.x + g.w && cy >= g.y && cy <= g.y + g.h) {
-          covered = true; break;
-        }
-      }
-      if (covered) continue;
-      const pulse = 0.5 + Math.sin(t * 6) * 0.5;
-      ctx.save();
-      ctx.fillStyle = 'rgba(230, 57, 70, ' + (0.18 + pulse * 0.15) + ')';
-      ctx.fillRect(trk.x, trk.y, trk.w, trk.h);
-      ctx.strokeStyle = 'rgba(230, 57, 70, ' + (0.6 + pulse * 0.35) + ')';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(trk.x, trk.y, trk.w, trk.h);
-      ctx.fillStyle = '#E63946';
-      ctx.font = 'bold 10px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      ctx.fillText('● TRACKER', cx, cy);
-      ctx.textAlign = 'left';
-      ctx.restore();
-    }
-
-    // Gaze props — small ad-looking windows the player can drag.
-    for (const g of state.gazeProps) {
-      ctx.save();
-      if (g.dragging) {
-        ctx.shadowColor = 'rgba(0,0,0,0.35)';
-        ctx.shadowBlur = 14; ctx.shadowOffsetY = 4;
-      }
-      // Frame
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(g.x, g.y, g.w, g.h);
-      ctx.strokeStyle = '#1a1a1f';
-      ctx.lineWidth = 1.2;
-      ctx.strokeRect(g.x, g.y, g.w, g.h);
-      // Title bar
-      ctx.fillStyle = '#F4D35E';
-      ctx.fillRect(g.x, g.y, g.w, 14);
-      ctx.fillStyle = '#1a1a1f';
-      ctx.font = 'bold 9px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(g.label, g.x + 6, g.y + 7);
-      // × close button (cosmetic)
-      ctx.fillStyle = '#E63946';
-      ctx.fillRect(g.x + g.w - 11, g.y + 3, 8, 8);
-      ctx.fillStyle = '#fff';
-      ctx.font = '7px ui-monospace, monospace';
-      ctx.fillText('×', g.x + g.w - 9, g.y + 7);
-      // Body — fake ad blurb
-      ctx.fillStyle = '#666';
-      ctx.fillRect(g.x + 6, g.y + 22, g.w - 12, 4);
-      ctx.fillRect(g.x + 6, g.y + 30, g.w - 22, 4);
-      ctx.fillRect(g.x + 6, g.y + 38, g.w - 16, 4);
-      ctx.fillStyle = '#2D8659';
-      ctx.fillRect(g.x + 6, g.y + g.h - 14, 38, 10);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 7px ui-monospace, monospace';
-      ctx.fillText('BUY ▸', g.x + 10, g.y + g.h - 9);
-      ctx.restore();
-    }
-
-    // Fixed-position docs
+    // Fixed-position docs — rectangular gold-paper design, matched to
+    // hiddenDocs so Phase A and Phase B docs look the same.
+    const DW = 36, DH = 44;
     for (const d of state.docs) {
       if (d.taken) continue;
-      const pulse = 0.6 + Math.sin(t * 5 + d.x * 0.1) * 0.4;
+      const pulse = 0.6 + Math.sin(t * 6 + d.x * 0.1) * 0.4;
+      const dx = d.x - DW / 2;
+      const dy = d.y - DH / 2;
       ctx.save();
-      // Halo
-      ctx.globalAlpha = 0.35 + pulse * 0.25;
+      // Soft halo
+      ctx.globalAlpha = 0.45 + pulse * 0.25;
       ctx.fillStyle = '#F4D35E';
-      ctx.beginPath();
-      ctx.arc(d.x, d.y, d.r + 8, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillRect(dx - 8, dy - 8, DW + 16, DH + 16);
       ctx.globalAlpha = 1;
       // Body
       ctx.shadowColor = 'rgba(0,0,0,0.35)';
       ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
       ctx.fillStyle = '#F2C200';
-      ctx.beginPath();
-      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillRect(dx, dy, DW, DH);
       ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
       ctx.strokeStyle = '#1a1a1f';
       ctx.lineWidth = 2;
-      ctx.stroke();
-      // Tiny "doc" lines inside
+      ctx.strokeRect(dx, dy, DW, DH);
+      // Dog-ear corner
+      ctx.fillStyle = '#d4b94a';
+      ctx.beginPath();
+      ctx.moveTo(dx + DW - 10, dy);
+      ctx.lineTo(dx + DW, dy + 10);
+      ctx.lineTo(dx + DW - 10, dy + 10);
+      ctx.closePath();
+      ctx.fill();
+      // Text lines
       ctx.fillStyle = '#1a1a1f';
-      ctx.fillRect(d.x - 5, d.y - 3, 10, 1.5);
-      ctx.fillRect(d.x - 5, d.y,     8, 1.5);
-      ctx.fillRect(d.x - 5, d.y + 3, 9, 1.5);
+      ctx.fillRect(dx + 5, dy + 16, DW - 10, 2);
+      ctx.fillRect(dx + 5, dy + 22, DW - 14, 2);
+      ctx.fillRect(dx + 5, dy + 28, DW - 8,  2);
+      ctx.fillRect(dx + 5, dy + 34, DW - 20, 2);
+      // Pulsing border
+      const pb = 0.6 + Math.sin(t * 8) * 0.4;
+      ctx.strokeStyle = 'rgba(244, 211, 94, ' + (0.5 + pb * 0.5) + ')';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(dx - 2, dy - 2, DW + 4, DH + 4);
       ctx.restore();
     }
 
-    // Gaze meter — small bar above the player window, only shown when the
-    // meter is rising (kept off-HUD per the "HUD unchanged" constraint).
-    if (state.gaze > 1) {
-      const p = state.player;
-      const bw = 80, bh = 5;
-      const bx = p.x - bw / 2, by = p.y - p.size * 0.5 - 14;
+    // Once cookieReady, pulse the cookie banner so the player knows it's
+    // the exit. Drawn in world coords; banner already drawn underneath.
+    if (state.cookieReady) {
+      const cb = state.layout.cookie;
+      const pulse = 0.5 + Math.sin(t * 5) * 0.5;
       ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
-      const frac = state.gaze / 100;
-      ctx.fillStyle = frac > 0.7 ? '#E63946' : frac > 0.4 ? '#F4D35E' : '#7ad0eb';
-      ctx.fillRect(bx, by, bw * frac, bh);
+      ctx.strokeStyle = 'rgba(45, 134, 89, ' + (0.6 + pulse * 0.4) + ')';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(cb.x + 2, cb.y + 2, cb.w - 4, cb.h - 4);
       ctx.restore();
     }
   }
@@ -1873,8 +1781,10 @@ export default class GameScene extends Phaser.Scene {
       // normal comment there so they don't overlap.
       const escapeRow = state.escape
         ? Math.round((state.escape.commentY - COMMENTS_TOP) / ROW_H) : -1;
+      const fc = state.agents.fallingComment;
+      const fcRow = (state.phase === 'static' && fc.state !== 'idle') ? fc.commentIdx : -1;
       for (let i = iStart; i <= iEnd; i++) {
-        if (i === escapeRow) continue;
+        if (i === escapeRow || i === fcRow) continue;
         drawComment(ctx, CX, COMMENTS_TOP + i * ROW_H, CW, CH, i, false, null);
       }
     }
@@ -2141,17 +2051,18 @@ export default class GameScene extends Phaser.Scene {
     }
     if (this.runnerHud?.hpFill) {
       const hpPct = Math.max(0, Math.min(100, Math.round((p.hp / p.maxHp) * 100)));
+      const hpRound = Math.max(0, Math.round(p.hp));
       this.runnerHud.hpFill.style.width = hpPct + '%';
       // Color shifts as HP drops
       this.runnerHud.hpFill.style.background =
         hpPct > 60 ? 'linear-gradient(90deg, #2D8659 0%, #6dc89e 100%)'
         : hpPct > 30 ? 'linear-gradient(90deg, #F4D35E 0%, #ffe48a 100%)'
         : 'linear-gradient(90deg, #E63946 0%, #ff6b73 100%)';
-      this.runnerHud.hpNumber.textContent = p.hp + ' / ' + p.maxHp;
+      this.runnerHud.hpNumber.textContent = hpRound + ' / ' + p.maxHp;
     }
 
     // ── Legacy HUD writes (still set for any code path that reads them) ──
-    if (this.hud.size) this.hud.size.textContent = p.hp + ' / ' + p.maxHp;
+    if (this.hud.size) this.hud.size.textContent = Math.round(p.hp) + ' / ' + p.maxHp;
     if (this.hud.docs) this.hud.docs.textContent = state.docsCollected + ' / ' + state.docsTarget;
     if (this.hud.zoom) this.hud.zoom.textContent = Math.round(state.scrollSpeed);
   }

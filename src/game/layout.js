@@ -33,16 +33,22 @@ export function createLayout() {
   };
 }
 
-// Phase-A docs — 5 fixed positions on the static YouTube page. Constrained
-// to y ≤ ~370 because the visible viewport at fit-zoom is ~960×450 and the
-// player y-clamp tops out around 378. The scroll is locked during Phase A.
+// Phase-A docs — 5 fixed positions taken verbatim from
+// reference/operation_quiet_window_mission_02.html (the old build the user
+// loved). The Phase-A camera scrolls within a 960×1200 world, so all five
+// fit on the static page (no single-frame cluster).
+//   #1 beside the play button (centre of the video player)
+//   #2 in the empty area beside the lower comments
+//   #3 high in the rec sidebar
+//   #4 over the 1st comment
+//   #5 below the 3rd comment, right side
 export function createDocs() {
   return [
-    { x: 110, y: 60,  r: 13, taken: false, takeT: 0 }, // top-left by the logo
-    { x: 640, y: 80,  r: 13, taken: false, takeT: 0 }, // top of rec sidebar
-    { x: 920, y: 250, r: 13, taken: false, takeT: 0 }, // far right edge
-    { x: 200, y: 370, r: 13, taken: false, takeT: 0 }, // bottom-left under video
-    { x: 480, y: 380, r: 13, taken: false, takeT: 0 }, // centre-bottom row
+    { x: 200, y: 230, r: 13, taken: false, takeT: 0 },
+    { x: 140, y: 880, r: 13, taken: false, takeT: 0 },
+    { x: 780, y: 200, r: 13, taken: false, takeT: 0 },
+    { x: 320, y: 670, r: 13, taken: false, takeT: 0 },
+    { x: 800, y: 950, r: 13, taken: false, takeT: 0 },
   ];
 }
 
@@ -101,31 +107,6 @@ export function createScanFragments() {
       hidden:  'the public stays bored. bored stays quiet.',
       progress: 0, scanned: false,
     },
-  ];
-}
-
-// Phase-A gaze mechanic. Each gazeProp is a draggable "ad" window. Each
-// gazeTruth is a hidden tracker rect. While a tracker is NOT covered by any
-// prop, the gaze meter rises; once the meter fills, a hunter cursor spawns.
-// Props start covering trackers — the player has to drag them aside to grab
-// the docs underneath, then re-cover before gaze maxes out.
-export function createGazeProps() {
-  // Three small "ad" windows positioned to initially cover the three truths.
-  // Roughly the same size as the truths so a small nudge exposes them. Y
-  // values constrained to the Phase-A viewport (~960×450 at fit zoom).
-  return [
-    { x: 60,  y: 220, w: 130, h: 60, homeX: 60,  homeY: 220, dragging: false, dox: 0, doy: 0, label: 'AD' },
-    { x: 770, y: 130, w: 130, h: 60, homeX: 770, homeY: 130, dragging: false, dox: 0, doy: 0, label: 'PROMOTED' },
-    { x: 300, y: 300, w: 130, h: 60, homeX: 300, homeY: 300, dragging: false, dox: 0, doy: 0, label: 'SPONSORED' },
-  ];
-}
-
-export function createGazeTruths() {
-  // Same footprint as the props (so a prop on its home spot fully covers it).
-  return [
-    { x: 60,  y: 220, w: 130, h: 60 },
-    { x: 770, y: 130, w: 130, h: 60 },
-    { x: 300, y: 300, w: 130, h: 60 },
   ];
 }
 
