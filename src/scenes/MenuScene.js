@@ -65,6 +65,8 @@ export default class MenuScene extends Phaser.Scene {
      * Generates all UI textures programmatically.
      */
     generateTextures() {
+        if (this.textures.exists('icon_metube')) return;
+        
         // 1. Black Play Button Icon (Infiltrating Logo)
         const logoGraphics = this.make.graphics({ x: 0, y: 0, add: false });
         logoGraphics.fillStyle(0x000000, 1);
