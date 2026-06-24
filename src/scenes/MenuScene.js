@@ -281,6 +281,7 @@ export default class MenuScene extends Phaser.Scene {
     }
 
     triggerShutdown() {
+<<<<<<< Updated upstream
         const overlay = this.add.graphics();
         overlay.fillStyle(0x000000, 1);
         overlay.fillRect(0, 0, this.scale.width, this.scale.height);
@@ -293,6 +294,13 @@ export default class MenuScene extends Phaser.Scene {
         this.time.delayedCall(2000, () => {
             shutdownText.setText('It is now safe to turn off your computer.');
         });
+=======
+        playSfx('desktopClick');
+        const loginScreen = document.getElementById('login-screen');
+        if (loginScreen) {
+            loginScreen.classList.remove('hidden');
+        }
+>>>>>>> Stashed changes
     }
 
     launchLevel(sceneKey, launchHud) {

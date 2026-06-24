@@ -100,3 +100,16 @@ function buildDevJumpPanel(game) {
 
   (document.body || document.documentElement).appendChild(wrap);
 }
+
+// Wire up the login screen button
+document.addEventListener('DOMContentLoaded', () => {
+  const loginBtn = document.getElementById('login-btn');
+  const loginScreen = document.getElementById('login-screen');
+  
+  if (loginBtn && loginScreen) {
+    loginBtn.addEventListener('click', () => {
+      // Hide the login overlay, revealing the game canvas (MenuScene desktop) underneath
+      loginScreen.classList.add('hidden');
+    });
+  }
+});

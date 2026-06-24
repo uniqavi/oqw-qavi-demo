@@ -7,8 +7,8 @@
 // they read getMasterVolume() and subscribe via onMasterVolumeChange() to scale
 // their own element volumes. One slider therefore drives everything.
 
-let audioCtx = null;
-let masterGain = null;
+export let audioCtx = null;
+export let masterGain = null;
 
 const VOL_KEY = 'oqw-volume';
 const clamp01 = (v) => Math.max(0, Math.min(1, v));

@@ -7,12 +7,130 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Saira+Condensed:ital,wght@0,500;0,700;0,800;0,900;1,800;1,900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;700&family=Courier+Prime&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-tint": "#4b53bc",
+                        "on-primary": "#ffffff",
+                        "on-surface-variant": "#464653",
+                        "on-primary-fixed-variant": "#3239a3",
+                        "secondary-fixed": "#93f2f2",
+                        "primary-fixed-dim": "#bfc2ff",
+                        "on-tertiary-fixed-variant": "#82271c",
+                        "on-primary-container": "#777eea",
+                        "secondary": "#006a6a",
+                        "secondary-container": "#90efef",
+                        "on-tertiary-container": "#d96756",
+                        "inverse-on-surface": "#f1f0f0",
+                        "on-error": "#ffffff",
+                        "on-primary-fixed": "#00006e",
+                        "tertiary": "#220000",
+                        "on-background": "#1a1c1c",
+                        "surface-variant": "#e3e2e2",
+                        "tertiary-container": "#4d0000",
+                        "surface": "#faf9f9",
+                        "primary-container": "#000080",
+                        "on-secondary": "#ffffff",
+                        "primary-fixed": "#e0e0ff",
+                        "surface-dim": "#dadada",
+                        "tertiary-fixed": "#ffdad4",
+                        "on-surface": "#1a1c1c",
+                        "on-secondary-fixed-variant": "#004f4f",
+                        "on-tertiary-fixed": "#410000",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed": "#002020",
+                        "outline": "#767684",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f4f3f3",
+                        "outline-variant": "#c6c5d5",
+                        "surface-container-high": "#e8e8e8",
+                        "tertiary-fixed-dim": "#ffb4a8",
+                        "secondary-fixed-dim": "#76d6d5",
+                        "on-tertiary": "#ffffff",
+                        "inverse-surface": "#2f3131",
+                        "error": "#ba1a1a",
+                        "surface-container": "#eeeeee",
+                        "on-secondary-container": "#006e6e",
+                        "surface-container-highest": "#e3e2e2",
+                        "surface-bright": "#faf9f9",
+                        "on-error-container": "#93000a",
+                        "background": "#faf9f9",
+                        "primary": "#00003c",
+                        "inverse-primary": "#bfc2ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "window-padding": "4px",
+                        "border-width": "1px",
+                        "bevel-width": "2px",
+                        "section-margin": "16px",
+                        "container-gap": "8px"
+                    },
+                    "fontFamily": {
+                        "title-bar": ["Work Sans"],
+                        "menu-item": ["Work Sans"],
+                        "code-mono": ["Courier Prime"],
+                        "body-ms": ["Work Sans"],
+                        "button-text": ["Work Sans"]
+                    },
+                    "fontSize": {
+                        "title-bar": ["11px", { "lineHeight": "14px", "letterSpacing": "0.5px", "fontWeight": "700" }],
+                        "menu-item": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "code-mono": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "body-ms": ["12px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "button-text": ["12px", { "lineHeight": "12px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body class="menu-mode">
     <!-- Fixed 1920x1080 design surface. JS scales it to fit the browser window
          while preserving aspect ratio — the rest of the layout uses logical px. -->
     <div class="viewport" id="viewport">
+      
+      <!-- New Login Screen Overlay -->
+      <div id="login-screen" class="absolute inset-0 z-[10000] flex flex-col items-center justify-center font-body-ms text-body-ms overflow-hidden selection:bg-primary selection:text-on-primary" style="background-color: #00001a; background-image: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); background-size: 100% 4px, 6px 100%;">
+        <!-- Main Login Modal/Window Context -->
+        <main class="flex flex-col items-center justify-center p-8 gap-12 z-10 relative w-full max-w-sm">
+          <!-- Logo Section -->
+          <div class="flex flex-col items-center gap-6">
+            <div class="logo-container bg-black w-24 h-24 rounded flex items-center justify-center relative shadow-[4px_4px_0px_rgba(0,0,0,0.5)]" style="border: 1px solid #000000; box-shadow: inset 2px 2px 0px #ffffff, inset -2px -2px 0px #808080;">
+              <!-- White Play Button Triangle -->
+              <div class="w-0 h-0 border-t-[16px] border-t-transparent border-l-[24px] border-l-white border-b-[16px] border-b-transparent translate-x-1"></div>
+            </div>
+            <div class="text-center space-y-1">
+              <h1 class="font-title-bar text-title-bar text-white tracking-widest uppercase">MeTube OS</h1>
+              <p class="font-code-mono text-code-mono text-gray-400">v.19.95 | Terminal Access</p>
+            </div>
+          </div>
+          <!-- Action Section -->
+          <div class="w-full flex justify-center">
+            <button id="login-btn" class="brutalist-button font-button-text text-button-text px-8 py-3 shadow-[4px_4px_0px_rgba(0,0,0,0.5)] focus:outline-none uppercase tracking-wider flex items-center gap-2 transition-none" style="border-top: 2px solid #ffffff; border-left: 2px solid #ffffff; border-bottom: 2px solid #808080; border-right: 2px solid #808080; background-color: #c0c0c0; color: #000000;" onmousedown="this.style.borderTop='2px solid #808080'; this.style.borderLeft='2px solid #808080'; this.style.borderBottom='2px solid #ffffff'; this.style.borderRight='2px solid #ffffff'; this.style.paddingTop='calc(0.75rem + 1px)'; this.style.paddingLeft='calc(2rem + 1px)'; this.style.paddingBottom='calc(0.75rem - 1px)'; this.style.paddingRight='calc(2rem - 1px)';" onmouseup="this.style.borderTop='2px solid #ffffff'; this.style.borderLeft='2px solid #ffffff'; this.style.borderBottom='2px solid #808080'; this.style.borderRight='2px solid #808080'; this.style.paddingTop='0.75rem'; this.style.paddingLeft='2rem'; this.style.paddingBottom='0.75rem'; this.style.paddingRight='2rem';">
+              <span class="material-symbols-outlined" style="font-size: 16px;">login</span>
+              <span>Enter System</span>
+            </button>
+          </div>
+        </main>
+        <!-- Retro OS overlay effects (optional, subtle styling) -->
+        <div class="absolute inset-0 pointer-events-none z-50 mix-blend-overlay opacity-10">
+          <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,black_100%)]"></div>
+        </div>
+      </div>
+
       <div class="frame">
         <div class="tabs" id="browser-tabs">
           <div class="tab active" data-tab="youtube"><span class="dot">●</span>totallynormaltube.gov.??<span class="x">×</span></div>
