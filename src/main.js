@@ -102,14 +102,13 @@ function buildDevJumpPanel(game) {
 }
 
 // Wire up the login screen button
-document.addEventListener('DOMContentLoaded', () => {
-  const loginBtn = document.getElementById('login-btn');
-  const loginScreen = document.getElementById('login-screen');
-  
-  if (loginBtn && loginScreen) {
-    loginBtn.addEventListener('click', () => {
-      // Hide the login overlay, revealing the game canvas (MenuScene desktop) underneath
-      loginScreen.classList.add('hidden');
-    });
-  }
-});
+const loginBtn = document.getElementById('login-btn');
+const loginScreen = document.getElementById('login-screen');
+
+if (loginBtn && loginScreen) {
+  loginBtn.addEventListener('click', () => {
+    // Hide the login overlay, revealing the game canvas (MenuScene desktop) underneath
+    loginScreen.classList.add('hidden');
+    loginScreen.classList.remove('flex');
+  });
+}
