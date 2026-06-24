@@ -1,8 +1,13 @@
 // Agent: the cookie banner pushes upward to crush the player when they
 // approach the bottom of the page. Mutates state.layout.cookie y/h.
 // Phaser-free.
+//
+// Trigger key off the banner's current home position (agent.homeY) rather
+// than the page bottom (PH=1e9), so the agent works correctly in both the
+// scroller (banner pinned at PH-40) and Phase A static (banner pinned in
+// the visible viewport).
 
-import { PH, AGENTS, DAMAGE } from '../../config.js';
+import { AGENTS, DAMAGE } from '../../config.js';
 import { beep } from '../audio.js';
 import { damagePlayer } from '../combat.js';
 
@@ -11,9 +16,11 @@ const T = AGENTS.crushingCookie;
 export function update(agent, dt, state) {
   const p = state.player;
   const layout = state.layout;
+  const homeY = agent.homeY ?? layout.cookie.y;
+  const homeH = agent.homeH ?? 40;
 
   if (agent.state === 'idle') {
-    if (p.y > PH - agent.triggerR) {
+    if (p.y > homeY - agent.triggerR) {
       agent.state = 'crushing';
       agent.vy = 0;
       beep(180, 0.4, 'sawtooth', 0.1);
@@ -23,15 +30,15 @@ export function update(agent, dt, state) {
     layout.cookie.y -= agent.vy * dt;
     layout.cookie.h += agent.vy * dt;
     if (p.y > layout.cookie.y) damagePlayer(state, DAMAGE.crushingCookie, 0, T.knockY);
-    if (layout.cookie.y < p.y - 100 || layout.cookie.y < 200) {
+    if (layout.cookie.y < p.y - 100 || layout.cookie.y < homeY - 240) {
       agent.state = 'returning';
     }
   } else if (agent.state === 'returning') {
-    layout.cookie.y += (PH - 40 - layout.cookie.y) * Math.min(1, dt * 2);
-    layout.cookie.h += (40 - layout.cookie.h) * Math.min(1, dt * 2);
-    if (Math.abs(layout.cookie.y - (PH - 40)) < 1) {
-      layout.cookie.y = PH - 40;
-      layout.cookie.h = 40;
+    layout.cookie.y += (homeY - layout.cookie.y) * Math.min(1, dt * 2);
+    layout.cookie.h += (homeH - layout.cookie.h) * Math.min(1, dt * 2);
+    if (Math.abs(layout.cookie.y - homeY) < 1) {
+      layout.cookie.y = homeY;
+      layout.cookie.h = homeH;
       agent.state = 'idle';
     }
   }
@@ -47,7 +54,10 @@ export function drawBanner(ctx, agent, state) {
   // a warning shadow appears on the floor under the banner. Gives the
   // player a visible "back away or face the wall" signal.
   if (agent.state === 'idle') {
-    const distFromBottom = (PH - p.y);
+    // Distance from the banner's home (top edge) — works for both Phase A
+    // (banner pinned near viewport bottom) and Phase B (PH-40, far away).
+    const homeY = agent.homeY ?? cb.y;
+    const distFromBottom = (homeY - p.y);
     const proximity = 1 - Math.min(1, distFromBottom / agent.triggerR);
     if (proximity > 0.05) {
       const flash = 0.35 + Math.sin(state.time * 14) * 0.15 * proximity;

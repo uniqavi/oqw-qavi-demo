@@ -9,6 +9,8 @@ import {
   createTruth,
   createLooseCookies,
   createScanFragments,
+  createGazeProps,
+  createGazeTruths,
 } from './layout.js';
 
 // Initial agent data. Each agent's update logic will live in src/game/agents/<name>.js
@@ -83,6 +85,7 @@ export function createState() {
       invuln: 0, hitFlash: 0, growT: 0,
       hp: PLAYER.startHp,         // HP-bar damage model (replaces size shrink)
       maxHp: PLAYER.maxHp,
+      useHp: true,                // GameScene uses the HP model in both phases
       // Active buff timers — each decremented per frame, drives effect.
       // (`size` retained for backwards-compat with the test panel; no
       // runtime powerup grants it anymore.)
@@ -155,6 +158,12 @@ export function createState() {
     // Generic narration (player's own voice etc.) — reuses the intel dialog
     // DOM. null when idle; { lines, idx, typing } while showing.
     narration: null,
+    // Two-phase level model.
+    //   'static'   — pre-checkpoint hostile YouTube page. All 6 static agents
+    //                active, gaze/cursor active, 5 fixed-position docs to grab.
+    //                Scroll is locked at 0; no Waves/Powerups/HiddenDocs.
+    //   'scroller' — post-checkpoint runner. Current GameScene behavior.
+    phase: 'static',
     agents: createAgents(),
     layout: createLayout(),
     docs: createDocs(),
@@ -163,6 +172,10 @@ export function createState() {
     truth: createTruth(),
     looseCookies: createLooseCookies(),
     scanFragments: createScanFragments(),
+    // Phase-A-only — draggable propaganda windows and the hidden trackers
+    // they're meant to cover. Uncovered trackers drive the gaze meter.
+    gazeProps: createGazeProps(),
+    gazeTruths: createGazeTruths(),
   };
 }
 
@@ -264,6 +277,13 @@ export function resetState(state) {
   gs.armLength = 0;
   gs.awakenT = 0; gs.aimT = 0; gs.spentT = 0;
   gs.currentAngle = AGENTS.gunShooter.initialAngle;
+
+  // Phase + Phase-A-only state
+  state.phase = 'static';
+  state.gazeProps.forEach(g => {
+    g.x = g.homeX; g.y = g.homeY;
+    g.dragging = false; g.dox = 0; g.doy = 0;
+  });
 
   state.status = 'playing';
 }

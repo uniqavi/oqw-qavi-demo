@@ -93,6 +93,42 @@ export default class GameScene extends Phaser.Scene {
     // gives new players room to figure out the controls.
     this.state.gunGraceUntil = this.diffMod.gunGrace;
 
+    // ── Phase A setup ────────────────────────────────────────────────────
+    // The Phase-A static page has a much smaller visible viewport than the
+    // scroller (the scroller's PH is ~1e9, so the cookie banner and most
+    // comment slots are normally off-screen). Override anchor positions so
+    // all 6 agents land inside the visible ~960×450 viewport.
+    {
+      // Cookie banner: home at y=420 (just below the player y-clamp top of ~378)
+      this.state.layout.cookie.y = 420;
+      this.state.layout.cookie.h = 40;
+      const cc = this.state.agents.crushingCookie;
+      cc.homeY = 420;
+      cc.homeH = 40;
+      // Triggered when the player drops to roughly the bottom third
+      cc.triggerR = 130 * this.diffMod.triggerRange;
+
+      // Falling comment: replace the off-screen commentSlots row with a
+      // visible row right below the description / button area.
+      const fc = this.state.agents.fallingComment;
+      fc.slotOverride = { x: 24, y: 380, w: 580, h: 56 };
+      fc.x = fc.slotOverride.x;
+      fc.y = fc.slotOverride.y;
+      fc.w = fc.slotOverride.w;
+      fc.h = fc.slotOverride.h;
+
+      // Chasing recs: instances are recIdx 1 (visible at y=166) and 4
+      // (off-screen at y=454). Override the second one with a visible slot.
+      const cr2 = this.state.agents.chasingRecs[1];
+      if (cr2) {
+        cr2.slot = { x: 620, y: 262, w: 320, h: 86 };
+        cr2.x = cr2.slot.x;
+        cr2.y = cr2.slot.y;
+        cr2.w = cr2.slot.w;
+        cr2.h = cr2.slot.h;
+      }
+    }
+
     // Swap menu music → L1 theme. Crossfade so it feels continuous.
     crossfadeTo('level1', { fadeMs: 1500 });
 
@@ -407,11 +443,26 @@ export default class GameScene extends Phaser.Scene {
     initAudio();
     this.updateMouseCoords(pointer);
     this.state.mouse.down = true;
+    const m = this.state.mouse;
+    // Phase A — drag the propaganda ads aside to reach docs (which exposes
+    // the trackers beneath and starts the gaze meter rising).
+    if (this.state.phase === 'static') {
+      for (let i = this.state.gazeProps.length - 1; i >= 0; i--) {
+        const g = this.state.gazeProps[i];
+        if (m.x >= g.x && m.x <= g.x + g.w && m.y >= g.y && m.y <= g.y + g.h) {
+          g.dragging = true;
+          g.dox = m.x - g.x;
+          g.doy = m.y - g.y;
+          beep(420, 0.04, 'square', 0.04);
+          return;
+        }
+      }
+      return;
+    }
     // The suspicious comment is only draggable during the escape's 'drag' step.
     if (!this.state.escape || this.state.escape.step !== 'drag') return;
     for (let i = this.state.propaganda.length - 1; i >= 0; i--) {
       const p = this.state.propaganda[i];
-      const m = this.state.mouse;
       if (m.x >= p.x && m.x <= p.x + p.w && m.y >= p.y && m.y <= p.y + p.h) {
         p.dragging = true;
         p.dox = m.x - p.x;
@@ -426,6 +477,12 @@ export default class GameScene extends Phaser.Scene {
     this.state.propaganda.forEach((p) => {
       if (p.dragging) {
         p.dragging = false;
+        beep(280, 0.04, 'square', 0.03);
+      }
+    });
+    this.state.gazeProps.forEach((g) => {
+      if (g.dragging) {
+        g.dragging = false;
         beep(280, 0.04, 'square', 0.03);
       }
     });
@@ -817,7 +874,13 @@ export default class GameScene extends Phaser.Scene {
     const dt = Math.min(0.05, deltaMs / 1000);
     // Don't accrue game time while a tip or the intel memo is on-screen.
     // The run-time stat shouldn't punish players for reading.
-    if (!this.state.intelDialog && !this.state.tipShowing && !this.state.narration && !isPauseOpen()) this.state.time += dt;
+    if (!this.state.intelDialog && !this.state.tipShowing && !this.state.narration && !isPauseOpen()) {
+      this.state.time += dt;
+      // phaseTime is a separate clock that resets at the checkpoint, so the
+      // scroller's slow→fast ramp starts fresh in Phase B (rather than
+      // already being mid-ramp because state.time was already large).
+      this.state.phaseTime = (this.state.phaseTime ?? 0) + dt;
+    }
 
     // Smooth zoom toward target
     const c = this.state.cam;
@@ -890,17 +953,26 @@ export default class GameScene extends Phaser.Scene {
     // scroll is NOT affected by SHIFT — it ramps purely on time. During the
     // escape the scroll is owned by updateEscapeScroll. dScroll = actual
     // camera delta this frame, used to auto-advance the player.
+    //
+    // Phase A (static) — scroll locked at 0 while the player fights the
+    // 6 static agents and collects 5 fixed-position docs. The scroller ramp
+    // only starts after the checkpoint flips state.phase to 'scroller', and
+    // state.phaseTime resets to 0 so the slow→fast ramp starts fresh.
     const viewW = this.VW / c.zoom;
     const viewH = this.VH / c.zoom;
     const prevScrollY = state.scrollY;
-    if (state.escape) {
+    if (state.phase === 'static') {
+      state.scrollY = 0;
+      state.scrollSpeed = 0;
+    } else if (state.escape) {
       this.updateEscapeScroll(dt, viewH);
     } else {
+      const pt = state.phaseTime ?? state.time;
       let baseRamped;
-      if (state.time < SCROLL.slowDuration) {
+      if (pt < SCROLL.slowDuration) {
         baseRamped = SCROLL.slowSpeed;
       } else {
-        const rampT = Math.min(1, (state.time - SCROLL.slowDuration) / SCROLL.rampDuration);
+        const rampT = Math.min(1, (pt - SCROLL.slowDuration) / SCROLL.rampDuration);
         baseRamped = SCROLL.slowSpeed + (SCROLL.fastSpeed - SCROLL.slowSpeed) * rampT;
       }
       state.scrollSpeed = baseRamped;
@@ -949,10 +1021,11 @@ export default class GameScene extends Phaser.Scene {
     if (p.hitFlash > 0) p.hitFlash -= dt;
     if (p.growT > 0) p.growT -= dt;
 
-    // ── Wave enemies + powerups + hidden docs ─────────────────────────────
-    // During the escape sequence we stop spawning new threats/docs and let
-    // any in-flight ones clear. Enemies still update so they fly off-screen.
-    if (!state.escape) {
+    // ── Wave enemies + powerups + hidden docs (Phase B only) ─────────────
+    // Phase A has no scroller spawn systems — it's pure static-page combat.
+    // During the escape sequence we also stop spawning new threats/docs and
+    // let any in-flight ones clear. Enemies still update so they fly off.
+    if (state.phase === 'scroller' && !state.escape) {
       Waves.tickSpawner(state, dt, viewH);
       Powerups.tick(state, dt, viewH);
       const docsBefore = state.docsCollected;
@@ -960,11 +1033,16 @@ export default class GameScene extends Phaser.Scene {
       if (state.docsCollected > docsBefore) {
         beep(880, 0.08, 'sine', 0.13);
         setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
-        // Collected the last doc → kick off the escape sequence.
+        // Collected the last scroller doc → kick off the escape sequence.
         if (state.docsCollected >= state.docsTarget) this.beginEscape();
       }
     }
-    Waves.update(state, dt, viewH);
+    if (state.phase === 'scroller') Waves.update(state, dt, viewH);
+
+    // Phase-A advance: tick the static-page combat, then check checkpoint.
+    if (state.phase === 'static') {
+      this.updateStaticPhase(dt);
+    }
 
     // Humour quip — after a couple of hits the player grumbles about getting
     // attacked, then realises the irony. Non-blocking (doesn't pause).
@@ -1009,10 +1087,9 @@ export default class GameScene extends Phaser.Scene {
     // (Old auto-reveal of the suspicious comment removed — the escape
     // sequence now owns the weird-comment → hole reveal. See updateEscape.)
 
-    // Cursor (gaze enforcer) — disabled in L1 for accessibility (config L1).
-    // The lethal hunter debuts in L2. Gaze can still rise/fall as feedback,
-    // it just never spawns the cursor here.
-    if (L1.gazeEnforcer && state.gaze >= GAZE.threshold && !state.cursor) {
+    // Cursor (gaze enforcer) — Phase A enables it (it's the signature
+    // mission_02 hunter); Phase B leaves it off per the L1 accessibility pass.
+    if ((state.phase === 'static' || L1.gazeEnforcer) && state.gaze >= GAZE.threshold && !state.cursor) {
       state.cursor = { x: -40, y: 50, vx: 0, vy: 0, born: 0 };
       state.stats.gazeMaxed = true;
       noise(0.35, 0.16);
@@ -1043,11 +1120,9 @@ export default class GameScene extends Phaser.Scene {
     // auto-collected as the runner scrolls past them. The runner's only
     // collectible is the hidden-doc system above.)
 
-    // X-ray scanning (spatial) — the truth shows only through the window.
-    // Sweep the window across an element to cover it; once enough of its width
-    // has been swept, the reveal latches persistent. Free + optional — does
-    // not gate the win.
-    {
+    // X-ray scanning (Phase B only) — sweep the window across hidden truths
+    // to latch them open. Free + optional, doesn't gate the win.
+    if (state.phase === 'scroller') {
       const s = p.size, ph = s * 0.75;
       const px = p.x - s / 2, py = p.y - ph / 2;
       for (const f of state.scanFragments) {
@@ -1065,25 +1140,116 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Agents — Level 1 runs a REDUCED set for accessibility (see config L1).
-    // Disabled agents are simply never updated, so they stay idle and render
-    // as harmless page components. Projectile-cleanup loops always run so any
-    // in-flight projectiles still despawn cleanly.
-    ChasingRecs.updateAll(state.agents.chasingRecs.slice(0, L1.activeChasingRecs), dt, state);
-    if (L1.shootingSearch) ShootingSearch.update(state.agents.shootingSearch, dt, state);
+    // Agents — Phase A enables ALL 6 (the old static-page combat); Phase B
+    // runs the reduced L1 set (currently all flags off, so the page is calm
+    // for the runner). Projectile-cleanup loops always run so in-flight
+    // projectiles despawn cleanly across the phase swap.
+    const inStatic = state.phase === 'static';
+    const chaseCount = inStatic ? state.agents.chasingRecs.length : L1.activeChasingRecs;
+    ChasingRecs.updateAll(state.agents.chasingRecs.slice(0, chaseCount), dt, state);
+    if (inStatic || L1.shootingSearch) ShootingSearch.update(state.agents.shootingSearch, dt, state);
     ShootingSearch.updateProjectiles(state, dt);
-    if (L1.fallingComment) FallingComment.update(state.agents.fallingComment, dt, state);
-    if (L1.explodingLike) ExplodingLike.update(state.agents.explodingLike, dt, state);
+    if (inStatic || L1.fallingComment) FallingComment.update(state.agents.fallingComment, dt, state);
+    if (inStatic || L1.explodingLike) ExplodingLike.update(state.agents.explodingLike, dt, state);
     ExplodingLike.updateProjectiles(state, dt);
-    if (L1.crushingCookie) CrushingCookie.update(state.agents.crushingCookie, dt, state);
+    if (inStatic || L1.crushingCookie) CrushingCookie.update(state.agents.crushingCookie, dt, state);
     // Gun shooter — gated by the difficulty grace period so new players get a
     // chance to learn the controls before it can fire.
-    if (L1.gunShooter && state.time >= state.gunGraceUntil) {
+    if ((inStatic || L1.gunShooter) && state.time >= state.gunGraceUntil) {
       GunShooter.update(state.agents.gunShooter, dt, state);
     }
     GunShooter.updateProjectiles(state, dt);
 
     // (Old hole win-trigger removed — the escape sequence owns the exit now.)
+  }
+
+  // ===== PHASE A — static-page combat (pre-checkpoint) =====
+  // Runs every frame while state.phase === 'static'. Drives:
+  //   - the 5 fixed-position doc pickups (state.docs)
+  //   - the gaze meter (uncovered gazeTruths add gaze; cursor at 100)
+  //   - prop-drag follows the mouse (mirrors the propaganda-drag in Phase B)
+  //   - checkpoint trigger when all 5 docs are taken
+  updateStaticPhase(dt) {
+    const state = this.state;
+    const p = state.player;
+
+    // Drag any gaze-prop that's currently grabbed.
+    for (const g of state.gazeProps) {
+      if (g.dragging) {
+        g.x = Phaser.Math.Clamp(state.mouse.x - g.dox, 0, PW - g.w);
+        g.y = Phaser.Math.Clamp(state.mouse.y - g.doy, 60, PH - g.h);
+      }
+    }
+
+    // Gaze: any tracker NOT covered by SOME prop adds to the meter.
+    let exposed = 0;
+    for (const t of state.gazeTruths) {
+      const cx = t.x + t.w / 2, cy = t.y + t.h / 2;
+      let covered = false;
+      for (const g of state.gazeProps) {
+        if (cx >= g.x && cx <= g.x + g.w && cy >= g.y && cy <= g.y + g.h) {
+          covered = true; break;
+        }
+      }
+      if (!covered) exposed++;
+    }
+    if (exposed > 0) {
+      state.gaze = Math.min(100, state.gaze + 22 * exposed * dt);
+      if (Math.random() < 0.04) beep(180 + state.gaze * 5, 0.06, 'triangle', 0.018);
+    } else {
+      state.gaze = Math.max(0, state.gaze - 9 * dt);
+    }
+
+    // Doc collection — proximity-pickup on the 5 fixed-position docs.
+    for (const d of state.docs) {
+      if (d.taken) continue;
+      if (dist(p.x, p.y, d.x, d.y) < d.r + p.size * 0.32) {
+        d.taken = true; d.takeT = state.time;
+        state.docsCollected++;
+        beep(880, 0.08, 'sine', 0.13);
+        setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
+        if (state.docsCollected >= state.docsTarget) this.triggerCheckpoint();
+      }
+    }
+  }
+
+  // ===== Checkpoint — flip Phase A → Phase B =====
+  // Plays a short toto line, then on dismiss flips the phase and resets the
+  // doc counter so Phase B can count to 5 again. Static agents naturally
+  // return to idle once the player leaves their trigger range, but we also
+  // clear in-flight projectiles + cursor so the scroller starts clean.
+  triggerCheckpoint() {
+    const state = this.state;
+    if (state.phase !== 'static') return;
+    // Lock further damage during the transition — no cheap deaths between
+    // the last doc grab and the scroller starting up.
+    state.player.invuln = Math.max(state.player.invuln, 2.0);
+    beep(523, 0.1, 'sine', 0.1);
+    setTimeout(() => beep(659, 0.1, 'sine', 0.1), 90);
+    setTimeout(() => beep(784, 0.2, 'sine', 0.12), 200);
+    this.startNarration([
+      { speaker: 'YOU', text: "That's five. The page is going to start reacting — fast." },
+      { speaker: 'YOU', text: "Time to ride this out and find the way out." },
+    ], () => {
+      // Flip phase
+      state.phase = 'scroller';
+      state.phaseTime = 0;
+      state.docsCollected = 0;
+      // Clear Phase-A-only state so the scroller starts clean
+      state.cursor = null;
+      state.gaze = 0;
+      state.projectiles.length = 0;
+      state.bullets.length = 0;
+      state.debris.length = 0;
+      // Re-seat the player to the scroller's starting position so they're
+      // not stuck at the bottom of the static page when the camera kicks in.
+      state.player.x = PLAYER.startX;
+      state.player.y = PLAYER.startY;
+      // Reset scroller-spawn timers so the runner doesn't dump a backlog
+      state.waveSpawnT = 2.5;
+      state.powerupSpawnT = 4;
+      state.hiddenDocSpawnT = 10;
+    });
   }
 
   // ===== ESCAPE SEQUENCE (after the 5 docs are collected) =====
@@ -1388,6 +1554,124 @@ export default class GameScene extends Phaser.Scene {
     //  of on the hole art — looks cleaner. See updateHUD.)
   }
 
+  // ===== Phase A overlays — fixed docs + gaze props + gaze trackers =====
+  drawPhaseAOverlays(ctx) {
+    const state = this.state;
+    const t = state.time;
+
+    // Gaze trackers — visible only when EXPOSED (no prop on top). They pulse
+    // red to tell the player "I'm what's filling the meter, cover me back up."
+    for (const trk of state.gazeTruths) {
+      const cx = trk.x + trk.w / 2, cy = trk.y + trk.h / 2;
+      let covered = false;
+      for (const g of state.gazeProps) {
+        if (cx >= g.x && cx <= g.x + g.w && cy >= g.y && cy <= g.y + g.h) {
+          covered = true; break;
+        }
+      }
+      if (covered) continue;
+      const pulse = 0.5 + Math.sin(t * 6) * 0.5;
+      ctx.save();
+      ctx.fillStyle = 'rgba(230, 57, 70, ' + (0.18 + pulse * 0.15) + ')';
+      ctx.fillRect(trk.x, trk.y, trk.w, trk.h);
+      ctx.strokeStyle = 'rgba(230, 57, 70, ' + (0.6 + pulse * 0.35) + ')';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(trk.x, trk.y, trk.w, trk.h);
+      ctx.fillStyle = '#E63946';
+      ctx.font = 'bold 10px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.fillText('● TRACKER', cx, cy);
+      ctx.textAlign = 'left';
+      ctx.restore();
+    }
+
+    // Gaze props — small ad-looking windows the player can drag.
+    for (const g of state.gazeProps) {
+      ctx.save();
+      if (g.dragging) {
+        ctx.shadowColor = 'rgba(0,0,0,0.35)';
+        ctx.shadowBlur = 14; ctx.shadowOffsetY = 4;
+      }
+      // Frame
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(g.x, g.y, g.w, g.h);
+      ctx.strokeStyle = '#1a1a1f';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(g.x, g.y, g.w, g.h);
+      // Title bar
+      ctx.fillStyle = '#F4D35E';
+      ctx.fillRect(g.x, g.y, g.w, 14);
+      ctx.fillStyle = '#1a1a1f';
+      ctx.font = 'bold 9px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(g.label, g.x + 6, g.y + 7);
+      // × close button (cosmetic)
+      ctx.fillStyle = '#E63946';
+      ctx.fillRect(g.x + g.w - 11, g.y + 3, 8, 8);
+      ctx.fillStyle = '#fff';
+      ctx.font = '7px ui-monospace, monospace';
+      ctx.fillText('×', g.x + g.w - 9, g.y + 7);
+      // Body — fake ad blurb
+      ctx.fillStyle = '#666';
+      ctx.fillRect(g.x + 6, g.y + 22, g.w - 12, 4);
+      ctx.fillRect(g.x + 6, g.y + 30, g.w - 22, 4);
+      ctx.fillRect(g.x + 6, g.y + 38, g.w - 16, 4);
+      ctx.fillStyle = '#2D8659';
+      ctx.fillRect(g.x + 6, g.y + g.h - 14, 38, 10);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 7px ui-monospace, monospace';
+      ctx.fillText('BUY ▸', g.x + 10, g.y + g.h - 9);
+      ctx.restore();
+    }
+
+    // Fixed-position docs
+    for (const d of state.docs) {
+      if (d.taken) continue;
+      const pulse = 0.6 + Math.sin(t * 5 + d.x * 0.1) * 0.4;
+      ctx.save();
+      // Halo
+      ctx.globalAlpha = 0.35 + pulse * 0.25;
+      ctx.fillStyle = '#F4D35E';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r + 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      // Body
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
+      ctx.fillStyle = '#F2C200';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+      ctx.strokeStyle = '#1a1a1f';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Tiny "doc" lines inside
+      ctx.fillStyle = '#1a1a1f';
+      ctx.fillRect(d.x - 5, d.y - 3, 10, 1.5);
+      ctx.fillRect(d.x - 5, d.y,     8, 1.5);
+      ctx.fillRect(d.x - 5, d.y + 3, 9, 1.5);
+      ctx.restore();
+    }
+
+    // Gaze meter — small bar above the player window, only shown when the
+    // meter is rising (kept off-HUD per the "HUD unchanged" constraint).
+    if (state.gaze > 1) {
+      const p = state.player;
+      const bw = 80, bh = 5;
+      const bx = p.x - bw / 2, by = p.y - p.size * 0.5 - 14;
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+      const frac = state.gaze / 100;
+      ctx.fillStyle = frac > 0.7 ? '#E63946' : frac > 0.4 ? '#F4D35E' : '#7ad0eb';
+      ctx.fillRect(bx, by, bw * frac, bh);
+      ctx.restore();
+    }
+  }
+
   // ===== X-ray scan fragments =====
   // Window/fragment overlap test (window is size × size*0.75, centered on x/y).
   windowOverlaps(r) {
@@ -1605,8 +1889,11 @@ export default class GameScene extends Phaser.Scene {
       this.drawWeirdComment(ctx, prop);
     }
 
-    // (Cookie banner disabled — was pinned to PH-40 which is far off-screen now.)
-    // CrushingCookie.drawBanner(ctx, state.agents.crushingCookie, state);
+    // Cookie banner — Phase A only (Phase B's camera scrolls far past PH-40
+    // where the banner is pinned, so it'd be off-screen anyway).
+    if (state.phase === 'static') {
+      CrushingCookie.drawBanner(ctx, state.agents.crushingCookie, state);
+    }
 
 
     // crumbs
@@ -1692,14 +1979,26 @@ export default class GameScene extends Phaser.Scene {
     // under the player chrome, so it reads as truth seen through the window.
     this.drawScanXray(ctx);
 
+    // Phase-A overlays — fixed-position docs + gaze trackers + draggable
+    // propaganda ads + the active falling-comment agent (which normally
+    // isn't drawn in the scroller). Drawn here so they sit OVER the page
+    // chrome but UNDER the player window.
+    if (state.phase === 'static') {
+      const fc = state.agents.fallingComment;
+      if (fc.state !== 'idle') FallingComment.drawAgent(ctx, fc, state);
+      this.drawPhaseAOverlays(ctx);
+    }
+
     // Wave enemies (auto-scroll shooter waves) — drawn in world coords above
-    // the page chrome so they appear to fly OVER the page.
-    Waves.draw(ctx, state);
-    // Hidden docs — drift up like enemies, proximity-revealed.
-    HiddenDocs.draw(ctx, state);
-    // Powerups drift up in the same world space — drawn after so they read
-    // on top if they overlap.
-    Powerups.draw(ctx, state);
+    // the page chrome so they appear to fly OVER the page. Phase B only.
+    if (state.phase === 'scroller') {
+      Waves.draw(ctx, state);
+      // Hidden docs — drift up like enemies, proximity-revealed.
+      HiddenDocs.draw(ctx, state);
+      // Powerups drift up in the same world space — drawn after so they read
+      // on top if they overlap.
+      Powerups.draw(ctx, state);
+    }
 
     // Floating world-space texts (rise + fade) from HP+ pickups etc.
     if (state.floatingTexts) {
