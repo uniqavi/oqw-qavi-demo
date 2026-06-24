@@ -13,7 +13,7 @@ export default class MenuScene extends Phaser.Scene {
     }
 
     preload() {
-        // No external assets to load - we generate textures programmatically in create()
+        this.load.image('icon_hush_2', 'https://lh3.googleusercontent.com/aida-public/AB6AXuANJ0h9EQmDt5ajbKBpdau-8mZrX5CcNAjzIwc6pdZMPOPV1kipOC19Vomumov7S_Lg1gQ1EdQTmpqvMAk6ls_kNvxopr2P8c320ET34wncIwleiwoMUwgD08kzo3CQAT5-gkyIC0X6vM88FLq21fcymloxo9WEyvdm24lwanvYJzrK-sYoOsSAmUWLK8BrHKhsgtTI-83huuOA_tUbWTH7C4P4TlR4jGb1fFFpCEK99sYc02cua8QXNQ3E5OBdTHhmKbWjBaygi7Qd');
     }
 
     create() {
@@ -35,12 +35,12 @@ export default class MenuScene extends Phaser.Scene {
         this.notepadTextarea = null;
 
         // Create Desktop Icons — each game icon launches its level directly
-        this.metubeGroup = this.createDesktopIcon(55, 60, 'icon_metube', 'Quiet Window', () => this.launchLevel('HomeScene'));
-        this.hush2Group = this.createDesktopIcon(55, 160, 'icon_hush_2', '2 Hush 2 Quiet', () => this.launchLevel('GameScene', true));
-        this.hush3Group = this.createDesktopIcon(55, 260, 'icon_hush_3', 'The Quiet: Hush', () => this.launchLevel('DashboardScene'));
-        this.logoutGroup = this.createDesktopIcon(55, 360, 'logout_icon', 'Log Out', () => this.triggerShutdown());
-        this.recycleBinGroup = this.createDesktopIcon(55, 460, 'recycle_icon', 'Recycle Bin', () => console.log('Recycle Bin clicked'));
-        this.manualGroup = this.createDesktopIcon(55, 560, 'manual_icon', 'Manual', (x, y) => this.openNotepadWindow(x, y));
+        this.metubeGroup = this.createDesktopIcon(60, 60, 'icon_metube', 'Quiet Window', () => this.launchLevel('HomeScene'));
+        this.hush2Group = this.createDesktopIcon(60, 160, 'icon_hush_2', '2 Hush 2 Quiet', () => this.launchLevel('GameScene', true));
+        this.hush3Group = this.createDesktopIcon(60, 260, 'icon_hush_3', 'The Quiet: Hush', () => this.launchLevel('DashboardScene'));
+        this.logoutGroup = this.createDesktopIcon(60, 360, 'logout_icon', 'Log Out', () => this.triggerShutdown());
+        this.recycleBinGroup = this.createDesktopIcon(60, 460, 'recycle_icon', 'Recycle Bin', () => console.log('Recycle Bin clicked'));
+        this.manualGroup = this.createDesktopIcon(60, 560, 'manual_icon', 'Manual', (x, y) => this.openNotepadWindow(x, y));
     }
 
     /**
@@ -56,35 +56,27 @@ export default class MenuScene extends Phaser.Scene {
         logoGraphics.fillTriangle(24, 20, 24, 44, 46, 32);
         logoGraphics.generateTexture('icon_metube', 64, 64);
 
-        // 1a. Hush 2 Icon
-        const hush2Graphics = this.make.graphics({ x: 0, y: 0, add: false });
-        hush2Graphics.fillStyle(0x000000, 1);
-        hush2Graphics.fillRoundedRect(0, 0, 64, 64, 12);
-        hush2Graphics.fillStyle(0xffffff, 1);
-        hush2Graphics.fillTriangle(24, 20, 24, 44, 46, 32);
-        hush2Graphics.generateTexture('icon_hush_2_base', 64, 64);
-        hush2Graphics.fillStyle(0xffffff, 1);
-        // Draw a simple '2'
-        hush2Graphics.fillRect(48, 48, 8, 2);
-        hush2Graphics.fillRect(54, 50, 2, 4);
-        hush2Graphics.fillRect(48, 54, 8, 2);
-        hush2Graphics.fillRect(48, 56, 2, 4);
-        hush2Graphics.fillRect(48, 60, 8, 2);
-        hush2Graphics.generateTexture('icon_hush_2', 64, 64);
 
         // 1b. Hush 3 Icon
         const hush3Graphics = this.make.graphics({ x: 0, y: 0, add: false });
-        hush3Graphics.fillStyle(0x000000, 1);
-        hush3Graphics.fillRoundedRect(0, 0, 64, 64, 12);
-        hush3Graphics.fillStyle(0xffffff, 1);
-        hush3Graphics.fillTriangle(24, 20, 24, 44, 46, 32);
-        hush3Graphics.fillStyle(0xffffff, 1);
-        // Draw a simple '3'
-        hush3Graphics.fillRect(48, 48, 8, 2);
-        hush3Graphics.fillRect(54, 50, 2, 4);
-        hush3Graphics.fillRect(50, 54, 6, 2);
-        hush3Graphics.fillRect(54, 56, 2, 4);
-        hush3Graphics.fillRect(48, 60, 8, 2);
+        hush3Graphics.fillStyle(0x0284c7, 1);
+        hush3Graphics.fillCircle(32, 32, 24);
+        hush3Graphics.lineStyle(2, 0xffffff, 1);
+        hush3Graphics.strokeCircle(32, 32, 24);
+        
+        hush3Graphics.beginPath();
+        hush3Graphics.moveTo(8, 32);
+        hush3Graphics.lineTo(56, 32);
+        hush3Graphics.strokePath();
+
+        hush3Graphics.beginPath();
+        hush3Graphics.moveTo(32, 8);
+        hush3Graphics.lineTo(32, 56);
+        hush3Graphics.strokePath();
+
+        hush3Graphics.lineStyle(1.5, 0xe0f2fe, 1);
+        hush3Graphics.strokeEllipse(32, 32, 16, 48);
+
         hush3Graphics.generateTexture('icon_hush_3', 64, 64);
 
         // 2. Window Background
@@ -219,19 +211,25 @@ export default class MenuScene extends Phaser.Scene {
         });
     }
 
-    createDesktopIcon(x, y, textureKey, labelText, onClickCallback) {
+    createDesktopIcon(x, y, textureKey, labelText, onClickCallback, targetSize = 64) {
         const iconGroup = this.add.container(x, y);
+        
+        let baseScale = 1;
+        const frame = this.textures.getFrame(textureKey);
+        if (frame && frame.width > 0) {
+            baseScale = targetSize / frame.width;
+        }
         
         // Add a stacked fake blur shadow with gradient-like falloff and increased blur radius
         const shadows = [];
         for (let i = 1; i <= 6; i++) {
             const offset = i * 1.5; 
             const alpha = 0.25 / (i * 1.2); // Soft gradient-like falloff
-            const scale = 1 + (i * 0.02); // Simulate diffuse spread
+            const scale = (1 + (i * 0.02)) * baseScale; // Simulate diffuse spread
             shadows.push(this.add.image(-offset, offset, textureKey).setTint(0x000000).setAlpha(alpha).setScale(scale));
         }
 
-        const icon = this.add.image(0, 0, textureKey).setInteractive({ useHandCursor: true, draggable: true });
+        const icon = this.add.image(0, 0, textureKey).setInteractive({ useHandCursor: true, draggable: true }).setScale(baseScale);
         const label = this.add.text(0, 45, labelText, {
             fontFamily: 'Arial', fontSize: '14px', color: '#ffffff',
             backgroundColor: 'rgba(0,0,0,0.5)', padding: { x: 4, y: 2 }
