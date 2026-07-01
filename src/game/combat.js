@@ -3,9 +3,9 @@
 import { PLAYER, getDifficulty } from '../config.js';
 import { beep, noise } from './audio.js';
 
-export function damagePlayer(state, amount, knockX, knockY) {
+export function damagePlayer(state, amount, knockX, knockY, ignoreInvuln = false) {
   const p = state.player;
-  if (p.invuln > 0) return;
+  if (p.invuln > 0 && !ignoreInvuln) return;
   if (p.test && p.test.immune) return;        // dev immune toggle
   // Apply difficulty modifier so EASY hits land softer, HARD lands harder.
   const dmg = amount * getDifficulty().agentDamage;

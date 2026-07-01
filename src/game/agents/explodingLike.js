@@ -84,7 +84,7 @@ export function drawButton(ctx, agent, state) {
   if (charging) {
     const T = 0.6; // charge duration from AGENTS.explodingLike.chargeDuration
     const progress = Math.min(1, agent.charge / T);
-    const outerR = 22 + progress * 50;
+    const outerR = 22 + progress * (agent.triggerR - 22);
     ctx.save();
     // Outer warning ring
     ctx.strokeStyle = 'rgba(230, 57, 70, ' + (0.35 + progress * 0.5) + ')';

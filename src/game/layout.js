@@ -20,7 +20,7 @@ export function createLayout() {
     nav:         { x: 0,        y: 0,        w: PW,  h: 50  },
     logo:        { x: 16,       y: 12,       w: 140, h: 26  },
     search:      { x: 280,      y: 14,       w: 380, h: 24  },
-    account:     { x: 880,      y: 14,       w: 60,  h: 24  },
+    account:     { x: 685,      y: 10,       w: 32,  h: 32  },
     video:       { x: 24,       y: 70,       w: 580, h: 340 },
     title:       { x: 24,       y: 422,      w: 580, h: 30  },
     likeBtn:     { x: 24,       y: 462,      w: 80,  h: 30  },
@@ -44,11 +44,11 @@ export function createLayout() {
 //   #5 below the 3rd comment, right side
 export function createDocs() {
   return [
-    { x: 200, y: 230, r: 13, taken: false, takeT: 0 },
-    { x: 140, y: 880, r: 13, taken: false, takeT: 0 },
-    { x: 780, y: 200, r: 13, taken: false, takeT: 0 },
-    { x: 320, y: 670, r: 13, taken: false, takeT: 0 },
-    { x: 800, y: 950, r: 13, taken: false, takeT: 0 },
+    { x: 200, y: 230, r: 10, taken: false, takeT: 0 },
+    { x: 140, y: 880, r: 10, taken: false, takeT: 0 },
+    { x: 780, y: 200, r: 10, taken: false, takeT: 0 },
+    { x: 320, y: 670, r: 10, taken: false, takeT: 0 },
+    { x: 800, y: 950, r: 10, taken: false, takeT: 0 },
   ];
 }
 

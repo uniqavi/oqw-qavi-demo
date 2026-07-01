@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { loadSfx, playSfx } from '../game/sfx.js';
+import { loadMusic, stopMusic } from '../game/music.js';
 
 /**
  * MeTube Desktop Parody - Phaser 3 Implementation
@@ -26,6 +27,7 @@ export default class MenuScene extends Phaser.Scene {
         // Keep menu-mode on body so browser tabs/urlbar stay hidden
         document.body.classList.add('menu-mode');
         loadSfx();
+        loadMusic();
 
         this.generateTextures();
         this.createBackground();
@@ -300,6 +302,7 @@ export default class MenuScene extends Phaser.Scene {
 
     triggerShutdown() {
         playSfx('desktopClick');
+        stopMusic({ fadeMs: 800 });
         const overlay = this.add.graphics();
         overlay.fillStyle(0x000000, 1);
         overlay.fillRect(0, 0, this.scale.width, this.scale.height);

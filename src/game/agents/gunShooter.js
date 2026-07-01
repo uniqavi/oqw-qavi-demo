@@ -51,8 +51,8 @@ export function update(agent, dt, state) {
     const fireDx = Math.cos(agent.currentAngle);
     const fireDy = Math.sin(agent.currentAngle);
     state.bullets.push({
-      x: mx + fireDx * 22,
-      y: my + fireDy * 22,
+      x: mx + fireDx * 40,
+      y: my + fireDy * 40,
       vx: fireDx * T.bulletSpeed,
       vy: fireDy * T.bulletSpeed,
       life: T.bulletLife,
@@ -61,8 +61,8 @@ export function update(agent, dt, state) {
     });
     for (let i = 0; i < 14; i++) {
       state.sparks.push({
-        x: mx + fireDx * 22,
-        y: my + fireDy * 22,
+        x: mx + fireDx * 40,
+        y: my + fireDy * 40,
         vx: fireDx * 250 + (Math.random() - 0.5) * 150,
         vy: fireDy * 250 + (Math.random() - 0.5) * 150,
         life: 0.35, hit: true,
@@ -77,6 +77,15 @@ export function update(agent, dt, state) {
   } else if (agent.state === 'spent') {
     agent.spentT += dt;
     agent.armLength = Math.max(0, T.armMaxLength - agent.spentT * T.armRetractSpeed);
+    if (agent.armLength <= 0) {
+      agent.state = 'cooldown';
+      agent.cooldown = T.cooldownDuration || 4;
+    }
+  } else if (agent.state === 'cooldown') {
+    agent.cooldown -= dt;
+    if (agent.cooldown <= 0) {
+      agent.state = 'idle';
+    }
   }
 }
 
@@ -121,18 +130,23 @@ export function drawAvatar(ctx, agent, state) {
   const isAwake = agent.state === 'awakening';
   const isAiming = agent.state === 'aiming';
 
+  const cx = layout.account.x + layout.account.w / 2;
+  const cy = layout.account.y + layout.account.h / 2;
+  const r = layout.account.w / 2 - 1;
+
   ctx.fillStyle = isSpent ? '#666' : (isActive ? '#E63946' : '#4A7BC8');
   ctx.beginPath();
-  ctx.arc(layout.account.x + 12, layout.account.y + 12, 11, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = isActive ? '#fff' : '#1a1a1f';
   ctx.lineWidth = isActive ? 1.5 : 1;
   ctx.stroke();
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 11px ui-monospace, monospace';
+  const fontSize = Math.floor(layout.account.w * 0.45);
+  ctx.font = 'bold ' + fontSize + 'px ui-monospace, monospace';
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
-  ctx.fillText(isSpent ? '✕' : 'U', layout.account.x + 12, layout.account.y + 13);
+  ctx.fillText(isSpent ? '✕' : 'U', cx, cy + 1);
   ctx.textAlign = 'left';
 
   if (isAwake || isAiming) {
@@ -140,7 +154,7 @@ export function drawAvatar(ctx, agent, state) {
     ctx.strokeStyle = 'rgba(230,57,70,' + (isAiming ? 0.7 : 0.5) + ')';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(layout.account.x + 12, layout.account.y + 12, 14 * pulse, 0, Math.PI * 2);
+    ctx.arc(cx, cy, (r + 3) * pulse, 0, Math.PI * 2);
     ctx.stroke();
   }
   if (isActive) {
@@ -150,9 +164,9 @@ export function drawAvatar(ctx, agent, state) {
       ctx.font = 'bold 9px ui-monospace, monospace';
       ctx.textBaseline = 'middle';
       const w = ctx.measureText(txt).width + 12;
-      ctx.fillRect(layout.account.x - w + 30, layout.account.y + 30, w, 16);
+      ctx.fillRect(layout.account.x - w + 30, layout.account.y + layout.account.h + 6, w, 16);
       ctx.fillStyle = '#E63946';
-      ctx.fillText(txt, layout.account.x - w + 36, layout.account.y + 38);
+      ctx.fillText(txt, layout.account.x - w + 36, layout.account.y + layout.account.h + 14);
     }
   }
   drawArm(ctx, agent, state);
@@ -186,10 +200,16 @@ function drawArm(ctx, agent, state) {
   ctx.translate(mx, my);
   ctx.rotate(agent.currentAngle);
   ctx.fillStyle = '#0c0c0e';
-  ctx.fillRect(2, -3, 18, 6);
-  ctx.fillRect(2, 3, 6, 7);
+  ctx.fillRect(0, -4, 14, 8);
+  ctx.fillRect(-12, -3, 12, 6);
+  ctx.fillRect(-12, 3, 4, 6);
+  ctx.fillRect(3, 4, 4, 8);
+  ctx.fillRect(14, -2, 22, 3);
+  ctx.fillRect(2, -8, 10, 3);
+  ctx.fillRect(4, -5, 2, 2);
+  ctx.fillRect(8, -5, 2, 2);
   ctx.fillStyle = '#444';
-  ctx.fillRect(18, -2, 2, 4);
+  ctx.fillRect(36, -3, 4, 5);
   ctx.restore();
   if (agent.state === 'aiming') {
     const dotPulse = 0.5 + Math.sin(state.time * 25) * 0.5;
@@ -197,7 +217,7 @@ function drawArm(ctx, agent, state) {
     ctx.lineWidth = 1;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
-    ctx.moveTo(mx + Math.cos(agent.currentAngle) * 22, my + Math.sin(agent.currentAngle) * 22);
+    ctx.moveTo(mx + Math.cos(agent.currentAngle) * 40, my + Math.sin(agent.currentAngle) * 40);
     ctx.lineTo(mx + Math.cos(agent.currentAngle) * 2000, my + Math.sin(agent.currentAngle) * 2000);
     ctx.stroke();
     ctx.setLineDash([]);

@@ -82,3 +82,31 @@ export function noise(dur, vol = 0.1) {
   s.connect(g).connect(masterGain || audioCtx.destination);
   s.start();
 }
+
+// Auto-resume / initialize audio on first user gesture (click, keypress, touch)
+if (typeof window !== 'undefined') {
+  const resumeAudio = () => {
+    initAudio();
+    if (audioCtx) {
+      if (audioCtx.state === 'running') {
+        cleanup();
+      } else {
+        audioCtx.addEventListener('statechange', function onStateChange() {
+          if (audioCtx.state === 'running') {
+            cleanup();
+            audioCtx.removeEventListener('statechange', onStateChange);
+          }
+        });
+      }
+    }
+  };
+  const cleanup = () => {
+    window.removeEventListener('click', resumeAudio);
+    window.removeEventListener('keydown', resumeAudio);
+    window.removeEventListener('touchstart', resumeAudio);
+  };
+  window.addEventListener('click', resumeAudio);
+  window.addEventListener('keydown', resumeAudio);
+  window.addEventListener('touchstart', resumeAudio);
+}
+

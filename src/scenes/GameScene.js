@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PW, PH, PLAYER, CAMERA, GAZE, PICKUPS, RENDER, DIFFICULTY, L1, SCAN, SCROLL, POWERUP } from '../config.js';
+import { PW, PH, PLAYER, DAMAGE, CAMERA, GAZE, PICKUPS, RENDER, DIFFICULTY, L1, SCAN, SCROLL, POWERUP } from '../config.js';
 import { createState, resetState } from '../game/state.js';
 import { recSlots, commentSlots } from '../game/layout.js';
 import { dist } from '../game/physics.js';
@@ -12,6 +12,7 @@ import * as ShootingSearch from '../game/agents/shootingSearch.js';
 import * as ChasingRecs from '../game/agents/chasingRecs.js';
 import * as GunShooter from '../game/agents/gunShooter.js';
 import { markScanCoverage } from '../game/scan.js';
+import * as FallingBell from '../game/agents/fallingBell.js';
 import * as Waves from '../game/waveEnemies.js';
 import * as Powerups from '../game/powerups.js';
 import * as HiddenDocs from '../game/hiddenDocs.js';
@@ -21,6 +22,7 @@ import { crossfadeTo, stopMusic } from '../game/music.js';
 import { playSfx } from '../game/sfx.js';
 import { playVoice, stopVoice } from '../game/voice.js';
 import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
+import { damagePlayer } from '../game/combat.js';
 
 // First-time onboarding tips. Direction A voice — has personality but
 // still tells you what to do. Keyed in localStorage so veterans never see.
@@ -78,6 +80,15 @@ export default class GameScene extends Phaser.Scene {
     this.diffMod = DIFFICULTY[this.difficulty] || DIFFICULTY.easy;
     this.state = createState();
     this.state.status = 'playing';
+    
+    // Preload flipflop image
+    this.flipflopImg = new Image();
+    this.flipflopImg.src = 'flipflop.png';
+    this.state.flipflopImg = this.flipflopImg;
+    
+    this.state.cannonballs = [];
+    this.commentMortars = new Map();
+    this.spikeThrowers = new Map();
     // Bump every agent's trigger range by the difficulty modifier. Doing it
     // here (not in state.js) so the value stays a multiplier rather than a
     // baked constant — easier to retune.
@@ -197,19 +208,10 @@ export default class GameScene extends Phaser.Scene {
     };
     // Show the runner frames while this scene is active
     this.runnerHud.taskFrame?.classList.remove('hidden');
+    this.runnerHud.taskFrame?.classList.remove('cleared');
     this.runnerHud.hpFrame?.classList.remove('hidden');
 
-    // Solo-YOU intro after the 1.1 → 1.2 transition: Toto is gone, the player
-    // is now inside the boosted video.
-    if (this.fromHomePage) {
-      setTimeout(() => {
-        this.startNarration([
-          { speaker: 'YOU', text: "Okay... I'm inside the video. This isn't a video. It's a feed — and it's hostile." },
-          { speaker: 'YOU', text: "If I find five pieces of evidence in here, I can take this thing down myself." },
-          { speaker: 'YOU', text: "Stay sharp. No Toto on the line." },
-        ]);
-      }, 600);
-    }
+    // Solo-YOU intro removed - directly start play.
 
     // Dev testing panel (temporary). Toggle button + 3 ability toggles that
     // flip state.player.test.* flags (immune / size / magnet).
@@ -1128,14 +1130,17 @@ export default class GameScene extends Phaser.Scene {
     if (inStatic || L1.explodingLike) ExplodingLike.update(state.agents.explodingLike, dt, state);
     ExplodingLike.updateProjectiles(state, dt);
     if ((inStatic && !state.cookieReady) || L1.crushingCookie) CrushingCookie.update(state.agents.crushingCookie, dt, state);
+    if (inStatic || L1.fallingBell) FallingBell.update(state.agents.fallingBell, dt, state);
     // Gun shooter — gated by the difficulty grace period so new players get a
     // chance to learn the controls before it can fire.
     if ((inStatic || L1.gunShooter) && state.time >= state.gunGraceUntil) {
       GunShooter.update(state.agents.gunShooter, dt, state);
     }
     GunShooter.updateProjectiles(state, dt);
-
-    // (Old hole win-trigger removed — the escape sequence owns the exit now.)
+    
+    this.updateCommentMortars(dt);
+    this.updateCannonballs(dt);
+    this.updateSpikeThrowers(dt);
   }
 
   // ===== PHASE A — static-page combat (pre-checkpoint) =====
@@ -1156,14 +1161,11 @@ export default class GameScene extends Phaser.Scene {
         state.docsCollected++;
         beep(880, 0.08, 'sine', 0.13);
         setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
-        if (state.docsCollected >= state.docsTarget && !state.cookieReady) {
+        if (state.docsCollected >= state.docsTarget) {
           state.cookieReady = true;
-          // Pacify the cookie banner so the player can accept it.
           state.agents.crushingCookie.state = 'returning';
-          this.startNarration([
-            { speaker: 'YOU', text: "Got everything I came for. Now to get out clean." },
-            { speaker: 'YOU', text: "Scroll all the way down — those cookies are the exit." },
-          ]);
+          this.triggerCheckpoint();
+          break;
         }
       }
     }
@@ -1192,44 +1194,27 @@ export default class GameScene extends Phaser.Scene {
     beep(523, 0.1, 'sine', 0.1);
     setTimeout(() => beep(659, 0.1, 'sine', 0.1), 90);
     setTimeout(() => beep(784, 0.2, 'sine', 0.12), 200);
-    this.startNarration([
-      { speaker: 'YOU', text: "Cookies accepted. Of course they are." },
-      { speaker: 'YOU', text: "Now ride the page out and find a real exit." },
-    ], () => {
-      // Flip phase — KEEP the current scrollY and player position so the
-      // scroller continues from where the player is (per user request).
-      state.phase = 'scroller';
-      state.phaseTime = 0;
-      state.docsCollected = 0;
-      // Clear Phase-A-only state so the scroller starts clean
-      state.cursor = null;
-      state.gaze = 0;
-      state.projectiles.length = 0;
-      state.bullets.length = 0;
-      state.debris.length = 0;
-      // Reset scroller-spawn timers so the runner doesn't dump a backlog
-      state.waveSpawnT = 2.5;
-      state.powerupSpawnT = 4;
-      state.hiddenDocSpawnT = 10;
-    });
+    state.phase = 'scroller';
+    state.phaseTime = 0;
+    state.docsCollected = 0;
+    // Clear Phase-A-only state so the scroller starts clean
+    state.cursor = null;
+    state.gaze = 0;
+    state.projectiles.length = 0;
+    state.bullets.length = 0;
+    state.debris.length = 0;
+    // Reset scroller-spawn timers so the runner doesn't dump a backlog
+    state.waveSpawnT = 2.5;
+    state.powerupSpawnT = 4;
+    state.hiddenDocSpawnT = 10;
   }
 
   // ===== ESCAPE SEQUENCE (after the 5 docs are collected) =====
   // Beat list:
-  //   1. narration: "looks like we got what we needed. how do we get out?"
-  //   2. scroll decelerates; the weird comment scrolls into frame and stops
-  //   3. narration: "that comment looks different... something behind it"
-  //   4. player drags the weird comment aside → reveals the broken hole
-  //   5. narration: "that's an exit. let's go."
-  //   6. player moves the window into the hole → (placeholder) next level
   beginEscape() {
     const state = this.state;
     if (state.escape) return;
     const viewH = this.VH / state.cam.zoom;
-    // Place the weird comment ~1.2 viewports below the current scroll so it
-    // scrolls into view as the page decelerates. Snap it to the comment-feed
-    // grid (top 620, row 100) so it replaces a row cleanly instead of
-    // overlapping its neighbours.
     const COMMENTS_TOP = 620, ROW_H = 100;
     let commentY = state.scrollY + viewH + 260;
     commentY = COMMENTS_TOP + Math.round((commentY - COMMENTS_TOP) / ROW_H) * ROW_H;
@@ -1242,17 +1227,12 @@ export default class GameScene extends Phaser.Scene {
     hole.x = slotX; hole.y = commentY; hole.w = slotW; hole.h = slotH;
     // Camera target so the comment ends ~40% down the viewport.
     const stopY = commentY - viewH * 0.40;
-    state.escape = { step: 'narrate1', commentY, stopY, t: 0 };
-    // Narration 1 — player's own voice.
-    this.startNarration([
-      { speaker: 'YOU', text: 'Looks like we got what we needed.' },
-      { speaker: 'YOU', text: 'Now... how do we get out of here?' },
-    ], () => { state.escape.step = 'toComment'; });
+    state.escape = { step: 'toComment', commentY, stopY, t: 0 };
   }
 
   // Scroll-owning half of the escape — runs early (before player movement) so
   // dScroll reflects the deceleration. Eases the camera to a stop with the
-  // weird comment in frame, then hands off to narration 2.
+  // weird comment in frame, then hands off to drag.
   updateEscapeScroll(dt, viewH) {
     const state = this.state;
     const esc = state.escape;
@@ -1263,16 +1243,12 @@ export default class GameScene extends Phaser.Scene {
       state.scrollSpeed = Math.abs(esc.stopY - state.scrollY) * 2.2;
       if (Math.abs(esc.stopY - state.scrollY) < 3) {
         state.scrollY = esc.stopY; state.scrollSpeed = 0;
-        esc.step = 'narrate2';
-        this.startNarration([
-          { speaker: 'YOU', text: 'Hold on — look at that comment.' },
-          { speaker: 'YOU', text: "It looks a little different than the others. There's something behind it, I suspect." },
-        ], () => { esc.step = 'drag'; });
+        esc.step = 'drag';
       }
     } else {
       // All other escape steps freeze the scroll.
       state.scrollSpeed = 0;
-      if (esc.step !== 'narrate1') state.scrollY = esc.stopY;
+      state.scrollY = esc.stopY;
     }
   }
 
@@ -1291,11 +1267,7 @@ export default class GameScene extends Phaser.Scene {
         prop.dragging = false;                   // release it so the slide takes over
         noise(0.3, 0.14);
         beep(90, 0.45, 'sawtooth', 0.09);
-        esc.step = 'narrate3';
-        this.startNarration([
-          { speaker: 'YOU', text: 'Oh, damn.' },
-          { speaker: 'YOU', text: "That looks like an exit. Let's go, then." },
-        ], () => { esc.step = 'exit'; });
+        esc.step = 'exit';
       }
     } else if (esc.step === 'exit') {
       const hole = state.truth[0];
@@ -1305,18 +1277,11 @@ export default class GameScene extends Phaser.Scene {
         beep(523, 0.1, 'sine', 0.1);
         setTimeout(() => beep(659, 0.1, 'sine', 0.1), 90);
         setTimeout(() => beep(784, 0.2, 'sine', 0.12), 200);
-        // Slip through the gap into the tunnel → emerge in Level 2 (the HUSH
-        // analytics dashboard). DashboardScene opens with a tunnel-exit iris.
-        this.startNarration([
-          { speaker: 'SYSTEM', text: '> slipping through the gap...' },
-          { speaker: 'SYSTEM', text: '> falling through the tunnel...' },
-        ], () => {
-          state.status = 'won';
-          state.stats.endedAt = state.time;
-          this.scene.stop('HUDScene');
-          this.scene.stop();
-          this.scene.start('DashboardScene', { difficulty: this.difficulty });
-        });
+        state.status = 'won';
+        state.stats.endedAt = state.time;
+        this.scene.stop('HUDScene');
+        this.scene.stop();
+        this.scene.start('DashboardScene', { difficulty: this.difficulty });
       }
     }
   }
@@ -1525,7 +1490,7 @@ export default class GameScene extends Phaser.Scene {
 
     // Fixed-position docs — rectangular gold-paper design, matched to
     // hiddenDocs so Phase A and Phase B docs look the same.
-    const DW = 36, DH = 44;
+    const DW = 28, DH = 34;
     for (const d of state.docs) {
       if (d.taken) continue;
       const pulse = 0.6 + Math.sin(t * 6 + d.x * 0.1) * 0.4;
@@ -1760,13 +1725,19 @@ export default class GameScene extends Phaser.Scene {
     // (and the live in-window decode while the player hovers a fragment).
     this.drawScanFragments(ctx);
 
-    // sidebar recs — empty slot if a chasing rec is currently away from it
-    for (let i = 0; i < recSlots.length; i++) {
-      const slot = recSlots[i];
-      if (ChasingRecs.isAgentSlot(state.agents.chasingRecs, i)) {
-        ChasingRecs.drawEmptySlot(ctx, slot);
-      } else {
-        drawRecCard(ctx, slot.x, slot.y, slot.w, slot.h, i, false, null, state.time);
+    // sidebar recs — infinite scrolling feed
+    {
+      const RECS_TOP = 70, ROW_H = 96, CW = 320, CH = 86, CX = 620;
+      const iStart = Math.max(0, Math.floor((topY - RECS_TOP) / ROW_H));
+      const iEnd = Math.floor((botY - RECS_TOP) / ROW_H);
+      for (let i = iStart; i <= iEnd; i++) {
+        if (state.phase === 'static' && ChasingRecs.isAgentSlot(state.agents.chasingRecs, i)) {
+          ChasingRecs.drawEmptySlot(ctx, { x: CX, y: RECS_TOP + i * ROW_H, w: CW, h: CH });
+        } else {
+          const isSpike = (i === 3 || i === 6);
+          const spikeState = isSpike ? this.spikeThrowers.get(i) : null;
+          drawRecCard(ctx, CX, RECS_TOP + i * ROW_H, CW, CH, i, false, null, state.time, spikeState);
+        }
       }
     }
     ChasingRecs.drawAgents(ctx, state.agents.chasingRecs, state);
@@ -1786,7 +1757,8 @@ export default class GameScene extends Phaser.Scene {
       const fcRow = (state.phase === 'static' && fc.state !== 'idle') ? fc.commentIdx : -1;
       for (let i = iStart; i <= iEnd; i++) {
         if (i === escapeRow || i === fcRow) continue;
-        drawComment(ctx, CX, COMMENTS_TOP + i * ROW_H, CW, CH, i, false, null);
+        const mortarState = (i % 3 === 1) ? this.commentMortars.get(i) : null;
+        drawComment(ctx, CX, COMMENTS_TOP + i * ROW_H, CW, CH, i, false, null, mortarState, state.time);
       }
     }
 
@@ -1834,23 +1806,8 @@ export default class GameScene extends Phaser.Scene {
       ctx.restore();
     }
 
-    // bell (notifications) — sits beside SUBSCRIBE, like a real video page
-    {
-      const bl = layout.bellBtn;
-      ctx.save();
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = '#1a1a1f';
-      ctx.lineWidth = 1;
-      ctx.fillRect(bl.x, bl.y, bl.w, bl.h);
-      ctx.strokeRect(bl.x, bl.y, bl.w, bl.h);
-      ctx.fillStyle = '#1a1a1f';
-      ctx.font = '14px ui-monospace, monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      ctx.fillText('🔔', bl.x + bl.w / 2, bl.y + bl.h / 2 + 1);
-      ctx.textAlign = 'left';
-      ctx.restore();
-    }
+    // bell (notifications) — sits beside SUBSCRIBE, like a real video page (FallingBell agent)
+    FallingBell.drawAgent(ctx, state.agents.fallingBell, state);
 
 
 
@@ -1858,6 +1815,35 @@ export default class GameScene extends Phaser.Scene {
     GunShooter.drawProjectiles(ctx, state);
     ShootingSearch.drawProjectiles(ctx, state);
     ExplodingLike.drawProjectiles(ctx, state);
+    
+    // Draw active road spikes
+    for (const s of this.spikeThrowers.values()) {
+      if (s.state === 'rolling' || s.state === 'extended' || s.state === 'retracting') {
+        this.drawSpikes(ctx, s.x, s.y, s.spikeLength);
+      }
+    }
+    
+    // Draw active cannonballs
+    for (const cb of state.cannonballs) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(244, 211, 94, 0.45)';
+      ctx.beginPath();
+      ctx.arc(cb.x - cb.vx * 0.05, cb.y - cb.vy * 0.05, cb.r * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(230, 57, 70, 0.35)';
+      ctx.beginPath();
+      ctx.arc(cb.x - cb.vx * 0.1, cb.y - cb.vy * 0.1, cb.r * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = '#1a1a1f';
+      ctx.strokeStyle = '#E63946';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cb.x, cb.y, cb.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // sparks (cosmetic)
     for (const s of state.sparks) {
@@ -2049,6 +2035,12 @@ export default class GameScene extends Phaser.Scene {
       }
       this.runnerHud.taskLine.textContent = line;
       this.runnerHud.taskProgress.textContent = prog;
+
+      if (state.escape) {
+        this.runnerHud.taskFrame?.classList.add('cleared');
+      } else {
+        this.runnerHud.taskFrame?.classList.remove('cleared');
+      }
     }
     if (this.runnerHud?.hpFill) {
       const hpPct = Math.max(0, Math.min(100, Math.round((p.hp / p.maxHp) * 100)));
@@ -2066,6 +2058,282 @@ export default class GameScene extends Phaser.Scene {
     if (this.hud.size) this.hud.size.textContent = Math.round(p.hp) + ' / ' + p.maxHp;
     if (this.hud.docs) this.hud.docs.textContent = state.docsCollected + ' / ' + state.docsTarget;
     if (this.hud.zoom) this.hud.zoom.textContent = Math.round(state.scrollSpeed);
+  }
+
+  updateCommentMortars(dt) {
+    const state = this.state;
+    const p = state.player;
+    const viewH = this.scale.height;
+    const topY = state.scrollY - 100;
+    const botY = state.scrollY + viewH + 200;
+    const COMMENTS_TOP = 620, ROW_H = 100, CX = 24;
+    
+    const iStart = Math.max(0, Math.floor((topY - COMMENTS_TOP) / ROW_H));
+    const iEnd = Math.floor((botY - COMMENTS_TOP) / ROW_H);
+    
+    // Clean up far offscreen mortar states
+    for (const [idx, m] of this.commentMortars.entries()) {
+      if (m.cy < state.scrollY - 400) {
+        this.commentMortars.delete(idx);
+      }
+    }
+    
+    // Initialize comment mortars in active range
+    for (let i = iStart; i <= iEnd; i++) {
+      if (i % 3 === 1) {
+        if (!this.commentMortars.has(i)) {
+          const slotY = COMMENTS_TOP + i * ROW_H;
+          this.commentMortars.set(i, {
+            state: 'idle',
+            cx: CX + 22,
+            cy: slotY + 22,
+            angle: 0,
+            barrelLength: 0,
+            cooldown: 0,
+            triggerR: 420,
+          });
+        }
+      }
+    }
+    
+    // Update active mortars
+    const tMul = this.diffMod.triggerRange;
+    for (const m of this.commentMortars.values()) {
+      if (Math.abs(m.cy - state.scrollY) > viewH + 400) continue;
+      
+      const d = dist(p.x, p.y, m.cx, m.cy);
+      
+      if (m.state === 'idle') {
+        m.barrelLength = 0;
+        if (d < m.triggerR * tMul) {
+          m.state = 'transforming';
+          m.transformT = 0;
+          beep(200, 0.15, 'triangle', 0.05);
+        }
+      } else if (m.state === 'transforming') {
+        m.transformT += dt;
+        m.angle = Math.atan2(p.y - m.cy, p.x - m.cx);
+        m.barrelLength = Math.min(18, (m.transformT / 0.5) * 18);
+        if (m.transformT >= 0.5) {
+          m.state = 'firing';
+        }
+      } else if (m.state === 'firing') {
+        const angle = m.angle;
+        const speed = 260 * this.diffMod.agentSpeed;
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed;
+        
+        state.cannonballs.push({
+          x: m.cx + Math.cos(angle) * (14 + m.barrelLength),
+          y: m.cy + Math.sin(angle) * (14 + m.barrelLength),
+          vx, vy, r: 6, life: 3.5
+        });
+        
+        beep(120, 0.25, 'sawtooth', 0.08);
+        noise(0.12, 0.08);
+        
+        const mx = m.cx + Math.cos(angle) * (14 + m.barrelLength);
+        const my = m.cy + Math.sin(angle) * (14 + m.barrelLength);
+        for (let j = 0; j < 6; j++) {
+          state.sparks.push({
+            x: mx, y: my,
+            vx: Math.cos(angle) * 120 + (Math.random() - 0.5) * 60,
+            vy: Math.sin(angle) * 120 + (Math.random() - 0.5) * 60,
+            life: 0.25, hit: true
+          });
+        }
+        
+        m.state = 'cooldown';
+        m.cooldown = 2.5;
+      } else if (m.state === 'cooldown') {
+        m.cooldown -= dt;
+        m.angle = Math.atan2(p.y - m.cy, p.x - m.cx);
+        if (m.cooldown <= 0) {
+          if (d < m.triggerR * tMul) {
+            m.state = 'transforming';
+            m.transformT = 0;
+            beep(200, 0.15, 'triangle', 0.05);
+          } else {
+            m.state = 'idle';
+          }
+        }
+      }
+    }
+  }
+
+  updateCannonballs(dt) {
+    const state = this.state;
+    const p = state.player;
+    const dmg = 10 * this.diffMod.agentDamage;
+    for (const cb of state.cannonballs) {
+      cb.x += cb.vx * dt;
+      cb.y += cb.vy * dt;
+      cb.life -= dt;
+      
+      const pbx = p.x - p.size / 2;
+      const pby = p.y - p.size * 0.375;
+      const pbw = p.size;
+      const pbh = p.size * 0.75;
+      if (cb.x > pbx && cb.x < pbx + pbw && cb.y > pby && cb.y < pby + pbh) {
+        damagePlayer(state, dmg, 0, 0);
+        cb.life = 0;
+        for (let j = 0; j < 8; j++) {
+          state.sparks.push({
+            x: cb.x, y: cb.y,
+            vx: (Math.random() - 0.5) * 200,
+            vy: (Math.random() - 0.5) * 200,
+            life: 0.3, hit: true
+          });
+        }
+        beep(80, 0.3, 'sawtooth', 0.15);
+      }
+    }
+    state.cannonballs = state.cannonballs.filter(cb => cb.life > 0);
+  }
+
+  updateSpikeThrowers(dt) {
+    const state = this.state;
+    const p = state.player;
+    const viewH = this.scale.height;
+    const topY = state.scrollY - 100;
+    const botY = state.scrollY + viewH + 200;
+    const RECS_TOP = 70, ROW_H = 96, CX = 620;
+    
+    const iStart = Math.max(0, Math.floor((topY - RECS_TOP) / ROW_H));
+    const iEnd = Math.floor((botY - RECS_TOP) / ROW_H);
+    
+    // Clean up far offscreen spike throwers
+    for (const [idx, s] of this.spikeThrowers.entries()) {
+      if (s.y < state.scrollY - 400) {
+        this.spikeThrowers.delete(idx);
+      }
+    }
+    
+    // Initialize spike throwers
+    for (let i = iStart; i <= iEnd; i++) {
+      if (i === 3 || i === 6) {
+        if (!this.spikeThrowers.has(i)) {
+          const slotY = RECS_TOP + i * ROW_H;
+          this.spikeThrowers.set(i, {
+            state: 'idle',
+            x: CX,
+            y: slotY + 43,
+            t: 0,
+            spikeLength: 0,
+            cooldown: 0,
+          });
+        }
+      }
+    }
+    
+    // Update active throwers
+    for (const s of this.spikeThrowers.values()) {
+      if (Math.abs(s.y - state.scrollY) > viewH + 400) continue;
+      
+      const d = dist(p.x, p.y, s.x, s.y);
+      
+      if (s.state === 'idle') {
+        s.spikeLength = 0;
+        if (Math.abs(p.y - s.y) < 150 && p.x < 620 && s.cooldown <= 0) {
+          s.state = 'telegraph';
+          s.t = 0;
+          beep(350, 0.1, 'sawtooth', 0.05);
+        }
+      } else if (s.state === 'telegraph') {
+        s.t += dt;
+        if (s.t >= 0.6) {
+          s.state = 'rolling';
+          s.t = 0;
+          noise(0.2, 0.05);
+        }
+      } else if (s.state === 'rolling') {
+        s.t += dt;
+        s.spikeLength += 900 * dt * this.diffMod.agentSpeed;
+        if (s.spikeLength >= 330 || s.t >= 0.4) {
+          s.spikeLength = 330;
+          s.state = 'extended';
+          s.t = 0;
+        }
+        this.checkSpikeCollision(s, p);
+      } else if (s.state === 'extended') {
+        s.t += dt;
+        if (s.t >= 1.2) {
+          s.state = 'retracting';
+          s.t = 0;
+        }
+        this.checkSpikeCollision(s, p);
+      } else if (s.state === 'retracting') {
+        s.t += dt;
+        s.spikeLength -= 600 * dt;
+        if (s.spikeLength <= 0) {
+          s.spikeLength = 0;
+          s.state = 'cooldown';
+          s.cooldown = 3.5;
+        }
+      } else if (s.state === 'cooldown') {
+        s.cooldown -= dt;
+        if (s.cooldown <= 0) {
+          s.state = 'idle';
+        }
+      }
+    }
+  }
+
+  checkSpikeCollision(s, p) {
+    const pbx = p.x - p.size / 2;
+    const pby = p.y - p.size * 0.375;
+    const pbw = p.size;
+    const pbh = p.size * 0.75;
+    
+    const inY = (s.y > pby && s.y < pby + pbh);
+    const inX = (p.x + pbw/2 > s.x - s.spikeLength && p.x - pbw/2 < s.x);
+    if (inY && inX) {
+      const dmg = (DAMAGE.roadSpike || 25) * this.diffMod.agentDamage;
+      damagePlayer(this.state, dmg, 0, 0, false);
+      beep(80, 0.4, 'sawtooth', 0.2);
+      noise(0.4, 0.3);
+    }
+  }
+
+  drawSpikes(ctx, sx, sy, length) {
+    ctx.save();
+    ctx.strokeStyle = '#1a1a1f';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx - length, sy);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#F4D35E';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx - length, sy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = '#7d8e98';
+    ctx.strokeStyle = '#1a1a1f';
+    ctx.lineWidth = 1;
+    for (let x = sx - 6; x >= sx - length; x -= 8) {
+      ctx.beginPath();
+      ctx.moveTo(x - 2.5, sy - 2);
+      ctx.lineTo(x, sy - 10);
+      ctx.lineTo(x + 2.5, sy - 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(x - 2.5, sy + 2);
+      ctx.lineTo(x, sy + 10);
+      ctx.lineTo(x + 2.5, sy + 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
 }

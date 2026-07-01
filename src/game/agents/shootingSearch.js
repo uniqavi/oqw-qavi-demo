@@ -75,7 +75,7 @@ export function updateProjectiles(state, dt) {
     pr.life -= dt;
     const pb = playerBox(state.player);
     if (pr.x > pb.x && pr.x < pb.x + pb.w && pr.y > pb.y && pr.y < pb.y + pb.h) {
-      damagePlayer(state, DAMAGE.searchProjectile);
+      damagePlayer(state, DAMAGE.searchProjectile, undefined, undefined, true);
       pr.life = 0;
     }
   }
@@ -115,15 +115,19 @@ export function drawProjectiles(ctx, state) {
   for (const pr of state.projectiles) {
     ctx.save();
     ctx.translate(pr.x, pr.y);
-    ctx.rotate(Math.atan2(pr.vy, pr.vx));
-    ctx.fillStyle = '#1a1a1f';
-    ctx.fillRect(-25, -8, 50, 16);
-    ctx.fillStyle = '#E63946';
-    ctx.font = 'bold 8px ui-monospace, monospace';
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'center';
-    ctx.fillText(pr.text || '???', 0, 1);
-    ctx.textAlign = 'left';
+    ctx.rotate(Math.atan2(pr.vy, pr.vx) + Math.PI / 2);
+    
+    if (state.flipflopImg && state.flipflopImg.complete) {
+      ctx.drawImage(state.flipflopImg, -16, -22, 32, 44);
+    } else {
+      ctx.fillStyle = '#1a1a1f';
+      ctx.fillRect(-18, -10, 36, 20);
+      ctx.fillStyle = '#E63946';
+      ctx.font = '14px Arial';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.fillText('🩴', 0, 0);
+    }
     ctx.restore();
   }
 }

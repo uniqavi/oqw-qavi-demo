@@ -38,7 +38,7 @@ const COLX = [150, 560, 970, 1380, 1790, 2200, 2610];   // 7 columns
 const ROWY = [200, 500, 800, 1100, 1400, 1700];          // 6 rows
 const BLK_W = 300, BLK_H = 200;
 const WORLD_W = COLX[COLX.length - 1] + BLK_W + 150;     // 3060
-const WORLD_H = ROWY[ROWY.length - 1] + BLK_H + 170;     // 2070
+const WORLD_H = 3000;
 const HEADER = { x: 0, y: 0, w: WORLD_W, h: 110 };
 
 function blockRect(c1, r1, c2, r2) {
@@ -97,20 +97,31 @@ const GAPS = [
 const OPEN_CONNECTOR = { 0: 5, 1: 3, 2: 0, 3: 5, 4: 2, 5: 1 };  // open GAPS index per row
 
 // ── Spreadsheet minefield — a walkable Excel grid (NOT a wall). ──
+const SAFE_PATH_SET = new Set([
+  '3,0', '4,0', '5,0', '6,0',
+  '3,1', '6,1',
+  '3,2', '4,2', '6,2',
+  '0,3', '1,3', '4,3', '6,3',
+  '1,4', '2,4', '3,4', '4,4', '6,4',
+  '6,5',
+  '4,6', '5,6', '6,6',
+  '3,7', '4,7',
+  '3,8', '7,8',
+  '3,9', '4,9', '5,9', '6,9', '7,9'
+]);
+
 const MINE_GRID = {
-  x: 1410, y: 1640, cols: 8, rows: 4, cw: 132, ch: 100,
-  // Column 0 is a SAFE entry lip; danger begins at col 1. A winding safe route
-  // threads to the bonus doc at cell (4,1) and on to a far exit at (7,2).
-  mines: [
-    [1, 0], [1, 1], [1, 3],
-    [2, 0], [2, 3],
-    [3, 0], [3, 3],
-    [4, 0], [4, 3],
-    [5, 0], [5, 2], [5, 3],
-    [6, 0], [6, 3],
-    [7, 0], [7, 1], [7, 3],
-  ],
+  x: 1410, y: 1640, cols: 8, rows: 10, cw: 132, ch: 100,
+  mines: []
 };
+
+for (let c = 0; c < MINE_GRID.cols; c++) {
+  for (let r = 0; r < MINE_GRID.rows; r++) {
+    if (!SAFE_PATH_SET.has(c + ',' + r)) {
+      MINE_GRID.mines.push([c, r]);
+    }
+  }
+}
 
 const DOCS_TARGET = 4;
 const CAPTURE_TIME = 1.2;
@@ -151,6 +162,7 @@ export default class DashboardScene extends Phaser.Scene {
 
   create(data) {
     this.difficulty = data?.difficulty || localStorage.getItem('oqw-difficulty') || 'easy';
+    this.revealedGrid = data?.revealedGrid || {};
     this.canvas = document.getElementById('oqw');
     this.ctx = this.canvas.getContext('2d');
     this.handleResize = this.handleResize.bind(this);
@@ -189,12 +201,13 @@ export default class DashboardScene extends Phaser.Scene {
     this.panels = PANEL_SPECS.map(s => ({ ...s, ...blockRect(s.c1, s.r1, s.c2, s.r2), shake: 0, collapsed: 0, hostileActive: false }));
     this.panels.forEach(p => { p.data = genData(p); });
     this.seals = this.buildSeals();
-    this.solids = this.panels.concat(this.seals);
+    this.solids = this.panels.filter(p => p.kind !== 'sheet').concat(this.seals);
     this.exitPanel = this.panels.find(p => p.exit);
 
     this.hazards = this.buildHazards();
     this.docs = this.buildDocs();
     this.exit = null;
+    this.detonatingMine = null;
 
     // Input
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -225,6 +238,7 @@ export default class DashboardScene extends Phaser.Scene {
     this.hpFill = document.getElementById('hp-fill');
     this.hpNumber = document.getElementById('hp-number');
     this.taskFrame?.classList.remove('hidden');
+    this.taskFrame?.classList.remove('cleared');
     this.hpFrame?.classList.remove('hidden');
 
     // Narration
@@ -318,14 +332,16 @@ export default class DashboardScene extends Phaser.Scene {
 
   buildDocs() {
     // Required (4) → one behind each hazard along the forced snake.
-    // Bonus (2) → both in the minefield (an optional, deadly detour).
+    // Bonus (3) → placed along the spreadsheet green safe path.
     return [
       { x: 2555, y: 300,  required: true,  taken: false, takeT: 0 },  // by the gauge (snake end)
       { x: 1100, y: 750,  required: true,  taken: false, takeT: 0 },  // gauntlet #1 corridor
       { x: 2140, y: 1350, required: true,  taken: false, takeT: 0 },  // gauntlet #2 corridor
       { x: 900,  y: 1650, required: true,  taken: false, takeT: 0 },  // gauntlet #3 corridor
-      { x: 1740, y: 1890, required: false, taken: false, takeT: 0 },  // bonus — minefield cell (2,2)
-      { x: 2004, y: 1790, required: false, taken: false, takeT: 0 },  // bonus — minefield cell (4,1)
+      // Spreadsheet green path docs:
+      { x: 1872, y: 2090, required: false, taken: false, takeT: 0 },  // D5 (index 3,4)
+      { x: 2268, y: 1690, required: false, taken: false, takeT: 0 },  // G1 (index 6,0)
+      { x: 2004, y: 2290, required: false, taken: false, takeT: 0 },  // E7 (index 4,6)
     ];
   }
 
@@ -373,14 +389,19 @@ export default class DashboardScene extends Phaser.Scene {
   }
   restartLevel() {
     this.hideCrash();
-    this.scene.restart({ difficulty: this.difficulty });
+    this.scene.restart({ difficulty: this.difficulty, revealedGrid: this.revealedGrid });
   }
 
-  // ── Collision ──
   hits(x, y, w, h) {
     const box = { x: x - w / 2, y: y - h / 2, w, h };
     if (aabb(box, HEADER)) return true;
-    for (const p of this.solids) { if (p.collapsed < 1 && aabb(box, p)) return true; }
+    const inSheet = (box.x + box.w > 1410 && box.x < 2466 && box.y + box.h > 1640 && box.y < 2640);
+    for (const p of this.solids) {
+      if (p.collapsed < 1 && aabb(box, p)) {
+        if (inSheet && p.kind === undefined && p.margin === undefined) continue;
+        return true;
+      }
+    }
     return false;
   }
   clampWorld(p) {
@@ -407,7 +428,16 @@ export default class DashboardScene extends Phaser.Scene {
       const box = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h };
       let hit = null;
       if (aabb(box, HEADER)) hit = HEADER;
-      else for (const s of this.solids) { if (s.collapsed < 1 && aabb(box, s)) { hit = s; break; } }
+      else {
+        const inSheet = (box.x + box.w > 1410 && box.x < 2466 && box.y + box.h > 1640 && box.y < 2640);
+        for (const s of this.solids) {
+          if (s.collapsed < 1 && aabb(box, s)) {
+            if (inSheet && s.kind === undefined && s.margin === undefined) continue;
+            hit = s;
+            break;
+          }
+        }
+      }
       if (!hit) break;
       const left = hit.x - (box.x + box.w), right = (hit.x + hit.w) - box.x;
       const up = hit.y - (box.y + box.h), down = (hit.y + hit.h) - box.y;
@@ -457,30 +487,55 @@ export default class DashboardScene extends Phaser.Scene {
     if (p.invuln > 0) p.invuln -= dt;
     if (p.hitFlash > 0) p.hitFlash -= dt;
 
-    // movement with a little inertia
-    const sp = BASE_SPEED * (this.keys.shift.isDown ? PLAYER.boostMul : 1);
-    let ix = 0, iy = 0;
-    if (this.keys.left.isDown || this.cursors.left.isDown) ix -= 1;
-    if (this.keys.right.isDown || this.cursors.right.isDown) ix += 1;
-    if (this.keys.up.isDown || this.cursors.up.isDown) iy -= 1;
-    if (this.keys.down.isDown || this.cursors.down.isDown) iy += 1;
-    if (ix || iy) { const l = Math.hypot(ix, iy); ix /= l; iy /= l; }
-    const dvx = ix * sp, dvy = iy * sp;
-    const rate = (ix || iy) ? 9 : 5.5;
-    p.vx += (dvx - p.vx) * Math.min(1, dt * rate);
-    p.vy += (dvy - p.vy) * Math.min(1, dt * rate);
+    if (this.detonatingMine) {
+      p.vx = 0;
+      p.vy = 0;
+      this.detonatingMine.t += dt;
+      if (!this.detonatingMine.exploded) {
+        if (this.detonatingMine.t >= this.detonatingMine.duration) {
+          this.detonatingMine.exploded = true;
+          this.detonatingMine.blastT = 0;
+          playSfx('mineBoom');
+          for (let j = 0; j < 24; j++) {
+            this.gs.sparks.push({
+              x: this.detonatingMine.cx, y: this.detonatingMine.cy, life: 0.6, hit: true,
+              vx: (Math.random() - 0.5) * 450, vy: (Math.random() - 0.5) * 450,
+            });
+          }
+        }
+      } else {
+        this.detonatingMine.blastT += dt;
+        if (this.detonatingMine.blastT >= 0.4) {
+          this.killPlayer('STEPPED ON A MINE');
+          this.detonatingMine = null;
+        }
+      }
+    } else {
+      // movement with a little inertia
+      const sp = BASE_SPEED * (this.keys.shift.isDown ? PLAYER.boostMul : 1);
+      let ix = 0, iy = 0;
+      if (this.keys.left.isDown || this.cursors.left.isDown) ix -= 1;
+      if (this.keys.right.isDown || this.cursors.right.isDown) ix += 1;
+      if (this.keys.up.isDown || this.cursors.up.isDown) iy -= 1;
+      if (this.keys.down.isDown || this.cursors.down.isDown) iy += 1;
+      if (ix || iy) { const l = Math.hypot(ix, iy); ix /= l; iy /= l; }
+      const dvx = ix * sp, dvy = iy * sp;
+      const rate = (ix || iy) ? 9 : 5.5;
+      p.vx += (dvx - p.vx) * Math.min(1, dt * rate);
+      p.vy += (dvy - p.vy) * Math.min(1, dt * rate);
 
-    const stuck = this.hits(p.x, p.y, p.w, p.h);
-    const nx = p.x + p.vx * dt;
-    if (stuck || !this.hits(nx, p.y, p.w, p.h)) p.x = nx; else p.vx = 0;
-    const ny = p.y + p.vy * dt;
-    if (stuck || !this.hits(p.x, ny, p.w, p.h)) p.y = ny; else p.vy = 0;
-    this.clampWorld(p);
+      const stuck = this.hits(p.x, p.y, p.w, p.h);
+      const nx = p.x + p.vx * dt;
+      if (stuck || !this.hits(nx, p.y, p.w, p.h)) p.x = nx; else p.vx = 0;
+      const ny = p.y + p.vy * dt;
+      if (stuck || !this.hits(p.x, ny, p.w, p.h)) p.y = ny; else p.vy = 0;
+      this.clampWorld(p);
+    }
 
     this.camX = Phaser.Math.Clamp(p.x - this.viewWW / 2, 0, Math.max(0, WORLD_W - this.viewWW));
     this.camY = Phaser.Math.Clamp(p.y - this.viewHW / 2, 0, Math.max(0, WORLD_H - this.viewHW));
 
-    if (this.started) this.updateHazards(dt);
+    if (this.started && !this.detonatingMine) this.updateHazards(dt);
     this.updateCapture(dt);
     this.updateEscape(dt);
 
@@ -646,13 +701,31 @@ export default class DashboardScene extends Phaser.Scene {
     const g = hz.grid;
     if (p.x < g.x || p.x > g.x + g.cols * g.cw || p.y < g.y || p.y > g.y + g.rows * g.ch) return;
     this.tryActivate(hz, p.x, p.y, 9999);
-    const col = Math.floor((p.x - g.x) / g.cw);
-    const row = Math.floor((p.y - g.y) / g.ch);
-    if (!hz.mineSet.has(col + ',' + row)) return;
-    const ccx = g.x + (col + 0.5) * g.cw, ccy = g.y + (row + 0.5) * g.ch;
-    if (Math.abs(p.x - ccx) < g.cw * 0.4 && Math.abs(p.y - ccy) < g.ch * 0.4) {
-      playSfx('mineBoom');
-      this.killPlayer('STEPPED ON A MINE');
+    
+    const pBox = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h };
+    for (let c = 0; c < g.cols; c++) {
+      for (let r = 0; r < g.rows; r++) {
+        const cx = g.x + c * g.cw, cy = g.y + r * g.ch;
+        const cellBox = { x: cx, y: cy, w: g.cw, h: g.ch };
+        if (aabb(pBox, cellBox)) {
+          const isMine = hz.mineSet.has(c + ',' + r);
+          if (isMine) {
+            this.revealedGrid[c + ',' + r] = 'mine';
+            if (!this.detonatingMine) {
+              this.detonatingMine = {
+                col: c, row: r,
+                cx: cx + g.cw / 2, cy: cy + g.ch / 2,
+                x: cx, y: cy, w: g.cw, h: g.ch,
+                t: 0, duration: 0.6,
+                exploded: false, blastT: 0
+              };
+              beep(200, 0.15, 'sawtooth', 0.1);
+            }
+          } else {
+            this.revealedGrid[c + ',' + r] = 'safe';
+          }
+        }
+      }
     }
   }
 
@@ -715,10 +788,7 @@ export default class DashboardScene extends Phaser.Scene {
     if (this.done) return;
     this.done = true;
     beep(659, 0.12, 'sine', 0.12); setTimeout(() => beep(988, 0.25, 'sine', 0.12), 130);
-    this.startNarration([
-      { speaker: 'YOU', text: 'Files are out. So am I.' },
-      { speaker: 'SYSTEM', text: '> EXFILTRATION COMPLETE' },
-    ], () => { this.quitToMenu(); });
+    this.quitToMenu();
   }
 
   // ── Crash / restart popup (DOM) ──
@@ -797,6 +867,12 @@ export default class DashboardScene extends Phaser.Scene {
     this.drawSeals(ctx, view);
     this.drawMinefield(ctx, view);
     for (const pnl of this.panels) { if (aabb(view, pnl) || pnl.collapsed > 0) this.drawPanel(ctx, pnl); }
+    
+    // Draw guide arrows
+    this.drawGuideArrows(ctx);
+
+    // Draw mine detonation animation
+    this.drawMineDetonation(ctx);
 
     for (const hz of this.hazards) if (hz.type === 'bar' && hz.activated) this.drawPistons(ctx, hz);
     for (const hz of this.hazards) if (hz.type === 'gauge') this.drawGauge(ctx, hz);
@@ -1090,7 +1166,26 @@ export default class DashboardScene extends Phaser.Scene {
     const g = hz.grid;
     const W = g.cols * g.cw, H = g.rows * g.ch;
     if (!aabb(view, { x: g.x - 30, y: g.y - 24, w: W + 30, h: H + 24 })) return;
+    
+    // 1. Draw base white sheet background
     ctx.fillStyle = '#fcfdff'; ctx.fillRect(g.x, g.y, W, H);
+
+    // 2. Draw revealed green/red cell overlays
+    for (let c = 0; c < g.cols; c++) {
+      for (let r = 0; r < g.rows; r++) {
+        const cx = g.x + c * g.cw, cy = g.y + r * g.ch;
+        const status = this.revealedGrid[c + ',' + r];
+        if (status === 'safe') {
+          ctx.fillStyle = '#2ca55c'; // green path
+          ctx.fillRect(cx + 1, cy + 1, g.cw - 2, g.ch - 2);
+        } else if (status === 'mine') {
+          ctx.fillStyle = '#e63946'; // red mine
+          ctx.fillRect(cx + 1, cy + 1, g.cw - 2, g.ch - 2);
+        }
+      }
+    }
+
+    // 3. Draw headers and grid lines on top
     ctx.fillStyle = '#e7edf6'; ctx.fillRect(g.x, g.y - 24, W, 24); ctx.fillRect(g.x - 30, g.y, 30, H);
     ctx.fillStyle = '#8a99b5'; ctx.font = '13px Consolas, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
     for (let c = 0; c < g.cols; c++) ctx.fillText(String.fromCharCode(65 + c), g.x + (c + 0.5) * g.cw, g.y - 12);
@@ -1099,21 +1194,31 @@ export default class DashboardScene extends Phaser.Scene {
     ctx.strokeStyle = '#d6deeb'; ctx.lineWidth = 1;
     for (let c = 0; c <= g.cols; c++) { ctx.beginPath(); ctx.moveTo(g.x + c * g.cw, g.y); ctx.lineTo(g.x + c * g.cw, g.y + H); ctx.stroke(); }
     for (let r = 0; r <= g.rows; r++) { ctx.beginPath(); ctx.moveTo(g.x, g.y + r * g.ch); ctx.lineTo(g.x + W, g.y + r * g.ch); ctx.stroke(); }
-    // faint fake cell values for texture
+
+    // 4. faint fake cell values for texture — drawn on all cells so they look uniform
     ctx.fillStyle = 'rgba(120,135,160,0.5)'; ctx.font = '10px Consolas, monospace'; ctx.textBaseline = 'middle';
-    for (let c = 0; c < g.cols; c++) for (let r = 0; r < g.rows; r++) {
-      if (hz.mineSet.has(c + ',' + r)) continue;
-      ctx.fillText(g.cellText[r * g.cols + c], g.x + c * g.cw + 8, g.y + (r + 0.5) * g.ch);
+    for (let c = 0; c < g.cols; c++) {
+      for (let r = 0; r < g.rows; r++) {
+        // Draw normal text in contrasting color if safe (green) or mine (red) to keep it readable, or default
+        const status = this.revealedGrid[c + ',' + r];
+        if (status === 'safe') ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        else if (status === 'mine') ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        else ctx.fillStyle = 'rgba(120,135,160,0.5)';
+        ctx.fillText(g.cellText[r * g.cols + c], g.x + c * g.cw + 8, g.y + (r + 0.5) * g.ch);
+      }
     }
-    // EXTREMELY subtle tells on mined cells
-    for (const key of hz.mineSet) {
-      const [c, r] = key.split(',').map(Number);
-      const cx = g.x + c * g.cw, cy = g.y + r * g.ch;
-      ctx.fillStyle = hz.activated ? 'rgba(230,57,70,0.05)' : 'rgba(40,60,90,0.035)';
-      ctx.fillRect(cx + 1, cy + 1, g.cw - 2, g.ch - 2);
-      ctx.fillStyle = hz.activated ? 'rgba(230,57,70,0.5)' : 'rgba(120,135,160,0.5)';
-      ctx.fillRect(cx + g.cw - 7, cy + 4, 3, 3);
-    }
+
+    // 5. Guide arrows pointing right at the entrance of the safe path (4A and 4B, i.e. index 0,3 and 1,3)
+    ctx.fillStyle = '#1e5c3c'; // dark forest green for high contrast
+    ctx.font = 'bold 15px sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    
+    ctx.fillText('▶', g.x + 0.5 * g.cw - 15, g.y + 3.5 * g.ch);
+    ctx.fillText('▶', g.x + 0.5 * g.cw + 15, g.y + 3.5 * g.ch);
+    ctx.fillText('▶', g.x + 1.5 * g.cw - 15, g.y + 3.5 * g.ch);
+    ctx.fillText('▶', g.x + 1.5 * g.cw + 15, g.y + 3.5 * g.ch);
+    ctx.textAlign = 'left';
   }
 
   // ── Hydraulic piston crushers ──
@@ -1360,27 +1465,11 @@ export default class DashboardScene extends Phaser.Scene {
 
   // ===== Narration =====
   playIntroNarration() {
-    if (this.beats.intro) return;
-    this.beats.intro = true;
-    this.startNarration([
-      { speaker: 'TOTO', text: 'HUSH’s analytics floor. The tunnel shrank you on the way down — that’s why it’s all so big.' },
-      { speaker: 'TOTO', text: 'Window’s a scanner now. Drag it over the page, hold SPACE on whatever lights up. I need four files.' },
-      { speaker: 'YOU',  text: 'It just looks like a dashboard. Charts, numbers…' },
-      { speaker: 'TOTO', text: 'It does — until you get close. Then they go red and turn on you. Pies roll, the gauge needle’s a laser, and those bar charts? Crushers.' },
-      { speaker: 'TOTO', text: 'And do NOT trust the spreadsheet. Some cells are mined. One wrong step and you’re gone. Read it through the glass.' },
-    ], () => { this.started = true; });
+    this.started = true;
   }
-  playFirstDocNarration() {
-    if (this.beats.firstDoc) return;
-    this.beats.firstDoc = true;
-    this.startNarration([{ speaker: 'TOTO', text: 'One down. Three more — and they’re tucked behind the nasty widgets.' }]);
-  }
+  playFirstDocNarration() {}
   playAllDocsNarration() {
-    if (this.beats.allDocs) return;
-    this.beats.allDocs = true;
-    this.startNarration([
-      { speaker: 'TOTO', text: 'That’s four. Pulling them now — the floor’s about to come apart. Find the gap.' },
-    ], () => this.startExport());
+    this.startExport();
   }
 
   startNarration(lines, onDone) {
@@ -1441,6 +1530,66 @@ export default class DashboardScene extends Phaser.Scene {
     this.intelDom?.wrap?.classList.remove('show');
     setTimeout(() => this.intelDom?.wrap?.classList.add('hidden'), 400);
     if (onDone) onDone();
+  }
+
+  drawGuideArrows(ctx) {
+    const drawThickArrow = (x, y, angle, size = 45) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.fillStyle = '#b4ec12';
+      ctx.strokeStyle = '#1a1a1f';
+      ctx.lineWidth = 3.5;
+      ctx.lineJoin = 'miter';
+      ctx.beginPath();
+      ctx.moveTo(size * 0.5, 0);
+      ctx.lineTo(0, -size * 0.4);
+      ctx.lineTo(0, -size * 0.15);
+      ctx.lineTo(-size * 0.5, -size * 0.15);
+      ctx.lineTo(-size * 0.5, size * 0.15);
+      ctx.lineTo(0, size * 0.15);
+      ctx.lineTo(0, size * 0.4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    // UP path (1 arrow)
+    drawThickArrow(910, 1850, -Math.PI / 2);
+
+    // RIGHT path (1 arrow)
+    drawThickArrow(1200, 2030, 0);
+  }
+
+  drawMineDetonation(ctx) {
+    if (!this.detonatingMine) return;
+    const m = this.detonatingMine;
+    if (!m.exploded) {
+      // Blinking red before explosion
+      const alpha = 0.15 + Math.sin(m.t * 26) * 0.12;
+      ctx.fillStyle = 'rgba(230, 57, 70, ' + alpha + ')';
+      ctx.fillRect(m.x, m.y, m.w, m.h);
+      ctx.strokeStyle = '#E63946';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(m.x, m.y, m.w, m.h);
+    } else {
+      // Expanding explosion ripple circle
+      const p = m.blastT / 0.4;
+      const r = p * 90;
+      const a = 1 - p;
+      ctx.save();
+      ctx.fillStyle = 'rgba(244, 211, 94, ' + (a * 0.45) + ')';
+      ctx.beginPath();
+      ctx.arc(m.cx, m.cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(230, 57, 70, ' + a + ')';
+      ctx.lineWidth = 4 * (1 - p);
+      ctx.beginPath();
+      ctx.arc(m.cx, m.cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 }
 

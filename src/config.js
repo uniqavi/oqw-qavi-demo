@@ -49,8 +49,8 @@ export const L1 = {
 
 // Player
 export const PLAYER = {
-  startX: 480,             // centered horizontally
-  startY: 320,             // near top of the page (camera starts at top)
+  startX: 80,             // top-left corner
+  startY: 80,             // top-left corner
   startSize: 56,           // smaller window = harder to graze enemies (runner difficulty)
   maxSize: 200,
   deathSize: 25,
@@ -74,7 +74,7 @@ export const PLAYER = {
 export const SCROLL = {
   // Overall slower than before so SHIFT-boosted player movement actually
   // feels effective (the relative speed-up against the page is bigger).
-  slowSpeed:    34,    // px/sec for the first `slowDuration` seconds (very calm)
+  slowSpeed:    90,    // px/sec for the first `slowDuration` seconds (very calm)
   fastSpeed:    200,   // max base speed after the ramp completes
   slowDuration: 16,    // seconds of calm intro before ramp begins
   rampDuration: 32,    // seconds over which speed ramps slow → fast
@@ -145,12 +145,14 @@ export const GAZE = {
 
 // Damage values
 export const DAMAGE = {
-  chasingRec: 15,
-  fallingComment: 22,
-  crushingCookie: 14,
-  searchProjectile: 8,
-  explodingDebris: 6,
-  gunBullet: 60,
+  chasingRec: 25,
+  fallingComment: 35,
+  crushingCookie: 22,
+  searchProjectile: 15,
+  explodingDebris: 12,
+  gunBullet: 75,
+  fallingBell: 28,
+  roadSpike: 25,
 };
 
 // Agent tuning (extracted directly from source)
@@ -184,11 +186,11 @@ export const AGENTS = {
     knockY: 30,
   },
   explodingLike: {
-    triggerR: 90,
+    triggerR: 220,
     chargeDuration: 0.6,
-    debrisCount: 14,
-    debrisSpeedBase: 200,
-    debrisSpeedSpread: 100,
+    debrisCount: 20,
+    debrisSpeedBase: 350,
+    debrisSpeedSpread: 150,
     debrisLife: 2.5,
     debrisSize: 14,
     cooldownDuration: 5,
@@ -199,12 +201,10 @@ export const AGENTS = {
     knockY: -50,
   },
   gunShooter: {
-    baseX: 892,
+    baseX: 701,
     baseY: 26,
-    // Bumped from 350 — the avatar should clock you "as you enter the room,"
-    // not only when you're standing next to it. awakenDuration also tightened
-    // (0.7→0.45) so the threat reads sooner.
-    triggerR: 480,
+    // Bumped to 900 to ensure it wakes up when player is in comments
+    triggerR: 900,
     awakenDuration: 0.45,
     aimDuration: 1.6,
     rotateSpeed: 60 * Math.PI / 180,
@@ -214,6 +214,13 @@ export const AGENTS = {
     bulletSpeed: 1500,
     bulletLife: 2.5,
     initialAngle: Math.atan2(1, -1),
+    cooldownDuration: 4,
+  },
+  fallingBell: {
+    triggerW: 30,
+    rumbleDuration: 0.8,
+    gravity: 1200,
+    knockY: 25,
   },
 };
 

@@ -6,6 +6,7 @@ import GameScene from './scenes/GameScene.js';
 import Level2Scene from './scenes/Level2Scene.js';
 import DashboardScene from './scenes/DashboardScene.js';
 import HUDScene from './scenes/HUDScene.js';
+import { playMusic } from './game/music.js';
 
 const config = {
   type: Phaser.AUTO,
@@ -110,5 +111,7 @@ if (loginBtn && loginScreen) {
     // Hide the login overlay, revealing the game canvas (MenuScene desktop) underneath
     loginScreen.classList.add('hidden');
     loginScreen.classList.remove('flex');
+    playMusic('menu', { fadeMs: 1200 });
   });
 }
+

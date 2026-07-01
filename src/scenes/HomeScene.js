@@ -7,6 +7,8 @@ import * as ChasingRecs from '../game/agents/chasingRecs.js';
 import * as ShootingSearch from '../game/agents/shootingSearch.js';
 import * as GunShooter from '../game/agents/gunShooter.js';
 import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
+import { damagePlayer } from '../game/combat.js';
+
 
 // LEVEL 1.1 — TOTALLYNORMALTUBE HOME PAGE ("Hidden Agents")
 //
@@ -38,7 +40,7 @@ const CONTENT_W = DW - LAYOUT.content.x - LAYOUT.content.right;
 // Search bar + account avatar rects in world space — must match where
 // drawTopBar paints them, since the agents trigger/aim off these.
 const SEARCH_RECT  = { x: DW / 2 - 320, y: 12, w: 560, h: 32 };
-const ACCOUNT_RECT = { x: DW - 142, y: 16, w: 24, h: 24 }; // avatar circle centers ~(DW-130, 28)
+const ACCOUNT_RECT = { x: DW / 2 + 250, y: 10, w: 36, h: 36 };
 
 const CHIPS = ['All', 'Brain Rot', 'Distractions', 'Outrage', 'Compliance',
   'Nothing', 'Mixes', 'Live', 'Comply', 'Trending', 'New to you'];
@@ -91,12 +93,39 @@ export default class HomeScene extends Phaser.Scene {
     if (urlBar) urlBar.textContent = 'https://totallynormaltube.gov.??/';
 
     this.time = 0;
+    this.camX = 0;
     this.camY = 0;
+    this.zoomLevel = 1.0;
     this.docsCollected = 0;
+    this._hudAnimateStarted = false;
     this.failed = false;
-    this.entering = false;        // portal dive in progress (waiting on narration)
-    this.started = false;         // agents stay inert until the intro is dismissed
-    this.startT = 0;              // game time when play actually began (for gun grace)
+    this.entering = false;
+    this.started = false;
+    this.startT = 0;
+    this.tutorialStep = 0;
+    this.cannonballs = [];
+    this.fireballs = [];
+    this.portalSparkles = [];
+
+    // Smasher short selections (exactly two unique alternating smashers: 2nd [index 1] and 4th [index 3] cards)
+    this.smasherIndices = [1, 3];
+    this.smasherStates = this.smasherIndices.map(index => ({
+      index,
+      state: 'idle',
+      x: 0,
+      y: 0,
+      length: 0,
+      targetX: 0,
+      targetY: 0,
+      angle: -Math.PI / 2,
+      t: 0,
+      cooldown: 0,
+      triggerR: 320,
+    }));
+
+    // Preload flipflop image
+    this.flipflopImg = new Image();
+    this.flipflopImg.src = 'flipflop.png';
 
     this.buildVideos();           // sets this.videos + this.worldH
 
@@ -124,6 +153,7 @@ export default class HomeScene extends Phaser.Scene {
       status: 'playing', lostReason: '',
       time: 0, worldW: DW,
       agents: this.buildAgents(),
+      flipflopImg: this.flipflopImg,
     };
 
     this.docs = this.buildDocs();
@@ -137,9 +167,9 @@ export default class HomeScene extends Phaser.Scene {
       shift: Phaser.Input.Keyboard.KeyCodes.SHIFT,
     });
     this.onKey = (e) => {
-      // Narration takes priority — SPACE/Enter advance the line
-      if (this.narration && (e.key === ' ' || e.key === 'Enter')) {
-        e.preventDefault(); this.advanceNarration(); return;
+      // Tutorial takes priority — SPACE/Enter advance the step
+      if (this.tutorialStep > 0 && (e.key === ' ' || e.key === 'Enter')) {
+        e.preventDefault(); this.advanceTutorial(); return;
       }
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -158,6 +188,7 @@ export default class HomeScene extends Phaser.Scene {
     this.hpFill = document.getElementById('hp-fill');
     this.hpNumber = document.getElementById('hp-number');
     this.taskFrame?.classList.remove('hidden');
+    this.taskFrame?.classList.remove('cleared');
     this.hpFrame?.classList.remove('hidden');
 
     // Narration: reuse the intel-dialog DOM. Click anywhere or SPACE/Enter
@@ -168,16 +199,12 @@ export default class HomeScene extends Phaser.Scene {
       line:    document.getElementById('intel-line'),
       hint:    document.getElementById('intel-hint'),
     };
-    this.narration = null;
-    this.narrationTimer = null;
     this.onNarrationClick = (e) => {
-      if (this.narration) { e.stopPropagation(); this.advanceNarration(); }
+      if (this.tutorialStep > 0) { e.stopPropagation(); this.advanceTutorial(); }
     };
     document.addEventListener('click', this.onNarrationClick);
 
-    // Beat tracking — flag-driven narration so the same beat can't replay.
-    this.beats = { intro: false, first: false, allDocs: false, lost: false };
-    setTimeout(() => this.playIntroNarration(), 600);
+    setTimeout(() => this.startTutorial(), 600);
 
     this.handleResize();
     initAudio();
@@ -210,7 +237,7 @@ export default class HomeScene extends Phaser.Scene {
       },
       gunShooter: {
         state: 'idle',
-        baseX: ACCOUNT_RECT.x + 12, baseY: ACCOUNT_RECT.y + 12,
+        baseX: ACCOUNT_RECT.x + ACCOUNT_RECT.w / 2, baseY: ACCOUNT_RECT.y + ACCOUNT_RECT.h / 2,
         triggerR: 700 * tMul,
         armLength: 0,
         currentAngle: gs.initialAngle,
@@ -279,7 +306,22 @@ export default class HomeScene extends Phaser.Scene {
     this.worldH = y + 60;
   }
   mkVid(d, x, y, w, th, seed) {
-    return { ...d, x, y, w, th, seed, removed: false, removeT: 0, _agent: null };
+    const cx = x + 18;
+    const ay = y + th + 14;
+    const cy = ay + 6;
+    const isMortar = Math.random() < 0.5;
+    return {
+      ...d, x, y, w, th, seed, removed: false, removeT: 0, _agent: null,
+      mortar: isMortar ? {
+        cx, cy,
+        state: 'idle',
+        angle: 0,
+        cooldown: 0,
+        transformT: 0,
+        barrelLength: 0,
+        triggerR: 350,
+      } : null
+    };
   }
 
   handleResize() {
@@ -302,6 +344,7 @@ export default class HomeScene extends Phaser.Scene {
   }
 
   quitToMenu() {
+    clearInterval(this._tickingInterval);
     resetPauseMenu();
     document.body.classList.add('menu-mode');
     this.scene.stop();
@@ -325,7 +368,28 @@ export default class HomeScene extends Phaser.Scene {
     if (this.gs.status === 'lost') this.failed = true;
     if (this.failed) { this.render(); this.updateHud(); return; }
     if (this.entering) { this.render(); this.updateHud(); return; }
-    if (this.narration) { this.render(); this.updateHud(); return; }   // paused for narration
+    if (this.tutorialStep > 0) {
+      const zoomTarget = 1.6;
+      let tx = this.player.x, ty = this.player.y;
+      if (this.tutorialStep === 2) {
+        const doc = this.docs[1];
+        tx = doc.x; ty = doc.y;
+      }
+      const viewW = DW / this.zoomLevel;
+      const viewHW = this.viewHW / this.zoomLevel;
+      let targetCamX = tx - viewW / 2;
+      let targetCamY = ty - viewHW / 2;
+      targetCamX = Phaser.Math.Clamp(targetCamX, 0, Math.max(0, DW - viewW));
+      targetCamY = Phaser.Math.Clamp(targetCamY, 0, Math.max(0, this.worldH - viewHW));
+      
+      this.zoomLevel += (zoomTarget - this.zoomLevel) * Math.min(1, dt * 3.5);
+      this.camX += (targetCamX - this.camX) * Math.min(1, dt * 4.5);
+      this.camY += (targetCamY - this.camY) * Math.min(1, dt * 4.5);
+      
+      this.render();
+      this.updateHud();
+      return;
+    }
 
     const p = this.player;
 
@@ -346,17 +410,47 @@ export default class HomeScene extends Phaser.Scene {
     if (p.hitFlash > 0) p.hitFlash -= dt;
 
     // ── Camera follows the window ──
-    this.camY = Phaser.Math.Clamp(p.y - this.viewHW * 0.42, 0, Math.max(0, this.worldH - this.viewHW));
+    this.zoomLevel += (1.0 - this.zoomLevel) * Math.min(1, dt * 4.5);
+    this.camX += (0 - this.camX) * Math.min(1, dt * 4.5);
+    const targetCamY = Phaser.Math.Clamp(p.y - this.viewHW * 0.42, 0, Math.max(0, this.worldH - this.viewHW));
+    this.camY += (targetCamY - this.camY) * Math.min(1, dt * 4.5);
 
     // ── Hostile UI agents (inert until the intro is dismissed) ──
     if (this.started) {
       ChasingRecs.updateAll(this.gs.agents.chasingRecs, dt, this.gs);
       ShootingSearch.update(this.gs.agents.shootingSearch, dt, this.gs);
       if (this.time >= this.startT + GUN_GRACE) GunShooter.update(this.gs.agents.gunShooter, dt, this.gs);
+      this.updateMortars(dt);
+      this.updateCannonballs(dt);
+      for (const vs of this.smasherStates) {
+        this.updateSmasherState(vs, dt);
+      }
     }
     // Projectile/bullet motion always ticks so in-flight shots clear cleanly.
     ShootingSearch.updateProjectiles(this.gs, dt);
     GunShooter.updateProjectiles(this.gs, dt);
+
+    // update exit sparkles
+    if (this.docsCollected >= DOCS_TARGET && this.portalVid) {
+      if (Math.random() < 0.25) {
+        this.portalSparkles.push({
+          x: this.portalVid.x + Math.random() * this.portalVid.w,
+          y: this.portalVid.y + this.portalVid.th - Math.random() * 20,
+          vy: -40 - Math.random() * 40,
+          life: 1.0,
+          maxLife: 1.0,
+          size: 3 + Math.random() * 5,
+          angle: Math.random() * Math.PI,
+          rotSpeed: (Math.random() - 0.5) * 2,
+        });
+      }
+      for (const sp of this.portalSparkles) {
+        sp.y += sp.vy * dt;
+        sp.life -= dt;
+        sp.angle += sp.rotSpeed * dt;
+      }
+      this.portalSparkles = this.portalSparkles.filter(sp => sp.life > 0);
+    }
 
     // ── Evidence docs ──
     for (const d of this.docs) {
@@ -382,18 +476,17 @@ export default class HomeScene extends Phaser.Scene {
     d.taken = true; d.takeT = this.time;
     this.docsCollected++;
     beep(880, 0.08, 'sine', 0.13); setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
-    if (this.docsCollected === 1) setTimeout(() => this.playFirstDocNarration(), 300);
-    else if (this.docsCollected >= DOCS_TARGET) setTimeout(() => this.playAllDocsNarration(), 300);
   }
 
   startEnter() {
     if (this.entering) return;
     this.entering = true;
     noise(0.5, 0.2); beep(120, 0.5, 'sawtooth', 0.1);
-    setTimeout(() => this.playLostContactNarration(() => this.transitionToRunner()), 450);
+    this.transitionToRunner();
   }
   transitionToRunner() {
     try { localStorage.setItem('oqw-level1-cleared', 'true'); } catch (e) {}
+    clearInterval(this._tickingInterval);
     this.scene.stop();
     this.scene.start('GameScene', { difficulty: this.difficulty, fromHomePage: true });
     this.scene.launch('HUDScene');
@@ -401,9 +494,17 @@ export default class HomeScene extends Phaser.Scene {
 
   updateHud() {
     if (this.taskLine) {
-      this.taskLine.textContent = this.docsCollected >= DOCS_TARGET
-        ? 'Dive into the boosted video.'
-        : 'Collect the evidence. Dodge the page.';
+      if (this.docsCollected >= DOCS_TARGET) {
+        this.taskFrame?.classList.add('cleared');
+        if (!this._hudAnimateStarted) {
+          this._hudAnimateStarted = true;
+          this.animateTaskLine('Find the exit window now.');
+          this.startTickingClock();
+        }
+      } else {
+        this.taskFrame?.classList.remove('cleared');
+        this.taskLine.textContent = 'Collect the evidence. Dodge the page.';
+      }
     }
     if (this.taskProg) this.taskProg.textContent = this.docsCollected + ' / ' + DOCS_TARGET;
     const p = this.player;
@@ -415,6 +516,40 @@ export default class HomeScene extends Phaser.Scene {
     if (this.hpNumber) this.hpNumber.textContent = Math.max(0, Math.round(p.hp));
   }
 
+  animateTaskLine(text) {
+    if (!this.taskLine) return;
+    this.taskLine.textContent = '';
+    let i = 0;
+    const interval = setInterval(() => {
+      if (this.failed || !this.sys || this.entering) {
+        clearInterval(interval);
+        return;
+      }
+      if (i < text.length) {
+        this.taskLine.textContent += text[i];
+        if (text[i] !== ' ') {
+          beep(1200, 0.015, 'sine', 0.06);
+        }
+        i++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 60);
+  }
+
+  startTickingClock() {
+    let beat = 0;
+    this._tickingInterval = setInterval(() => {
+      if (this.failed || !this.sys || this.entering) {
+        clearInterval(this._tickingInterval);
+        return;
+      }
+      const freq = beat % 2 === 0 ? 800 : 600;
+      beep(freq, 0.02, 'triangle', 0.08);
+      beat++;
+    }, 600);
+  }
+
   // ===== Render =====
   render() {
     const ctx = this.ctx;
@@ -424,8 +559,8 @@ export default class HomeScene extends Phaser.Scene {
 
     ctx.fillStyle = '#f7f7f7'; ctx.fillRect(0, 0, VW, VH);
     ctx.save();
-    ctx.scale(s, s);
-    ctx.translate(0, -this.camY);
+    ctx.scale(s * this.zoomLevel, s * this.zoomLevel);
+    ctx.translate(-this.camX, -this.camY);
 
     // page bg
     ctx.fillStyle = '#f7f7f7'; ctx.fillRect(0, 0, DW, this.worldH);
@@ -459,10 +594,25 @@ export default class HomeScene extends Phaser.Scene {
     // exit highlight on the boosted video once docs are done
     if (this.docsCollected >= DOCS_TARGET && this.portalVid) this.drawPortal(ctx, this.portalVid);
 
+    // cannonballs & smasher
+    this.drawCannonballs(ctx);
+    for (const vs of this.smasherStates) {
+      if (vs.state !== 'idle' && vs.state !== 'cooldown') {
+        this.drawSmasher(ctx, vs.x, vs.y, vs.angle, vs.length, vs.t, vs.state);
+      }
+    }
+
     // player window
     this.drawWindow(ctx);
 
     ctx.restore();
+
+    if (this.tutorialStep === 1) {
+      this.drawVignette(ctx, this.player.x, this.player.y, 90);
+    } else if (this.tutorialStep === 2) {
+      const doc = this.docs[1];
+      this.drawVignette(ctx, doc.x, doc.y, 50);
+    }
 
     // hint + fail overlay (screen space)
     if (this.failed) this.drawFail(ctx);
@@ -530,127 +680,448 @@ export default class HomeScene extends Phaser.Scene {
   }
 
   drawPortal(ctx, v) {
-    const pulse = 0.5 + Math.sin(this.time * 5) * 0.5;
-    ctx.strokeStyle = 'rgba(45,134,89,' + (0.55 + pulse * 0.4) + ')';
-    ctx.lineWidth = 5; ctx.strokeRect(v.x - 3, v.y - 3, v.w + 6, v.th + 6);
-    ctx.fillStyle = 'rgba(45,134,89,0.9)';
+    const pulse = 0.5 + Math.sin(this.time * 6) * 0.5;
+    const green = 'rgba(45,134,89,' + (0.55 + pulse * 0.4) + ')';
+    const gold = 'rgba(244,211,94,' + (0.55 + pulse * 0.4) + ')';
+    
+    // Glowing border pulse
+    ctx.strokeStyle = pulse > 0.5 ? gold : green;
+    ctx.lineWidth = 6;
+    ctx.strokeRect(v.x - 4, v.y - 4, v.w + 8, v.th + 8);
+
+    // Diagonal sheen sweep
+    const sweepT = (this.time * 0.6) % 1.0;
+    const sx = v.x - 100 + sweepT * (v.w + 200);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(v.x, v.y, v.w, v.th);
+    ctx.clip();
+    const grad = ctx.createLinearGradient(sx, v.y, sx + 50, v.y + v.th);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.0)');
+    grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.65)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sx - 100, v.y, 200, v.th);
+    ctx.restore();
+
+    // Floating golden/heavenly sparkles
+    for (const sp of this.portalSparkles) {
+      ctx.save();
+      ctx.translate(sp.x, sp.y);
+      ctx.rotate(sp.angle);
+      const alpha = sp.life / sp.maxLife;
+      ctx.strokeStyle = 'rgba(244, 211, 94, ' + alpha + ')';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-sp.size, 0); ctx.lineTo(sp.size, 0);
+      ctx.moveTo(0, -sp.size); ctx.lineTo(0, sp.size);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.fillStyle = pulse > 0.5 ? 'rgba(244,211,94,0.95)' : 'rgba(45,134,89,0.95)';
     const label = '▶ DIVE IN';
     ctx.font = 'bold 20px ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const lw = ctx.measureText(label).width + 28;
     ctx.fillRect(v.x + v.w / 2 - lw / 2, v.y - 36, lw, 28);
-    ctx.fillStyle = '#fff'; ctx.fillText(label, v.x + v.w / 2, v.y - 21);
+    ctx.fillStyle = pulse > 0.5 ? '#1a1a1f' : '#fff'; ctx.fillText(label, v.x + v.w / 2, v.y - 21);
     ctx.textAlign = 'left';
   }
 
-  // ===== Narration (Toto + YOU) =====
-  playIntroNarration() {
-    if (this.beats.intro) return;
-    this.beats.intro = true;
-    this.startNarration([
-      { speaker: 'TOTO', text: "Okay — I patched into HUSH's home page. Looks harmless, right?" },
-      { speaker: 'YOU',  text: "Just a wall of clickbait. What am I looking for?" },
-      { speaker: 'TOTO', text: "Evidence. Four files are scattered across this page. Grab all four." },
-      { speaker: 'YOU',  text: "And the catch?" },
-      { speaker: 'TOTO', text: "The page bites. That account avatar pulls a GUN — one shot, lethal at range. Rush it and the shot misses." },
-      { speaker: 'TOTO', text: "Some video cards will tear off and chase you. The search bar fires too if you linger up top. SHIFT to dash." },
-      { speaker: 'YOU',  text: "Charming. Where do the files go once I have them?" },
-      { speaker: 'TOTO', text: "Into the big one — 'What They Don't Want You To See.' Get the evidence, then dive into that video." },
-    ], () => { this.started = true; this.startT = this.time; });
-  }
-  playFirstDocNarration() {
-    if (this.beats.first) return;
-    this.beats.first = true;
-    this.startNarration([
-      { speaker: 'YOU',  text: "Got the first file." },
-      { speaker: 'TOTO', text: "Three to go. Keep moving — standing still is how the avatar lines you up." },
-    ]);
-  }
-  playAllDocsNarration() {
-    if (this.beats.allDocs) return;
-    this.beats.allDocs = true;
-    this.startNarration([
-      { speaker: 'TOTO', text: "That's all four. The boosted video's pulsing green now — that's your way in." },
-      { speaker: 'YOU',  text: "Diving in." },
-    ]);
-  }
-  // Triggered when the player enters the portal — Toto cuts out.
-  playLostContactNarration(onDone) {
-    if (this.beats.lost) return;
-    this.beats.lost = true;
-    this.startNarration([
-      { speaker: 'TOTO', text: "Wait — it's pulling you in deeper than I thought. Something's wrong, I'm—" },
-      { speaker: 'SYSTEM', text: '> CONNECTION LOST: toto.handler' },
-      { speaker: 'YOU',  text: "Toto? Toto, do you copy?" },
-      { speaker: 'YOU',  text: "...okay. Just me, then." },
-    ], onDone);
-  }
-
-  startNarration(lines, onDone) {
-    if (this.narrationTimer) clearTimeout(this.narrationTimer);
-    this.narration = { lines, idx: 0, typing: true, onDone };
+  // ===== Tutorial & Mortars =====
+  startTutorial() {
+    this.tutorialStep = 1;
+    this.started = false;
     this.intelDom.wrap?.classList.remove('hidden');
     requestAnimationFrame(() => this.intelDom.wrap?.classList.add('show'));
-    this.showNarrationLine(0);
+    this.showTutorialStep();
+  }
+
+  showTutorialStep() {
+    const step = this.tutorialStep;
+    let speaker = 'TUTORIAL';
+    let text = '';
+    let hint = '';
+    let color = '#F4D35E';
+    if (step === 1) {
+      speaker = 'YOU ARE THIS WINDOW';
+      text = 'Move around the page with WASD or Arrow Keys. Hold SHIFT to speed boost.';
+      hint = 'Press SPACE / Enter or click to continue';
+      this.camY = Phaser.Math.Clamp(this.player.y - this.viewHW * 0.42, 0, Math.max(0, this.worldH - this.viewHW));
+    } else if (step === 2) {
+      speaker = 'YOUR GOAL';
+      text = 'Collect all 4 evidence documents to open the exit portal.';
+      hint = 'Press SPACE / Enter or click to start';
+      const doc = this.docs[1];
+      this.camY = Phaser.Math.Clamp(doc.y - this.viewHW * 0.5, 0, Math.max(0, this.worldH - this.viewHW));
+    }
+    
+    if (this.intelDom.speaker) {
+      this.intelDom.speaker.textContent = speaker;
+      this.intelDom.speaker.style.background = color;
+      this.intelDom.speaker.style.color = '#1a1a1f';
+    }
+    if (this.intelDom.line) this.intelDom.line.textContent = text;
+    if (this.intelDom.hint) {
+      this.intelDom.hint.textContent = hint;
+      this.intelDom.hint.classList.add('show');
+    }
     beep(660, 0.06, 'sine', 0.06);
   }
-  showNarrationLine(i) {
-    const n = this.narration;
-    if (!n) return;
-    const line = n.lines[i];
-    if (!line) return this.closeNarration();
-    const colors = { YOU: '#4A7BC8', TOTO: '#E63946', SYSTEM: '#2D8659' };
-    if (this.intelDom.speaker) {
-      this.intelDom.speaker.textContent = line.speaker || '';
-      this.intelDom.speaker.style.background = colors[line.speaker] || '#1a1a1f';
+
+  advanceTutorial() {
+    if (this.tutorialStep === 1) {
+      this.tutorialStep = 2;
+      this.showTutorialStep();
+    } else if (this.tutorialStep === 2) {
+      this.tutorialStep = 0;
+      this.started = true;
+      this.startT = this.time;
+      this.intelDom?.wrap?.classList.remove('show');
+      setTimeout(() => this.intelDom?.wrap?.classList.add('hidden'), 400);
+      this.camY = Phaser.Math.Clamp(this.player.y - this.viewHW * 0.42, 0, Math.max(0, this.worldH - this.viewHW));
+      beep(880, 0.08, 'sine', 0.08);
     }
-    if (this.intelDom.line) this.intelDom.line.textContent = '';
-    this.intelDom.hint?.classList.remove('show');
-    let chars = 0;
-    const text = line.text;
-    const tick = () => {
-      const nn = this.narration;
-      if (!nn || !nn.typing) {
-        if (this.intelDom.line) this.intelDom.line.textContent = text;
-        return;
-      }
-      if (isPauseOpen()) {            // hold the typewriter while paused
-        this.narrationTimer = setTimeout(tick, 90);
-        return;
-      }
-      if (chars < text.length) {
-        chars++;
-        if (this.intelDom.line) this.intelDom.line.textContent = text.slice(0, chars);
-        if (text[chars - 1] !== ' ' && Math.random() < 0.22) beep(1600 + Math.random() * 600, 0.005, 'square', 0.011);
-        this.narrationTimer = setTimeout(tick, 28);
-      } else {
-        this.narration.typing = false;
-      }
-    };
-    tick();
   }
-  advanceNarration() {
-    if (isPauseOpen()) return;          // frozen while the pause menu is open
-    const n = this.narration;
-    if (!n) return;
-    if (n.typing) {
-      if (this.narrationTimer) clearTimeout(this.narrationTimer);
-      n.typing = false;
-      if (this.intelDom.line) this.intelDom.line.textContent = n.lines[n.idx].text;
-      return;
+
+  updateMortars(dt) {
+    const p = this.player;
+    for (const v of this.videos) {
+      if (v.removed) continue;
+      const m = v.mortar;
+      if (!m) continue;
+      
+      const d = dist(p.x, p.y, m.cx, m.cy);
+      
+      if (m.state === 'idle') {
+        m.barrelLength = 0;
+        if (d < m.triggerR) {
+          m.state = 'transforming';
+          m.transformT = 0;
+          beep(200, 0.15, 'triangle', 0.05);
+        }
+      } else if (m.state === 'transforming') {
+        m.transformT += dt;
+        m.angle = Math.atan2(p.y - m.cy, p.x - m.cx);
+        m.barrelLength = Math.min(18, (m.transformT / 0.5) * 18);
+        if (m.transformT >= 0.5) {
+          m.state = 'firing';
+        }
+      } else if (m.state === 'firing') {
+        const angle = m.angle;
+        const speed = 250;
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed;
+        
+        this.cannonballs.push({
+          x: m.cx + Math.cos(angle) * (16 + m.barrelLength),
+          y: m.cy + Math.sin(angle) * (16 + m.barrelLength),
+          vx, vy, r: 6, life: 3.5
+        });
+        
+        beep(120, 0.25, 'sawtooth', 0.08);
+        noise(0.12, 0.08);
+        
+        const mx = m.cx + Math.cos(angle) * (16 + m.barrelLength);
+        const my = m.cy + Math.sin(angle) * (16 + m.barrelLength);
+        for (let i = 0; i < 6; i++) {
+          this.gs.sparks.push({
+            x: mx, y: my,
+            vx: Math.cos(angle) * 120 + (Math.random() - 0.5) * 60,
+            vy: Math.sin(angle) * 120 + (Math.random() - 0.5) * 60,
+            life: 0.25, hit: true
+          });
+        }
+        
+        m.state = 'cooldown';
+        m.cooldown = 2.5;
+      } else if (m.state === 'cooldown') {
+        m.cooldown -= dt;
+        m.angle = Math.atan2(p.y - m.cy, p.x - m.cx);
+        if (m.cooldown <= 0) {
+          if (d < m.triggerR) {
+            m.state = 'transforming';
+            m.transformT = 0;
+            beep(200, 0.15, 'triangle', 0.05);
+          } else {
+            m.state = 'idle';
+          }
+        }
+      }
     }
-    n.idx++;
-    if (n.idx >= n.lines.length) return this.closeNarration();
-    n.typing = true;
-    this.showNarrationLine(n.idx);
   }
-  closeNarration() {
-    if (this.narrationTimer) clearTimeout(this.narrationTimer);
-    const n = this.narration;
-    const onDone = n && n.onDone;
-    this.narration = null;
-    this.intelDom?.wrap?.classList.remove('show');
-    setTimeout(() => this.intelDom?.wrap?.classList.add('hidden'), 400);
-    if (onDone) onDone();
+
+  updateCannonballs(dt) {
+    const p = this.player;
+    for (const cb of this.cannonballs) {
+      cb.x += cb.vx * dt;
+      cb.y += cb.vy * dt;
+      cb.life -= dt;
+      
+      const pbx = p.x - 60;
+      const pby = p.y - 45;
+      if (cb.x > pbx && cb.x < pbx + 120 && cb.y > pby && cb.y < pby + 90) {
+        damagePlayer(this.gs, 10, cb.vx * 0.15, cb.vy * 0.15);
+        cb.life = 0;
+        
+        for (let i = 0; i < 8; i++) {
+          this.gs.sparks.push({
+            x: cb.x, y: cb.y,
+            vx: (Math.random() - 0.5) * 200,
+            vy: (Math.random() - 0.5) * 200,
+            life: 0.3, hit: true
+          });
+        }
+        beep(100, 0.2, 'sawtooth', 0.1);
+      }
+    }
+    this.cannonballs = this.cannonballs.filter(cb => cb.life > 0);
+  }
+
+  drawMortar(ctx, v) {
+    const m = v.mortar;
+    if (!m) return;
+    
+    const ay = v.y + v.th + 14;
+    const cx = v.x + 18;
+    const cy = ay + 6;
+    
+    ctx.save();
+    
+    if (m.state !== 'idle') {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(m.angle);
+      ctx.fillStyle = '#333333';
+      ctx.strokeStyle = '#1a1a1f';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.rect(10, -5, m.barrelLength, 10);
+      ctx.fill();
+      ctx.stroke();
+      
+      if (m.state === 'transforming') {
+        const pulse = 0.5 + Math.sin(this.time * 30) * 0.5;
+        ctx.strokeStyle = 'rgba(230, 57, 70, ' + pulse + ')';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(10, -5, m.barrelLength, 10);
+      }
+      ctx.restore();
+    }
+    
+    let baseColor = THUMB_COLORS[(v.seed + 3) % THUMB_COLORS.length];
+    if (m.state === 'transforming') {
+      baseColor = Math.sin(this.time * 20) > 0 ? '#E63946' : baseColor;
+    } else if (m.state === 'cooldown') {
+      baseColor = '#606060';
+    }
+    
+    ctx.fillStyle = baseColor;
+    ctx.strokeStyle = '#1a1a1f';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    
+    ctx.restore();
+  }
+
+  drawCannonballs(ctx) {
+    for (const cb of this.cannonballs) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(244, 211, 94, 0.45)';
+      ctx.beginPath();
+      ctx.arc(cb.x - cb.vx * 0.05, cb.y - cb.vy * 0.05, cb.r * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(230, 57, 70, 0.35)';
+      ctx.beginPath();
+      ctx.arc(cb.x - cb.vx * 0.1, cb.y - cb.vy * 0.1, cb.r * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = '#1a1a1f';
+      ctx.strokeStyle = '#E63946';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cb.x, cb.y, cb.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  drawVignette(ctx, tx, ty, radius) {
+    const { VW, VH } = this;
+    const s = this.scale1;
+    const zoom = this.zoomLevel;
+    
+    const sx = (tx - this.camX) * s * zoom;
+    const sy = (ty - this.camY) * s * zoom;
+    const r = radius * s * zoom;
+    
+    ctx.save();
+    const g = ctx.createRadialGradient(sx, sy, r * 0.7, sx, sy, r * 1.5);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.85)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, VW, VH);
+    
+    ctx.strokeStyle = '#F4D35E';
+    ctx.lineWidth = 2.5 * s * zoom;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawSmasher(ctx, sx, sy, angle, length, stateTime, stateName) {
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(angle);
+    
+    ctx.fillStyle = 'rgba(74, 123, 200, 0.75)';
+    ctx.strokeStyle = '#1a1a1f';
+    ctx.lineWidth = 2;
+    
+    // Handle extending along the positive X-axis (width 6 for doubled size)
+    ctx.beginPath();
+    ctx.rect(0, -3, Math.max(0, length - 80), 6);
+    ctx.fill();
+    ctx.stroke();
+    
+    // Paddle (rounded rect centered at y=0, starting at x=length-80, width=80, height=72)
+    if (length > 80) {
+      drawHandRect(ctx, length - 80, -36, 80, 72, 'rgba(74, 123, 200, 0.75)', '#1a1a1f', 15, 1.5);
+      
+      // Paddle grid lines representing swatter holes
+      ctx.strokeStyle = 'rgba(26, 26, 31, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let lx = length - 70; lx <= length - 10; lx += 15) {
+        ctx.moveTo(lx, -28);
+        ctx.lineTo(lx, 28);
+      }
+      for (let ly = -26; ly <= 26; ly += 13) {
+        ctx.moveTo(length - 76, ly);
+        ctx.lineTo(length - 4, ly);
+      }
+      ctx.stroke();
+      
+      // Warning highlight during telegraph
+      if (stateName === 'raising' || stateName === 'smashing') {
+        const pulse = 0.5 + Math.sin(stateTime * 25) * 0.5;
+        ctx.strokeStyle = 'rgba(230, 57, 70, ' + pulse + ')';
+        ctx.lineWidth = 2.2;
+        ctx.strokeRect(length - 84, -40, 88, 80);
+      }
+    }
+    
+    ctx.restore();
+  }
+
+  updateSmasherState(vState, dt) {
+    const p = this.player;
+    const gap = 24;
+    const sw = (CONTENT_W - gap * 4) / 5;
+    const sh = this.shortsH;
+    const slotX = LAYOUT.content.x + vState.index * (sw + gap) + 26;
+    const slotY = this.shortsY + 28 + sh - 30;
+    
+    vState.x = slotX;
+    vState.y = slotY;
+    const d = dist(p.x, p.y, slotX, slotY);
+    
+    const L_MAX = 330;
+    vState.triggerR = 450;
+    
+    if (vState.state === 'idle') {
+      vState.length = 0;
+      vState.angle = -Math.PI / 2;
+      if (this.started && d < vState.triggerR) {
+        vState.state = 'popping';
+        vState.t = 0;
+        beep(140, 0.2, 'sawtooth', 0.1);
+      }
+    } else if (vState.state === 'popping') {
+      vState.t += dt;
+      vState.length += (L_MAX - vState.length) * dt * 9;
+      vState.angle = -Math.PI / 2;
+      
+      if (vState.length >= L_MAX - 2) {
+        vState.length = L_MAX;
+        vState.state = 'raising';
+        vState.t = 0;
+        vState.direction = (p.x < slotX) ? -1 : 1;
+      }
+    } else if (vState.state === 'raising') {
+      vState.t += dt;
+      const targetAngle = -Math.PI / 2 - vState.direction * (Math.PI / 5);
+      vState.angle += (targetAngle - vState.angle) * dt * 6;
+      vState.angle += Math.sin(vState.t * 30) * 0.035;
+      
+      if (vState.t >= 0.45) {
+        vState.state = 'smashing';
+        vState.t = 0;
+        vState.targetAngle = Math.atan2(p.y - slotY, p.x - slotX);
+        vState.targetAngle = Phaser.Math.Clamp(vState.targetAngle, -Math.PI * 0.95, -Math.PI * 0.05);
+        beep(90, 0.3, 'sawtooth', 0.15);
+      }
+    } else if (vState.state === 'smashing') {
+      vState.t += dt;
+      vState.angle += (vState.targetAngle - vState.angle) * Math.min(1, dt * 25);
+      
+      if (vState.t >= 0.12 || Math.abs(vState.angle - vState.targetAngle) < 0.05) {
+        vState.angle = vState.targetAngle;
+        
+        const headX = slotX + Math.cos(vState.angle) * (vState.length - 40);
+        const headY = slotY + Math.sin(vState.angle) * (vState.length - 40);
+        
+        if (dist(headX, headY, p.x, p.y) < 110) {
+          damagePlayer(this.gs, 15, Math.cos(vState.angle) * 120, Math.sin(vState.angle) * 120);
+          beep(80, 0.4, 'sawtooth', 0.2);
+          noise(0.4, 0.3);
+        } else {
+          beep(120, 0.15, 'triangle', 0.1);
+          noise(0.15, 0.15);
+        }
+        
+        for (let i = 0; i < 12; i++) {
+          this.gs.sparks.push({
+            x: headX, y: headY,
+            vx: Math.cos(vState.angle) * 100 + (Math.random() - 0.5) * 180,
+            vy: Math.sin(vState.angle) * 100 + (Math.random() - 0.5) * 180,
+            life: 0.3, hit: true
+          });
+        }
+        
+        vState.state = 'holding';
+        vState.t = 0;
+      }
+    } else if (vState.state === 'holding') {
+      vState.t += dt;
+      if (vState.t >= 0.25) {
+        vState.state = 'retracting';
+        vState.t = 0;
+      }
+    } else if (vState.state === 'retracting') {
+      vState.t += dt;
+      vState.length += (0 - vState.length) * dt * 6;
+      vState.angle += (-Math.PI / 2 - vState.angle) * dt * 6;
+      
+      if (vState.length <= 3) {
+        vState.length = 0;
+        vState.angle = -Math.PI / 2;
+        vState.state = 'cooldown';
+        vState.cooldown = 3.0;
+      }
+    } else if (vState.state === 'cooldown') {
+      vState.length = 0;
+      vState.angle = -Math.PI / 2;
+      vState.cooldown -= dt;
+      if (vState.cooldown <= 0) {
+        vState.state = 'idle';
+      }
+    }
   }
 
   drawWindow(ctx) {
@@ -756,8 +1227,12 @@ export default class HomeScene extends Phaser.Scene {
     ctx.fillText(v.d, x + w - bw - 15, y + th - 14);
     // avatar + title + channel + views
     const ay = y + th + 14;
-    ctx.fillStyle = THUMB_COLORS[(v.seed + 3) % THUMB_COLORS.length];
-    ctx.beginPath(); ctx.arc(x + 18, ay + 6, 16, 0, Math.PI * 2); ctx.fill();
+    if (v.mortar) {
+      this.drawMortar(ctx, v);
+    } else {
+      ctx.fillStyle = THUMB_COLORS[(v.seed + 3) % THUMB_COLORS.length];
+      ctx.beginPath(); ctx.arc(x + 18, ay + 6, 16, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.fillStyle = '#0f0f0f'; ctx.font = 'bold 15px Arial'; ctx.textBaseline = 'top';
     this.wrap(ctx, v.t, x + 46, ay - 6, w - 50, 19, 2);
     ctx.fillStyle = '#606060'; ctx.font = '13px Arial'; ctx.fillText(v.c, x + 46, ay + 34);
@@ -771,10 +1246,40 @@ export default class HomeScene extends Phaser.Scene {
     drawHandRect(ctx, x, y, w, h, THUMB_COLORS[(seed + 2) % THUMB_COLORS.length], '#cfcfcf', seed * 13 + 9, 1.4);
     ctx.fillStyle = 'rgba(255,255,255,0.18)';
     ctx.beginPath(); ctx.arc(x + w / 2, y + h * 0.38, w * 0.32, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(data.t, x + w / 2, y + h - 30);
-    ctx.textAlign = 'left';
+    
+    const smState = this.smasherStates.find(s => (s.index % SHORTS.length) === (seed % SHORTS.length));
+    const isSmasher = !!smState;
+    const isFlying = isSmasher && smState.state !== 'idle' && smState.state !== 'cooldown';
+    
+    if (!isFlying) {
+      // Profile circle next to title
+      if (isSmasher) {
+        // Draw the swatter avatar at rest
+        ctx.fillStyle = '#4A7BC8';
+        ctx.beginPath(); ctx.arc(x + 26, y + h - 30, 16, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.5; ctx.stroke();
+        
+        ctx.save();
+        ctx.translate(x + 26, y + h - 30);
+        ctx.rotate(-Math.PI / 4);
+        ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -8); ctx.stroke();
+        ctx.fillStyle = 'rgba(74, 123, 200, 0.85)';
+        ctx.fillRect(-5, -16, 10, 10);
+        ctx.strokeRect(-5, -16, 10, 10);
+        ctx.restore();
+      } else {
+        // Normal profile circle
+        ctx.fillStyle = THUMB_COLORS[(seed + 4) % THUMB_COLORS.length];
+        ctx.beginPath(); ctx.arc(x + 26, y + h - 30, 16, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+      }
+    }
+    
+    // Title text next to circle
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px Arial';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(data.t, x + 48, y + h - 30);
   }
 
   drawTurtle(ctx, cx, cy, r) {

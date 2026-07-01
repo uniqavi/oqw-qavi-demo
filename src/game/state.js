@@ -72,6 +72,13 @@ function createAgents() {
       awakenDuration: AGENTS.gunShooter.awakenDuration,
       aimDuration: AGENTS.gunShooter.aimDuration,
     },
+    fallingBell: {
+      state: 'idle',
+      x: 0, y: 0,
+      vy: 0,
+      triggerW: AGENTS.fallingBell.triggerW,
+      life: 0,
+    },
   };
 }
 

@@ -34,7 +34,7 @@ let muted = false;
 let fadeRaf = null;
 
 // Effective element volume for a given per-track level (0..1).
-function mix(level) { return level * MUSIC_MIX * getMasterVolume(); }
+function mix(level) { return Math.max(0, Math.min(1, level * MUSIC_MIX * getMasterVolume())); }
 
 // Live-apply master volume changes to the currently playing track.
 onMasterVolumeChange(() => {
@@ -62,6 +62,7 @@ export function loadMusic() {
 }
 
 export function setMusicMuted(value) {
+  loadMusic();
   muted = !!value;
   // Apply immediately to current track
   if (currentTrack && audioElements[currentTrack]) {
@@ -76,6 +77,7 @@ export function isMusicMuted() {
 // Play a track. Fades from current volume to target over `fadeMs`.
 // If `name` is the same as current track, no-op. If `name` is null, stops.
 export function playMusic(name, opts = {}) {
+  loadMusic();
   const fadeMs = opts.fadeMs ?? 800;
   const targetVol = opts.volume ?? 1.0;
 
@@ -110,6 +112,7 @@ export function playMusic(name, opts = {}) {
 }
 
 export function stopMusic(opts = {}) {
+  loadMusic();
   if (!currentTrack) return;
   const fadeMs = opts.fadeMs ?? 600;
   const el = audioElements[currentTrack];
@@ -124,6 +127,7 @@ export function stopMusic(opts = {}) {
 
 // Smooth swap — old fades out as new fades in
 export function crossfadeTo(name, opts = {}) {
+  loadMusic();
   const fadeMs = opts.fadeMs ?? 1200;
   const targetVol = opts.volume ?? 1.0;
 
