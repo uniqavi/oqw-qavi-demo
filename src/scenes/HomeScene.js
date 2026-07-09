@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { initAudio, beep, noise } from '../game/audio.js';
+import { initAudio, beep, noise, whoosh, whistle } from '../game/audio.js';
+import { saveLevelTime } from '../game/leaderboard.js';
 import { drawHandRect } from '../game/draw.js';
 import { dist } from '../game/physics.js';
 import { COLORS, PLAYER, AGENTS } from '../config.js';
@@ -8,6 +9,11 @@ import * as ShootingSearch from '../game/agents/shootingSearch.js';
 import * as GunShooter from '../game/agents/gunShooter.js';
 import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
 import { damagePlayer } from '../game/combat.js';
+import { syncCracksToHp, drawCracks } from '../game/cracks.js';
+import { crossfadeTo, loadMusic } from '../game/music.js';
+import { loadSfx, playSfx } from '../game/sfx.js';
+import { updateScan, drawScanPrompt } from '../game/scanDocs.js';
+import { showLevelComplete, removeLevelComplete } from '../game/levelComplete.js';
 
 
 // LEVEL 1.1 — TOTALLYNORMALTUBE HOME PAGE ("Hidden Agents")
@@ -89,6 +95,12 @@ export default class HomeScene extends Phaser.Scene {
     window.addEventListener('resize', this.handleResize);
 
     document.body.classList.remove('menu-mode');
+    // One shared in-level track across all levels (level2.mp3); the desktop
+    // hub uses level1.mp3 — see music notes in src/game/music.js.
+    // load* are no-ops if MenuScene already loaded them, but cover DEV jumps
+    // straight into this scene.
+    loadMusic(); loadSfx();
+    crossfadeTo('level2', { fadeMs: 1500 });
     const urlBar = document.getElementById('browser-url');
     if (urlBar) urlBar.textContent = 'https://totallynormaltube.gov.??/';
 
@@ -97,6 +109,7 @@ export default class HomeScene extends Phaser.Scene {
     this.camY = 0;
     this.zoomLevel = 1.0;
     this.docsCollected = 0;
+    this.bonusCollected = 0;
     this._hudAnimateStarted = false;
     this.failed = false;
     this.entering = false;
@@ -133,14 +146,19 @@ export default class HomeScene extends Phaser.Scene {
     // shared playerBox() hitbox exactly match the 120×90 window the agents
     // collide against. Start in the gap below the featured row.
     const fth = ((CONTENT_W - 48) / 3) * 9 / 16;
+    // Lethality redesign: 3 discrete hits (gun costs 2) instead of an HP
+    // pool — the level is about learning a safe route, not tanking damage.
+    // Spawn at the top-left corner of the walkable content area.
     const player = {
-      x: DW / 2, y: LAYOUT.content.top + fth + 46,
+      x: LAYOUT.content.x + 66, y: LAYOUT.chips.y + LAYOUT.chips.h + 55,
       w: 120, h: 90, size: 120,
-      hp: PLAYER.maxHp, maxHp: PLAYER.maxHp, useHp: true,
+      hp: 3, maxHp: 3, useHp: true, useHits: true,
       invuln: 0, hitFlash: 0,
       test: { immune: false },
     };
     this.player = player;
+    this._lastHp = player.hp;
+    this.cracks = [];            // glass cracks on the window, grown per hit
 
     // Shared state object the ported agents + combat helper consume. Mirrors
     // the shape of game/state.js (player, layout, projectiles/bullets/sparks,
@@ -165,6 +183,7 @@ export default class HomeScene extends Phaser.Scene {
       up: Phaser.Input.Keyboard.KeyCodes.W, left: Phaser.Input.Keyboard.KeyCodes.A,
       down: Phaser.Input.Keyboard.KeyCodes.S, right: Phaser.Input.Keyboard.KeyCodes.D,
       shift: Phaser.Input.Keyboard.KeyCodes.SHIFT,
+      space: Phaser.Input.Keyboard.KeyCodes.SPACE,
     });
     this.onKey = (e) => {
       // Tutorial takes priority — SPACE/Enter advance the step
@@ -180,16 +199,14 @@ export default class HomeScene extends Phaser.Scene {
     };
     document.addEventListener('keydown', this.onKey);
 
-    // HUD — reuse the runner's OBJECTIVE frame (docs counter) + HP frame.
-    this.taskFrame = document.getElementById('task-frame');
-    this.taskLine = document.getElementById('task-line');
-    this.taskProg = document.getElementById('task-progress');
-    this.hpFrame = document.getElementById('hp-frame');
-    this.hpFill = document.getElementById('hp-fill');
-    this.hpNumber = document.getElementById('hp-number');
-    this.taskFrame?.classList.remove('hidden');
-    this.taskFrame?.classList.remove('cleared');
-    this.hpFrame?.classList.remove('hidden');
+    // HUD — Phase 2 top-bar redesign: the docs counter lives in the browser
+    // chrome (SECURED badge in the urlbar) and health is shown as glass
+    // cracks on the window itself. No overlay frames.
+    this.urlbarTools = document.getElementById('urlbar-tools');
+    this.securedBadge = document.getElementById('secured-badge');
+    this.securedCount = document.getElementById('secured-count');
+    this.urlbarTools?.classList.remove('hidden');
+    this.securedBadge?.classList.remove('cleared');
 
     // Narration: reuse the intel-dialog DOM. Click anywhere or SPACE/Enter
     // advances. While narration is active the level is paused.
@@ -215,8 +232,8 @@ export default class HomeScene extends Phaser.Scene {
       document.removeEventListener('click', this.onNarrationClick);
       if (this.narrationTimer) clearTimeout(this.narrationTimer);
       resetPauseMenu();
-      this.taskFrame?.classList.add('hidden');
-      this.hpFrame?.classList.add('hidden');
+      removeLevelComplete();
+      this.urlbarTools?.classList.add('hidden');
       this.intelDom?.wrap?.classList.add('hidden');
       this.intelDom?.wrap?.classList.remove('show');
     });
@@ -267,13 +284,24 @@ export default class HomeScene extends Phaser.Scene {
   }
 
   buildDocs() {
-    // Scattered down the page in walkable gaps. r is generous so pickup feels
-    // forgiving. Tuned by eye against the layout; nudge in preview.
+    // Scattered down the page in walkable gaps. Stand over one and HOLD
+    // SPACE to scan/collect it (r is the pickup + visual radius). The
+    // `bonusTimed` doc is EXTRA (not required): bigger, blinking, with a
+    // countdown — scan it before it's deleted and the glass repairs one hit.
+    //
+    // Placement rule: docs sit NEAR hazards (the challenge) but never ON
+    // them — every doc has clear dodge room around it:
+    //   #1 featured-row meta strip, clear of the card-3 mortar avatar
+    //   #2 shorts label row, out of smasher reach
+    //   #3 shorts/grid gap, near (not under) the right smasher
+    //   #4 grid row-2 meta area, near the chaser card but off it
+    //   bonus — above the left smasher's slam arc, still inside its trigger
     return [
-      { x: 1500, y: 470,  r: 18, taken: false, takeT: 0 },
+      { x: 1560, y: 500,  r: 18, taken: false, takeT: 0 },
       { x: 470,  y: 560,  r: 18, taken: false, takeT: 0 },
-      { x: 980,  y: 1180, r: 18, taken: false, takeT: 0 },
-      { x: 1520, y: 1560, r: 18, taken: false, takeT: 0 },
+      { x: 920,  y: 1180, r: 18, taken: false, takeT: 0 },
+      { x: 1180, y: 1700, r: 18, taken: false, takeT: 0 },
+      { x: 760,  y: 830,  r: 27, taken: false, takeT: 0, bonusTimed: true, ttl: 30 },
     ];
   }
 
@@ -309,7 +337,11 @@ export default class HomeScene extends Phaser.Scene {
     const cx = x + 18;
     const ay = y + th + 14;
     const cy = ay + 6;
-    const isMortar = Math.random() < 0.5;
+    // Deterministic mortar picks (was Math.random() < 0.5) — random rolls
+    // could park a cannon right next to a doc and make it uncollectable.
+    // Fixed seeds keep the density similar and never land on the exit
+    // portal or the chaser cards (seeds 7 / 12 are chasers, 13 is the exit).
+    const isMortar = (seed % 4 === 2) && !d.target;
     return {
       ...d, x, y, w, th, seed, removed: false, removeT: 0, _agent: null,
       mortar: isMortar ? {
@@ -347,6 +379,7 @@ export default class HomeScene extends Phaser.Scene {
     clearInterval(this._tickingInterval);
     resetPauseMenu();
     document.body.classList.add('menu-mode');
+    crossfadeTo('level1', { fadeMs: 800 });
     this.scene.stop();
     this.scene.start('MenuScene');
   }
@@ -374,6 +407,9 @@ export default class HomeScene extends Phaser.Scene {
       if (this.tutorialStep === 2) {
         const doc = this.docs[1];
         tx = doc.x; ty = doc.y;
+      } else if (this.tutorialStep === 3 && this.portalVid) {
+        tx = this.portalVid.x + this.portalVid.w / 2;
+        ty = this.portalVid.y + this.portalVid.th / 2;
       }
       const viewW = DW / this.zoomLevel;
       const viewHW = this.viewHW / this.zoomLevel;
@@ -452,11 +488,26 @@ export default class HomeScene extends Phaser.Scene {
       this.portalSparkles = this.portalSparkles.filter(sp => sp.life > 0);
     }
 
-    // ── Evidence docs ──
+    // ── Evidence docs: stand over one and HOLD SPACE to scan/collect it ──
+    const scanHeld = this.wasd.space.isDown;
     for (const d of this.docs) {
       if (d.taken) continue;
-      if (dist(p.x, p.y, d.x, d.y) < d.r + p.h * 0.42) this.collectDoc(d);
+      // Timed bonus doc: counts down once the level starts; expires = deleted.
+      if (d.bonusTimed) {
+        d.ttl -= dt;
+        if (d.ttl <= 0) {
+          d.taken = true; d.takeT = this.time; d.expired = true;
+          beep(180, 0.25, 'sawtooth', 0.08);   // fizzle — file deleted
+          continue;
+        }
+      }
+      const overlapping = dist(p.x, p.y, d.x, d.y) < d.r + p.h * 0.42;
+      d._near = overlapping;   // drawDoc shows the "Hold SPACE" prompt off this
+      if (updateScan(d, overlapping, scanHeld, dt)) this.collectDoc(d);
     }
+
+    // ── Glass cracks: grow on hits, repair on heals (shared module) ──
+    this._lastHp = syncCracksToHp(this.cracks, this._lastHp, p.hp, p.w, p.h);
 
     // ── Exit portal: once all docs are in, dive into the boosted video ──
     if (this.docsCollected >= DOCS_TARGET && this.portalVid && this.overlapsVid(p, this.portalVid)) {
@@ -474,6 +525,16 @@ export default class HomeScene extends Phaser.Scene {
 
   collectDoc(d) {
     d.taken = true; d.takeT = this.time;
+    playSfx('docScan');
+    if (d.bonusTimed) {
+      // Bonus intel: repairs one hit of glass (crack cluster removed by the
+      // sync in update). Doesn't count toward the exit requirement.
+      this.bonusCollected++;
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + 1);
+      playSfx('heal');
+      beep(660, 0.1, 'sine', 0.12); setTimeout(() => beep(990, 0.16, 'sine', 0.1), 90);
+      return;
+    }
     this.docsCollected++;
     beep(880, 0.08, 'sine', 0.13); setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
   }
@@ -482,59 +543,37 @@ export default class HomeScene extends Phaser.Scene {
     if (this.entering) return;
     this.entering = true;
     noise(0.5, 0.2); beep(120, 0.5, 'sawtooth', 0.1);
-    this.transitionToRunner();
+    this.finishLevel();
   }
-  transitionToRunner() {
+  // Level 1.1 complete — no more direct jump into the runner. The player
+  // returns to the desktop, where Toto's chat unlocks Level 1.2.
+  finishLevel() {
+    // Speedrun clock: time from tutorial end to clearing the level
+    saveLevelTime('l1', Math.max(0, this.time - (this.startT || 0)));
     try { localStorage.setItem('oqw-level1-cleared', 'true'); } catch (e) {}
     clearInterval(this._tickingInterval);
-    this.scene.stop();
-    this.scene.start('GameScene', { difficulty: this.difficulty, fromHomePage: true });
-    this.scene.launch('HUDScene');
+    showLevelComplete({
+      title: 'LEVEL 1.1 — THE HOME FEED',
+      sub: 'All evidence scanned. The boosted video checks out — but HUSH will notice the probe. ' +
+           'Toto is pinging you on <b>SecureChat</b>.',
+      onDesktop: () => this.quitToMenu(),
+    });
   }
 
   updateHud() {
-    if (this.taskLine) {
-      if (this.docsCollected >= DOCS_TARGET) {
-        this.taskFrame?.classList.add('cleared');
-        if (!this._hudAnimateStarted) {
-          this._hudAnimateStarted = true;
-          this.animateTaskLine('Find the exit window now.');
-          this.startTickingClock();
-        }
-      } else {
-        this.taskFrame?.classList.remove('cleared');
-        this.taskLine.textContent = 'Collect the evidence. Dodge the page.';
-      }
+    if (this.securedCount) {
+      this.securedCount.textContent = this.docsCollected + '/' + DOCS_TARGET +
+        (this.bonusCollected > 0 ? ' ·★' + this.bonusCollected : '');
     }
-    if (this.taskProg) this.taskProg.textContent = this.docsCollected + ' / ' + DOCS_TARGET;
-    const p = this.player;
-    const pct = Phaser.Math.Clamp(p.hp / p.maxHp, 0, 1);
-    if (this.hpFill) {
-      this.hpFill.style.width = (pct * 100) + '%';
-      this.hpFill.style.background = pct > 0.5 ? '#2D8659' : pct > 0.25 ? '#F4D35E' : '#E63946';
+    if (this.docsCollected >= DOCS_TARGET) {
+      this.securedBadge?.classList.add('cleared');
+      if (!this._hudAnimateStarted) {
+        this._hudAnimateStarted = true;
+        this.startTickingClock();
+      }
+    } else {
+      this.securedBadge?.classList.remove('cleared');
     }
-    if (this.hpNumber) this.hpNumber.textContent = Math.max(0, Math.round(p.hp));
-  }
-
-  animateTaskLine(text) {
-    if (!this.taskLine) return;
-    this.taskLine.textContent = '';
-    let i = 0;
-    const interval = setInterval(() => {
-      if (this.failed || !this.sys || this.entering) {
-        clearInterval(interval);
-        return;
-      }
-      if (i < text.length) {
-        this.taskLine.textContent += text[i];
-        if (text[i] !== ' ') {
-          beep(1200, 0.015, 'sine', 0.06);
-        }
-        i++;
-      } else {
-        clearInterval(interval);
-      }
-    }, 60);
   }
 
   startTickingClock() {
@@ -612,13 +651,26 @@ export default class HomeScene extends Phaser.Scene {
     } else if (this.tutorialStep === 2) {
       const doc = this.docs[1];
       this.drawVignette(ctx, doc.x, doc.y, 50);
+    } else if (this.tutorialStep === 3 && this.portalVid) {
+      this.drawVignette(ctx, this.portalVid.x + this.portalVid.w / 2,
+        this.portalVid.y + this.portalVid.th / 2, 200);
+    }
+
+    // red edge flash on damage (screen space)
+    if (this.player.hitFlash > 0) {
+      const a = (this.player.hitFlash / PLAYER.hitFlashDuration) * 0.45;
+      const g = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.35, VW / 2, VH / 2, Math.max(VW, VH) * 0.72);
+      g.addColorStop(0, 'rgba(230,57,70,0)');
+      g.addColorStop(1, 'rgba(230,57,70,' + a + ')');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, VW, VH);
     }
 
     // hint + fail overlay (screen space)
     if (this.failed) this.drawFail(ctx);
     else {
       ctx.fillStyle = '#9a9a9a'; ctx.font = '12px Consolas, monospace'; ctx.textBaseline = 'middle';
-      ctx.fillText('WASD move  ·  SHIFT dash  ·  rush the avatar to dodge its shot  ·  ESC to exit', 18, VH - 16);
+      ctx.fillText('WASD move  ·  SHIFT dash  ·  hold SPACE on docs to scan  ·  3 hits and you crash  ·  ESC to exit', 18, VH - 16);
     }
   }
 
@@ -653,10 +705,20 @@ export default class HomeScene extends Phaser.Scene {
     }
     const pulse = 1 + Math.sin(this.time * 4) * 0.12;
     ctx.save();
+    // Timed bonus doc: bigger (r), hard-blinking, with a deletion countdown
+    if (d.bonusTimed) {
+      const urgent = d.ttl < 10;
+      const blinkRate = urgent ? 10 : 5;
+      ctx.globalAlpha = Math.sin(this.time * blinkRate) > -0.4 ? 1 : 0.25;
+      ctx.fillStyle = urgent ? '#E63946' : '#1a1a1f';
+      ctx.font = 'bold 16px ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('DELETING IN ' + Math.ceil(d.ttl) + 's', d.x, d.y - d.r - 26);
+    }
     ctx.translate(d.x, d.y); ctx.scale(pulse, pulse);
-    ctx.fillStyle = 'rgba(244,211,94,0.4)';
+    ctx.fillStyle = d.bonusTimed ? 'rgba(45,134,89,0.45)' : 'rgba(244,211,94,0.4)';
     ctx.beginPath(); ctx.arc(0, 0, d.r + 10, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#F4D35E'; ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.5;
+    ctx.fillStyle = d.bonusTimed ? '#9ed6b5' : '#F4D35E'; ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.5;
     ctx.fillRect(-d.r, -d.r * 0.7, d.r * 2, d.r * 1.5);
     ctx.strokeRect(-d.r, -d.r * 0.7, d.r * 2, d.r * 1.5);
     ctx.fillRect(-d.r, -d.r * 0.95, d.r * 0.9, d.r * 0.3);
@@ -665,6 +727,12 @@ export default class HomeScene extends Phaser.Scene {
     ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
     ctx.fillText('DOC', 0, 3);
     ctx.restore();
+
+    // Hold-to-scan prompt + progress while the window covers the doc
+    if (d._near || (d.scanP || 0) > 0) {
+      drawScanPrompt(ctx, d, d.x, d.y, { above: d.r + 44 });
+    }
+
     ctx.textAlign = 'left';
   }
 
@@ -750,10 +818,17 @@ export default class HomeScene extends Phaser.Scene {
       this.camY = Phaser.Math.Clamp(this.player.y - this.viewHW * 0.42, 0, Math.max(0, this.worldH - this.viewHW));
     } else if (step === 2) {
       speaker = 'YOUR GOAL';
-      text = 'Collect all 4 evidence documents to open the exit portal.';
-      hint = 'Press SPACE / Enter or click to start';
+      text = 'Collect all 4 evidence documents — stand over one and HOLD SPACE to scan it. Careful: you only survive 3 hits.';
+      hint = 'Press SPACE / Enter or click to continue';
       const doc = this.docs[1];
       this.camY = Phaser.Math.Clamp(doc.y - this.viewHW * 0.5, 0, Math.max(0, this.worldH - this.viewHW));
+    } else if (step === 3) {
+      speaker = 'THE WAY OUT';
+      text = 'This boosted video is your exit. Once all 4 docs are secured, dive into it.';
+      hint = 'Press SPACE / Enter or click to start';
+      if (this.portalVid) {
+        this.camY = Phaser.Math.Clamp(this.portalVid.y + this.portalVid.th / 2 - this.viewHW * 0.5, 0, Math.max(0, this.worldH - this.viewHW));
+      }
     }
     
     if (this.intelDom.speaker) {
@@ -774,6 +849,9 @@ export default class HomeScene extends Phaser.Scene {
       this.tutorialStep = 2;
       this.showTutorialStep();
     } else if (this.tutorialStep === 2) {
+      this.tutorialStep = 3;
+      this.showTutorialStep();
+    } else if (this.tutorialStep === 3) {
       this.tutorialStep = 0;
       this.started = true;
       this.startT = this.time;
@@ -1052,6 +1130,9 @@ export default class HomeScene extends Phaser.Scene {
         vState.state = 'raising';
         vState.t = 0;
         vState.direction = (p.x < slotX) ? -1 : 1;
+        // rusty hinge creak as the swatter arm winds up
+        whistle(0.5, 160, 480, 0.06);
+        beep(220, 0.12, 'sawtooth', 0.05);
       }
     } else if (vState.state === 'raising') {
       vState.t += dt;
@@ -1064,7 +1145,7 @@ export default class HomeScene extends Phaser.Scene {
         vState.t = 0;
         vState.targetAngle = Math.atan2(p.y - slotY, p.x - slotX);
         vState.targetAngle = Phaser.Math.Clamp(vState.targetAngle, -Math.PI * 0.95, -Math.PI * 0.05);
-        beep(90, 0.3, 'sawtooth', 0.15);
+        whoosh(0.18, 500, 1400, 0.12);   // swing through the air
       }
     } else if (vState.state === 'smashing') {
       vState.t += dt;
@@ -1078,11 +1159,9 @@ export default class HomeScene extends Phaser.Scene {
         
         if (dist(headX, headY, p.x, p.y) < 110) {
           damagePlayer(this.gs, 15, Math.cos(vState.angle) * 120, Math.sin(vState.angle) * 120);
-          beep(80, 0.4, 'sawtooth', 0.2);
-          noise(0.4, 0.3);
+          noise(0.45, 0.32); beep(55, 0.35, 'sine', 0.22);   // heavy slam ON you
         } else {
-          beep(120, 0.15, 'triangle', 0.1);
-          noise(0.15, 0.15);
+          noise(0.25, 0.2); beep(70, 0.2, 'sine', 0.14);     // slam into the page
         }
         
         for (let i = 0; i < 12; i++) {
@@ -1136,6 +1215,9 @@ export default class HomeScene extends Phaser.Scene {
     ctx.fillStyle = '#fff'; ctx.font = '10px ui-monospace, monospace';
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     ctx.fillText('PRIMITIVE_ERROR.exe', x + 7, y + 11);
+
+    // Glass cracks — the window IS the health display (no HP bar)
+    drawCracks(ctx, this.cracks, p.x, p.y, p.w, p.h);
     ctx.restore();
   }
 

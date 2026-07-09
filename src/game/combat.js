@@ -9,11 +9,16 @@ export function damagePlayer(state, amount, knockX, knockY, ignoreInvuln = false
   if (p.test && p.test.immune) return;        // dev immune toggle
   // Apply difficulty modifier so EASY hits land softer, HARD lands harder.
   const dmg = amount * getDifficulty().agentDamage;
-  // Two damage models share this path. The runner / Level 1.1 use an HP bar
-  // (p.useHp) where the window stays a fixed size and an HP pool drains; the
-  // original discovery design shrank the window itself. Death is hp<=0 or
-  // size<=deathSize respectively.
-  if (p.useHp) {
+  // Three damage models share this path:
+  //   • p.useHits — discrete hits (Level 1.1 lethality redesign): hp counts
+  //     hits remaining; every hit costs 1, heavy hitters (gun, amount>=60)
+  //     cost 2. No difficulty multiplier — the forgiveness levers there are
+  //     the invuln window and agent trigger ranges.
+  //   • p.useHp — HP pool (the 1.2 runner), window stays a fixed size.
+  //   • legacy — the original discovery design shrank the window itself.
+  if (p.useHits) {
+    p.hp = Math.max(0, p.hp - (amount >= 70 ? 2 : 1));
+  } else if (p.useHp) {
     p.hp = Math.max(0, p.hp - dmg);
   } else {
     p.size = Math.max(0, p.size - dmg);

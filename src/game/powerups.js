@@ -73,7 +73,11 @@ function applyEffect(state, pu) {
     // Permanent heal. If HP is already max, float a "HP MAX" caption at the
     // pickup point so the player knows the pickup wasn't wasted by accident.
     if (p.hp >= p.maxHp) {
-      pushFloat(state, pu, 'HP MAX', '#9a9a9a');
+      pushFloat(state, pu, p.useHits ? 'GLASS INTACT' : 'HP MAX', '#9a9a9a');
+    } else if (p.useHits) {
+      // Discrete-hits model: repairs one hit (one crack cluster on the window)
+      p.hp = Math.min(p.maxHp, p.hp + 1);
+      pushFloat(state, pu, 'GLASS REPAIRED', '#6dc89e');
     } else {
       const before = p.hp;
       p.hp = Math.min(p.maxHp, p.hp + POWERUP.hpHeal);

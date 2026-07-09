@@ -3,15 +3,28 @@
 Place audio files here with these exact names. The game will auto-load them.
 Missing files fail silently (no error spam) — drop them in as they're ready.
 
-## Required tracks
+## Active tracks (what the game plays now)
+
+| File | Used in | Track / source |
+|---|---|---|
+| `level1.mp3`  | Desktop hub (XP desktop) | original / project-supplied |
+| `level2.mp3`  | Level 1.1 — home feed | original / project-supplied (kept, per design) |
+| `level12.mp3` | Level 1.2 — runner | **"Voxel Revolution" by Kevin MacLeod (incompetech.com)**, CC-BY 4.0 — upbeat chiptune × 80s |
+| `level3.mp3`  | Dashboard finale | **"Cyborg Ninja" by Kevin MacLeod (incompetech.com)**, CC-BY 4.0 — driving 8-bit electro |
+
+### Attribution (required by CC-BY 4.0 — keep in game credits)
+
+> "Voxel Revolution", "Cyborg Ninja" — Kevin MacLeod (incompetech.com)
+> Licensed under Creative Commons: By Attribution 4.0
+> https://creativecommons.org/licenses/by/4.0/
+
+## Legacy / unused tracks
 
 | File | Used in | Length suggestion | Vibe |
 |---|---|---|---|
-| `menu.mp3`    | Main menu screen + intro cutscene | 60-90s loop | atmospheric synth, slow build, ticking clock. sets the tone. |
-| `level1.mp3`  | L1 gameplay (YouTube page) | 90-120s loop | lo-fi spy, builds tension. typewriter clacks or modem sounds as percussion. |
-| `level2.mp3`  | L2 Lattice chat | 90-120s loop | nervous, ticking, chat-ping percussion |
-| `hale.mp3`    | L2 Hale boss DM encounter | 30-60s loop or sting | clipped, low piano, dialogue-driven |
-| `tension.mp3` | Brief sting when L1 enemy is actively threatening | 8-12s | anxious, ducks main loop |
+| `menu.mp3`    | (unused) Main menu screen + intro cutscene | 60-90s loop | atmospheric synth, slow build, ticking clock. sets the tone. |
+| `hale.mp3`    | (unused) L2 Hale boss DM encounter | 30-60s loop or sting | clipped, low piano, dialogue-driven |
+| `tension.mp3` | (unused) Brief sting when L1 enemy is actively threatening | 8-12s | anxious, ducks main loop |
 
 ## Format
 

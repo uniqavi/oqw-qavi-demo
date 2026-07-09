@@ -1,18 +1,19 @@
+// Re-trigger reload
 import Phaser from 'phaser';
 import BootScene from './scenes/BootScene.js';
 import MenuScene from './scenes/MenuScene.js';
 import HomeScene from './scenes/HomeScene.js';
 import GameScene from './scenes/GameScene.js';
-import Level2Scene from './scenes/Level2Scene.js';
 import DashboardScene from './scenes/DashboardScene.js';
 import HUDScene from './scenes/HUDScene.js';
 import { playMusic } from './game/music.js';
+import { showLandingPage } from './game/landingPage.js';
 
 const config = {
   type: Phaser.AUTO,
   parent: 'game',
   backgroundColor: '#181818',
-  scene: [BootScene, MenuScene, HomeScene, GameScene, Level2Scene, DashboardScene, HUDScene],
+  scene: [BootScene, MenuScene, HomeScene, GameScene, DashboardScene, HUDScene],
   scale: {
     // Fixed 1920×1080 internal canvas. The `.viewport` div in index.html is
     // already CSS-scaled to fit the browser window, so we use Scale.NONE to
@@ -35,6 +36,9 @@ const game = new Phaser.Game(config);
 // block from production builds (import.meta.env.DEV is statically false).
 if (import.meta.env.DEV) {
   window.__game = game;
+  // Same-instance handle to the music module for the preview/verification
+  // workflow (a console dynamic import would get a different Vite instance).
+  import('./game/music.js').then((m) => { window.__music = m; });
   buildDevJumpPanel(game);
 }
 
@@ -54,12 +58,24 @@ function buildDevJumpPanel(game) {
     stopAll();
     const difficulty = localStorage.getItem('oqw-difficulty') || 'easy';
     game.scene.start(key, { difficulty });
-    if (launchHud) game.scene.launch('HUDScene');
+    if (launchHud) game.scene.getScene(key).scene.launch('HUDScene');
   }
   function toOpening() {
     XP_OVERLAYS.forEach((id) => document.getElementById(id)?.classList.add('hidden'));
     stopAll();
     game.scene.start('MenuScene');   // MenuScene.create() re-shows the XP welcome
+  }
+  function showCredits() {
+    XP_OVERLAYS.forEach((id) => document.getElementById(id)?.classList.add('hidden'));
+    document.body.classList.remove('menu-mode');
+    stopAll();
+    import('./game/kilogram.js').then(({ playKilogramCredits }) => {
+      playKilogramCredits({
+        onComplete: () => {
+          toOpening();
+        }
+      });
+    });
   }
 
   // [label, sceneKey, launchHUDScene?] — null key = the opening flow
@@ -68,7 +84,7 @@ function buildDevJumpPanel(game) {
     ['1.1 Home feed', 'HomeScene'],
     ['1.2 Runner', 'GameScene', true],
     ['2.0 Dashboard', 'DashboardScene'],
-    ['SPYGRAM (L2 wip)', 'Level2Scene'],
+    ['Credits (KiloGram)', 'credits'],
   ];
 
   const wrap = document.createElement('div');
@@ -89,7 +105,15 @@ function buildDevJumpPanel(game) {
     b.style.cssText = 'display:block;width:140px;text-align:left;background:#1d2740;color:#cfe0ff;border:1px solid #2c3a5c;padding:4px 8px;border-radius:3px;cursor:pointer;font:inherit;';
     b.onmouseenter = () => { b.style.background = '#2c3a5c'; };
     b.onmouseleave = () => { b.style.background = '#1d2740'; };
-    b.onclick = () => { key ? jump(key, hud) : toOpening(); };
+    b.onclick = () => {
+      if (key === 'credits') {
+        showCredits();
+      } else if (key) {
+        jump(key, hud);
+      } else {
+        toOpening();
+      }
+    };
     list.appendChild(b);
   });
 
@@ -102,16 +126,12 @@ function buildDevJumpPanel(game) {
   (document.body || document.documentElement).appendChild(wrap);
 }
 
-// Wire up the login screen button
-const loginBtn = document.getElementById('login-btn');
-const loginScreen = document.getElementById('login-screen');
-
-if (loginBtn && loginScreen) {
-  loginBtn.addEventListener('click', () => {
-    // Hide the login overlay, revealing the game canvas (MenuScene desktop) underneath
-    loginScreen.classList.add('hidden');
-    loginScreen.classList.remove('flex');
-    playMusic('menu', { fadeMs: 1200 });
-  });
-}
+// ── Entry flow ───────────────────────────────────────────────────────────────
+// Default route: the LANDING PAGE (src/game/landingPage.js) always shows
+// first. START GAME → the existing desktop dashboard (MenuScene, unchanged).
+// The old MeTube OS lock screen is retired (hidden in index.html) so it can
+// never flash through; logging out also returns to the landing page.
+showLandingPage({
+  onStart: () => playMusic('level1', { fadeMs: 1200 }),
+});
 

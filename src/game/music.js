@@ -18,18 +18,24 @@
 
 import { getMasterVolume, onMasterVolumeChange } from './audio.js';
 
+// Only the tracks the game actually plays are preloaded. Other files still
+// live in /public/music/ (menu.mp3, hale.mp3) — re-add a key here to use one.
+// Each level now has its own upbeat loop (see public/music/README.md for
+// track credits — level12/level3 are Kevin MacLeod, CC-BY 4.0).
 const TRACKS = {
-  menu:    '/music/menu.mp3',          // main menu theme
-  level1:  '/music/level1.mp3',        // L1 in-game loop
-  level2:  '/music/level2.mp3',        // L2 SPYGRAM loop
-  hale:    '/music/hale.mp3',          // L2 boss encounter sting/loop
-  tension: '/music/tension.mp3',       // brief sting when enemy active
+  level1:  '/music/level1.mp3',        // desktop hub theme
+  level2:  '/music/level2.mp3',        // Level 1.1 home feed (original in-level loop)
+  level12: '/music/level12.mp3',       // Level 1.2 runner — "Voxel Revolution"
+  level3:  '/music/level3.mp3',        // Dashboard finale — "Cyborg Ninja"
 };
 
 const audioElements = {};
 let currentTrack = null;
 let currentVolume = 0;
-const MUSIC_MIX = 0.2;           // music's share of the master volume
+// Music's share of the master volume. Was 0.2, which at the default 0.7
+// master put tracks at ~14% element volume — effectively inaudible under the
+// SFX. 0.45 keeps music clearly present without drowning effects/voice.
+const MUSIC_MIX = 0.45;
 let muted = false;
 let fadeRaf = null;
 
@@ -59,6 +65,18 @@ export function loadMusic() {
     });
     audioElements[name] = el;
   }
+}
+
+// Debug/testing probe — current track, element volume and playback state.
+export function getMusicState() {
+  const el = currentTrack ? audioElements[currentTrack] : null;
+  return {
+    currentTrack,
+    muted,
+    volume: el ? +el.volume.toFixed(3) : null,
+    paused: el ? el.paused : null,
+    readyState: el ? el.readyState : null,
+  };
 }
 
 export function setMusicMuted(value) {

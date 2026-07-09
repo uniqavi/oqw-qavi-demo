@@ -26,9 +26,7 @@ const SFX = {
   laserFire:     '/sfx/laser-fire.mp3',
   mineBoom:      '/sfx/mine-boom.mp3',
   docScan:       '/sfx/doc-scan.mp3',
-  hostileAlert:  '/sfx/hostile-alert.mp3',
   exportReady:   '/sfx/export-ready.mp3',
-  docScanLoop:   '/sfx/DOC_Scan_WHEN_SPACE_PRESSED.mp3',
   desktopClick:  '/sfx/meme_Mouse_click.mp3',
 };
 

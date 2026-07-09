@@ -57,10 +57,8 @@ export const PLAYER = {
   baseSpeed: 360,          // bumped — needed for dodging in a scroller
   invulnDuration: 0.85,
   hitFlashDuration: 0.3,
-  // HP replaces the size-shrink damage model. 100 max; enemy hits deal
-  // discrete damage. At 0 HP the level fails.
-  maxHp: 100,
-  startHp: 100,
+  // Discrete-hits damage model: every level gives the window 3 hits
+  // (see p.useHits in combat.js); glass cracks show the damage.
   // SHIFT boosts the PLAYER's movement speed only (the scroll is unaffected).
   boostMul: 1.9,
 };
@@ -74,10 +72,12 @@ export const PLAYER = {
 export const SCROLL = {
   // Overall slower than before so SHIFT-boosted player movement actually
   // feels effective (the relative speed-up against the page is bigger).
+  // Phase 3 rebalance: shorter calm phase + faster ramp/top speed so the
+  // level can't be brute-forced by idling through it.
   slowSpeed:    90,    // px/sec for the first `slowDuration` seconds (very calm)
-  fastSpeed:    200,   // max base speed after the ramp completes
-  slowDuration: 16,    // seconds of calm intro before ramp begins
-  rampDuration: 32,    // seconds over which speed ramps slow → fast
+  fastSpeed:    225,   // max base speed after the ramp completes
+  slowDuration: 12,    // seconds of calm intro before ramp begins
+  rampDuration: 26,    // seconds over which speed ramps slow → fast
   // NOTE: SHIFT no longer affects the scroll — it only boosts the player's
   // own movement (see PLAYER.boostMul). The scroll ramps purely on time.
 };
@@ -87,8 +87,10 @@ export const SCROLL = {
 // the player even if the player is hugging the top edge. Spawn rate is
 // gentle at start, tightens with depth (capped to keep it survivable).
 export const WAVE = {
-  startInterval:  3.0,   // seconds between spawns at depth = 0
-  minInterval:    1.1,   // tightest spawn rate at max depth
+  // Phase 3 rebalance: slightly denser waves so weaving matters more than
+  // tanking (pairs with the tighter SCROLL ramp above).
+  startInterval:  2.6,   // seconds between spawns at depth = 0
+  minInterval:    0.95,  // tightest spawn rate at max depth
   rampDepth:      8000,  // depth (scrollY) at which we hit minInterval (spawn rate only)
   // Enemy upward speed is CONSTANT and slow — only the scroll speed ramps, so
   // the closing speed grows over time without the enemies themselves getting

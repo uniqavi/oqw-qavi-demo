@@ -43,10 +43,14 @@ export function createLayout() {
 //   #4 over the 1st comment
 //   #5 below the 3rd comment, right side
 export function createDocs() {
+  // NOTE: #3 used to sit at (780, 200) — dead centre of rec slot 1, which is
+  // one of the two CHASER cards. Scanning it meant guaranteed contact damage.
+  // Moved one slot down (rec slot 2 is inert) so the chaser above still
+  // pressures the pickup without sitting on top of it.
   return [
     { x: 200, y: 230, r: 10, taken: false, takeT: 0 },
     { x: 140, y: 880, r: 10, taken: false, takeT: 0 },
-    { x: 780, y: 200, r: 10, taken: false, takeT: 0 },
+    { x: 780, y: 310, r: 10, taken: false, takeT: 0 },
     { x: 320, y: 670, r: 10, taken: false, takeT: 0 },
     { x: 800, y: 950, r: 10, taken: false, takeT: 0 },
   ];

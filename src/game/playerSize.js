@@ -8,7 +8,9 @@ import { POWERUP } from '../config.js';
 export const HP_SIZE_FLOOR = 0.45;   // 45% size at 0 HP
 
 export function effectiveSize(p) {
-  const hpRatio = Math.max(0, p.hp / p.maxHp);
+  // Discrete-hits model (glass cracks show the damage): the window keeps its
+  // full size — shrinking AND cracking double-reports the same state.
+  const hpRatio = p.useHits ? 1 : Math.max(0, p.hp / p.maxHp);
   const hpScale = HP_SIZE_FLOOR + (1 - HP_SIZE_FLOOR) * hpRatio;
   const big = p.buffs.size > 0 || (p.test && p.test.size);
   const buffScale = big ? POWERUP.sizeMul : 1;

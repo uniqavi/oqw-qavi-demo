@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { initAudio, beep, noise } from '../game/audio.js';
+import { initAudio, beep, noise, whoosh, whistle, hiss } from '../game/audio.js';
 import { drawHandRect } from '../game/draw.js';
 import { dist, aabb } from '../game/physics.js';
 import { damagePlayer } from '../game/combat.js';
@@ -7,6 +7,11 @@ import { PLAYER } from '../config.js';
 import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
 import { loadMusic, crossfadeTo } from '../game/music.js';
 import { loadSfx, playSfx, playSfxLoop, stopAllSfxLoops } from '../game/sfx.js';
+import { syncCracksToHp, drawCracks } from '../game/cracks.js';
+import { saveLevelTime, getTotalRunTime, submitScore, fmtTime } from '../game/leaderboard.js';
+import { drawCrashScreen } from '../game/crashScreen.js';
+import { updateScan, drawScanPrompt } from '../game/scanDocs.js';
+import { playKilogramCredits, removeKilogramCredits } from '../game/kilogram.js';
 
 // LEVEL 2 — "THE DASHBOARD" (HUSH's corrupted SEO / analytics backend)
 //
@@ -28,7 +33,7 @@ import { loadSfx, playSfx, playSfxLoop, stopAllSfxLoops } from '../game/sfx.js';
 //                 irregular rhythms slamming mandatory corridors.
 //       SHEET   → an Excel minefield. Some cells are mined; one step = instant
 //                 death. Safe entry lip + subtle tells + x-ray read the path.
-//   • Park over a doc and HOLD SPACE to scan it. The risk is holding still.
+//   • Walk over a doc to collect it.
 //
 // Collect the required docs → "EXPORTING…" → the dashboard collapses, a panel
 // falls away to open the exit → dash out.
@@ -38,7 +43,11 @@ const COLX = [150, 560, 970, 1380, 1790, 2200, 2610];   // 7 columns
 const ROWY = [200, 500, 800, 1100, 1400, 1700];          // 6 rows
 const BLK_W = 300, BLK_H = 200;
 const WORLD_W = COLX[COLX.length - 1] + BLK_W + 150;     // 3060
-const WORLD_H = 3000;
+// World bottom sits flush with the spreadsheet's bottom boundary (grid ends
+// at y=2640, +24px mirrored A–H header strip = 2664). There is NO walkable
+// floor beneath the sheet — the minefield can't be skipped by walking under
+// it. (Was 3000, which left a 336px bypass corridor.)
+const WORLD_H = 2664;
 const HEADER = { x: 0, y: 0, w: WORLD_W, h: 110 };
 
 function blockRect(c1, r1, c2, r2) {
@@ -50,40 +59,51 @@ function blockRect(c1, r1, c2, r2) {
 }
 
 // Each panel spans a block range. `hostile`/`exit`/`mine` flag special panels.
+// Every graph TYPE fights back with its own attack (hostile flags below):
+//   pie   → rolling boulder          bar   → piston crushers
+//   gauge → tracking laser needle    sheet → minefield
+//   donut → segment grenades (arc + blast)
+//   area  → lava eruption (the ridge is a volcano)
+//   kpi   → poison gas vent (green cloud clings to the window, minor DoT)
+//   hist  → bars compress into a cannonball and launch
+//   table → rows eject as flying shards
+//   line  → the chart line snaps taut and fires a horizontal beam
+// The EXIT line panel stays safe; only a spread of panels is armed so the
+// route stays learnable.
 const PANEL_SPECS = [
   // top band
-  { kind: 'line',  label: 'SYSTEM UPTIME (30d)', c1: 0, r1: 0, c2: 1, r2: 0 },
+  { kind: 'line',  label: 'SYSTEM UPTIME (30d)', c1: 0, r1: 0, c2: 1, r2: 0, hostile: 'line' },
   { kind: 'kpi',   label: 'TOTAL REVENUE',       c1: 2, r1: 0, c2: 2, r2: 0 },
   { kind: 'pie',   label: 'REVENUE SOURCE',      c1: 3, r1: 0, c2: 3, r2: 0, hostile: 'pie' },
   { kind: 'kpi',   label: 'NEW SIGNUPS',         c1: 4, r1: 0, c2: 4, r2: 0 },
   { kind: 'gauge', label: 'TRUST INDEX',         c1: 6, r1: 0, c2: 6, r2: 1, hostile: 'gauge' }, // tall
   // r1 — gauntlet #1
-  { kind: 'kpi',   label: 'CHURN RATE',          c1: 0, r1: 1, c2: 0, r2: 1 },
+  { kind: 'kpi',   label: 'CHURN RATE',          c1: 0, r1: 1, c2: 0, r2: 1, hostile: 'kpi' },
   { kind: 'bar',   label: 'USERS / REGION',      c1: 1, r1: 1, c2: 3, r2: 1, hostile: 'bar' },   // wide
-  { kind: 'donut', label: 'ENGAGEMENT MIX',      c1: 4, r1: 1, c2: 4, r2: 1 },
+  { kind: 'donut', label: 'ENGAGEMENT MIX',      c1: 4, r1: 1, c2: 4, r2: 1, hostile: 'donut' },
   // r2
-  { kind: 'table', label: 'ASSET WATCHLIST',     c1: 0, r1: 2, c2: 0, r2: 3 },                   // tall
-  { kind: 'area',  label: 'SENTIMENT TREND',     c1: 2, r1: 2, c2: 3, r2: 2 },                   // wide
-  { kind: 'kpi',   label: 'ACTIVE ASSETS',       c1: 4, r1: 2, c2: 4, r2: 2 },
+  { kind: 'table', label: 'ASSET WATCHLIST',     c1: 0, r1: 2, c2: 0, r2: 3, hostile: 'table' }, // tall
+  { kind: 'area',  label: 'SENTIMENT TREND',     c1: 2, r1: 2, c2: 3, r2: 2, hostile: 'area' },  // wide
+  { kind: 'kpi',   label: 'ACTIVE ASSETS',       c1: 4, r1: 2, c2: 4, r2: 2, hostile: 'kpi' },
   { kind: 'kpi',   label: 'BOT TRAFFIC',         c1: 6, r1: 2, c2: 6, r2: 2 },
   // r3 — gauntlet #2
-  { kind: 'hist',  label: 'PAYOUTS',             c1: 1, r1: 3, c2: 2, r2: 3 },                   // wide
+  { kind: 'hist',  label: 'PAYOUTS',             c1: 1, r1: 3, c2: 2, r2: 3, hostile: 'hist' },  // wide
   { kind: 'bar',   label: 'BUDGET BY DEPT',      c1: 4, r1: 3, c2: 5, r2: 3, hostile: 'bar' },
   { kind: 'line',  label: 'SUPPRESSION RATE',    c1: 6, r1: 3, c2: 6, r2: 4, exit: true },       // tall → exit
   // r4 — gauntlet #3 + minefield header
-  { kind: 'kpi',   label: 'FLAGGED TODAY',       c1: 0, r1: 4, c2: 0, r2: 4 },
+  { kind: 'kpi',   label: 'FLAGGED TODAY',       c1: 0, r1: 4, c2: 0, r2: 4, hostile: 'kpi' },
   { kind: 'bar',   label: 'OPS TEMPO',           c1: 1, r1: 4, c2: 2, r2: 4, hostile: 'bar' },
   { kind: 'sheet', label: 'RAW EXPORTS — Sheet1', c1: 3, r1: 4, c2: 5, r2: 4, mine: true },
   // r5
-  { kind: 'table', label: 'FLAGGED STORIES',     c1: 0, r1: 5, c2: 1, r2: 5 },
+  { kind: 'table', label: 'FLAGGED STORIES',     c1: 0, r1: 5, c2: 1, r2: 5, hostile: 'table' },
   { kind: 'kpi',   label: 'COMPLIANCE',          c1: 2, r1: 5, c2: 2, r2: 5 },
   { kind: 'gauge', label: 'CAMPAIGN HEALTH',     c1: 6, r1: 5, c2: 6, r2: 5 },
   // filler widgets — these also wall off shortcut blocks to force the route
   { kind: 'kpi',   label: 'AD SPEND',            c1: 5, r1: 0, c2: 5, r2: 0 },
-  { kind: 'donut', label: 'TRAFFIC MIX',         c1: 5, r1: 1, c2: 5, r2: 1 },
+  { kind: 'donut', label: 'TRAFFIC MIX',         c1: 5, r1: 1, c2: 5, r2: 1, hostile: 'donut' },
   { kind: 'kpi',   label: 'SESSIONS',            c1: 5, r1: 2, c2: 5, r2: 2 },
   { kind: 'kpi',   label: 'QUEUE DEPTH',         c1: 1, r1: 2, c2: 1, r2: 2 },
-  { kind: 'area',  label: 'INCIDENTS',           c1: 3, r1: 3, c2: 3, r2: 3 },
+  { kind: 'area',  label: 'INCIDENTS',           c1: 3, r1: 3, c2: 3, r2: 3, hostile: 'area' },
 ];
 
 // ── Forced route — the corridor grid is otherwise wide open, so we seal all
@@ -115,6 +135,45 @@ const MINE_GRID = {
   mines: []
 };
 
+// ── Spreadsheet perimeter barriers — use the existing header chrome as walls. ──
+// Dimensions match the actual header strips:
+//   SIDE_WALL_W = 30px  (the grey number column on left/right)
+//   TOP_WALL_H  = 24px  (the grey A-H letter row on top/bottom)
+// Two 1-row gaps:
+//   ENTRANCE — left wall,  row 3 (0-idx) = row 4 label: col A safe cell '0,3'
+//   EXIT     — right wall, row 8 (0-idx) = row 9 label: col H safe cell '7,8'
+const SIDE_WALL_W  = 30;
+const TOP_WALL_H   = 24;
+const ENTER_ROW    = 3;   // 0-indexed
+const EXIT_ROW     = 8;   // 0-indexed
+const SG  = MINE_GRID;
+const SW  = SG.cols * SG.cw;   // 1056
+const SH  = SG.rows * SG.ch;   // 1000
+const SHEET_WALLS = [
+  // Top barrier  (A-H header strip)
+  { x: SG.x, y: SG.y - TOP_WALL_H, w: SW, h: TOP_WALL_H,
+    collapsed: 0, sheetWall: true },
+  // Bottom barrier (mirrored A-H strip)
+  { x: SG.x, y: SG.y + SH, w: SW, h: TOP_WALL_H,
+    collapsed: 0, sheetWall: true },
+  // Left barrier — above entrance (rows 0..ENTER_ROW-1)
+  { x: SG.x - SIDE_WALL_W, y: SG.y,
+    w: SIDE_WALL_W, h: ENTER_ROW * SG.ch,
+    collapsed: 0, sheetWall: true },
+  // Left barrier — below entrance (rows ENTER_ROW+1..rows-1)
+  { x: SG.x - SIDE_WALL_W, y: SG.y + (ENTER_ROW + 1) * SG.ch,
+    w: SIDE_WALL_W, h: SH - (ENTER_ROW + 1) * SG.ch,
+    collapsed: 0, sheetWall: true },
+  // Right barrier — above exit (rows 0..EXIT_ROW-1)
+  { x: SG.x + SW, y: SG.y,
+    w: SIDE_WALL_W, h: EXIT_ROW * SG.ch,
+    collapsed: 0, sheetWall: true },
+  // Right barrier — below exit (row EXIT_ROW+1..rows-1  — closes row 9 on the right)
+  { x: SG.x + SW, y: SG.y + (EXIT_ROW + 1) * SG.ch,
+    w: SIDE_WALL_W, h: SH - (EXIT_ROW + 1) * SG.ch,
+    collapsed: 0, sheetWall: true },
+];
+
 for (let c = 0; c < MINE_GRID.cols; c++) {
   for (let r = 0; r < MINE_GRID.rows; r++) {
     if (!SAFE_PATH_SET.has(c + ',' + r)) {
@@ -123,14 +182,21 @@ for (let c = 0; c < MINE_GRID.cols; c++) {
   }
 }
 
-const DOCS_TARGET = 4;
-const CAPTURE_TIME = 1.2;
-const BASE_SPEED = 178;
+const DOCS_TARGET = 5;
+// Movement speed is shared across every level (see PLAYER.baseSpeed) so the
+// window handles identically in 1.1, 1.2 and here.
+const BASE_SPEED = PLAYER.baseSpeed;
 const INTRO_TIME = 1.3;
 const EXPORT_TIME = 4.0;
 
-// Base damage — divided by difficulty in damagePlayer (easy ≈ ×0.45).
-const DMG = { pie: 58, bar: 66, gauge: 112 };
+// Base damage. With the discrete-hits model (6 hits on this level; the
+// earlier levels use 3): amounts < 70 cost ONE hit, >= 70 cost TWO (see
+// combat.js).
+// Balance pass: the gauge laser used to cost TWO hits (112) — that was a
+// near-instant kill, so it's now a single (still the scariest telegraph in
+// the level). Gas (kpi) no longer damages at all — it blinds instead (see
+// triggerGasScreen).
+const DMG = { pie: 58, bar: 66, gauge: 68, donut: 30, area: 30, kpi: 0, hist: 66, table: 30, line: 40 };
 
 // Light "Salesforce" palette (only the X-ray layer is dark).
 const C = {
@@ -178,20 +244,27 @@ export default class DashboardScene extends Phaser.Scene {
     this.failed = false;
     this.crashShown = false;
     this.captured = 0;
-    this.captureProg = 0;
+    this.bonusCaptured = 0;   // spreadsheet-path + timed docs (★, not required)
     this.exporting = false;
     this.exportT = 0;
     this.escapeReady = false;
     this.done = false;
 
+    // Discrete-hits health — this level runs 4 hits (slightly higher than the 3 the
+    // earlier levels use) because it's a long, dense gauntlet.
+    // Damage still shows as glass cracks on the window (no HP bar).
     const player = {
       x: 330, y: 1990, w: 56, h: 40, size: 56,
       vx: 0, vy: 0,
-      hp: PLAYER.maxHp, maxHp: PLAYER.maxHp, useHp: true,
+      hp: 4, maxHp: 4, useHp: true, useHits: true,
       invuln: 0, hitFlash: 0,
       test: { immune: false },
     };
     this.player = player;
+    this.cracks = [];
+    this._lastHp = player.hp;
+    this.shots = [];             // live enemy projectiles (grenades/blobs/balls/shards)
+    this.gasScreen = null;       // fullscreen poison-blind: { t, dur, seed }
     this.gs = {
       player, sparks: [],
       stats: { damageTaken: 0, hitsReceived: 0, endedAt: 0 },
@@ -201,7 +274,7 @@ export default class DashboardScene extends Phaser.Scene {
     this.panels = PANEL_SPECS.map(s => ({ ...s, ...blockRect(s.c1, s.r1, s.c2, s.r2), shake: 0, collapsed: 0, hostileActive: false }));
     this.panels.forEach(p => { p.data = genData(p); });
     this.seals = this.buildSeals();
-    this.solids = this.panels.filter(p => p.kind !== 'sheet').concat(this.seals);
+    this.solids = this.panels.filter(p => p.kind !== 'sheet').concat(this.seals).concat(SHEET_WALLS);
     this.exitPanel = this.panels.find(p => p.exit);
 
     this.hazards = this.buildHazards();
@@ -218,11 +291,15 @@ export default class DashboardScene extends Phaser.Scene {
       space: Phaser.Input.Keyboard.KeyCodes.SPACE,
     });
     this.onKey = (e) => {
+      // Completion popup is up — keys belong to the name input, not the game
+      if (this.done) return;
       if (this.narration && (e.key === ' ' || e.key === 'Enter')) {
         e.preventDefault(); this.advanceNarration(); return;
       }
       if (e.key === 'Escape') {
         e.preventDefault();
+        // When crashed: ESC goes straight to main menu (matches Level 1.1 behaviour).
+        if (this.failed) { this.quitToMenu(); return; }
         togglePauseMenu({ onQuit: () => this.quitToMenu() });
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault(); this.restartLevel();
@@ -230,16 +307,13 @@ export default class DashboardScene extends Phaser.Scene {
     };
     document.addEventListener('keydown', this.onKey);
 
-    // HUD
+    // HUD — no HP bar; health is the glass-crack state of the window itself
+    // (Level 1.1 consistency).
     this.taskFrame = document.getElementById('task-frame');
     this.taskLine = document.getElementById('task-line');
     this.taskProg = document.getElementById('task-progress');
-    this.hpFrame = document.getElementById('hp-frame');
-    this.hpFill = document.getElementById('hp-fill');
-    this.hpNumber = document.getElementById('hp-number');
     this.taskFrame?.classList.remove('hidden');
     this.taskFrame?.classList.remove('cleared');
-    this.hpFrame?.classList.remove('hidden');
 
     // Narration
     this.intelDom = {
@@ -253,15 +327,14 @@ export default class DashboardScene extends Phaser.Scene {
     this.onNarrationClick = (e) => { if (this.narration) { e.stopPropagation(); this.advanceNarration(); } };
     document.addEventListener('click', this.onNarrationClick);
 
-    this.buildCrashPopup();
-
     this.beats = { intro: false, firstDoc: false, allDocs: false };
     setTimeout(() => this.playIntroNarration(), INTRO_TIME * 1000 + 200);
 
     this.handleResize();
     initAudio();
     loadMusic(); loadSfx();
-    crossfadeTo('level2', { fadeMs: 1500 });
+    // Finale gets its own driving 8-bit electro loop ("Cyborg Ninja").
+    crossfadeTo('level3', { fadeMs: 1500 });
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       window.removeEventListener('resize', this.handleResize);
@@ -271,10 +344,11 @@ export default class DashboardScene extends Phaser.Scene {
       resetPauseMenu();
       stopAllSfxLoops();
       this.taskFrame?.classList.add('hidden');
-      this.hpFrame?.classList.add('hidden');
       this.intelDom?.wrap?.classList.add('hidden');
       this.intelDom?.wrap?.classList.remove('show');
       this.crashEl?.remove();
+      removeKilogramCredits();
+      document.getElementById('dash-complete')?.remove();
     });
   }
 
@@ -289,7 +363,7 @@ export default class DashboardScene extends Phaser.Scene {
           type: 'pie', panel: p, state: 'idle', t: 0, cooldown: 0,
           activated: false, alertT: 0,
           r: 46, x: p.x + p.w / 2, y: p.y + p.h / 2, vx: 0, vy: 0, dir: 1, spin: 0,
-          rollSpeed: 250 * mul, triggerR: 560,
+          rollSpeed: 230 * mul, triggerR: 560,
         });
       } else if (p.hostile === 'bar') {
         // Piston gauntlet: a row of crushers that slam into the corridor below
@@ -318,8 +392,72 @@ export default class DashboardScene extends Phaser.Scene {
           activated: false, alertT: 0,
           cx: p.x + p.w / 2, cy: p.y + p.h * 0.52,
           needleLen: Math.min(p.w * 0.34, 96),
-          angle: -Math.PI / 2 + 0.5, aimDur: 1.25, beamT: 0, fireAngle: 0,
+          angle: -Math.PI / 2 + 0.5, aimDur: 1.5, beamT: 0, fireAngle: 0,
           triggerR: 700, beamLen: 2200,
+        });
+      } else if (p.hostile === 'donut') {
+        // Grenade lobber — donut segments break off and arc toward the player,
+        // exploding after a short fuse.
+        list.push({
+          type: 'donut', panel: p, activated: false, alertT: 0,
+          cooldown: 1.2, interval: 3.4 / mul, triggerR: 520,
+          cx: p.x + p.w / 2, cy: p.y + p.h * 0.55,
+        });
+      } else if (p.hostile === 'area') {
+        // Lava erupter — the chart ridge is a volcano; molten blobs spray up
+        // and rain back down through the corridor.
+        list.push({
+          type: 'area', panel: p, activated: false, alertT: 0,
+          cooldown: 1.5, interval: 3.8 / mul, triggerR: 480,
+        });
+      } else if (p.hostile === 'kpi') {
+        // Poison gas PIPE — a visible metal pipe runs along the panel's
+        // bottom edge and vents gas VERTICALLY down into the corridor on a
+        // readable cycle (hiss telegraph → vent → idle). Touching an active
+        // gas column doesn't damage HP — it blinds: a fullscreen green gas
+        // effect covers the whole game window (duration scales with
+        // difficulty). See triggerGasScreen().
+        const pipeY = p.y + p.h;
+        const nVents = Math.max(2, Math.round(p.w / 160));
+        const vents = [];
+        for (let i = 0; i < nVents; i++) {
+          vents.push({
+            x: p.x + (i + 0.5) * (p.w / nVents),
+            phase: i / nVents,             // staggered so the corridor is never fully sealed
+          });
+        }
+        list.push({
+          type: 'kpi', panel: p, activated: false, alertT: 0,
+          pipeY, vents, ventLen: 150, ventW: 30,
+          period: 4.6 / mul,               // full cycle length
+          warmFrac: 0.22,                  // first fraction of the cycle = hiss telegraph
+          ventFrac: 0.34,                  // next fraction = venting (rest is idle)
+          t: Math.random() * 2,            // desync the three pipes from each other
+          triggerR: 520,
+          cx: p.x + p.w / 2, cy: p.y + p.h / 2,
+        });
+      } else if (p.hostile === 'hist') {
+        // Cannonball transformer — the histogram compresses its bars into a
+        // ball and launches it ballistically at the player.
+        list.push({
+          type: 'hist', panel: p, state: 'idle', t: 0, cooldown: 0,
+          activated: false, alertT: 0, triggerR: 560, squish: 0,
+          cx: p.x + p.w / 2, cy: p.y + p.h - 40,
+        });
+      } else if (p.hostile === 'table') {
+        // Row-shard thrower — table rows eject sideways as flying shards.
+        list.push({
+          type: 'table', panel: p, activated: false, alertT: 0,
+          cooldown: 1.0, interval: 3.0 / mul, triggerR: 500, rowFlash: -1,
+        });
+      } else if (p.hostile === 'line') {
+        // Beam line — the chart's polyline pulls taut, glows, then fires a
+        // horizontal beam across the corridor beneath the panel.
+        list.push({
+          type: 'line', panel: p, state: 'idle', t: 0, cooldown: 0,
+          activated: false, alertT: 0, triggerR: 520,
+          beamY: p.y + p.h + 55,          // corridor row below the panel
+          beamX0: p.x - 420, beamX1: p.x + p.w + 420,
         });
       } else if (p.mine) {
         const g = MINE_GRID;
@@ -327,21 +465,41 @@ export default class DashboardScene extends Phaser.Scene {
         list.push({ type: 'sheet', panel: p, activated: false, alertT: 0, grid: g, mineSet });
       }
     }
+
+    // The STALKER — the BOT TRAFFIC KPI widget detaches and slowly follows
+    // the player for the entire level. Much slower than the player, but it
+    // never stops: scanning in place means it WILL catch up.
+    const botPanel = this.panels.find(pn => pn.label === 'BOT TRAFFIC');
+    if (botPanel) {
+      list.push({
+        type: 'stalker', panel: botPanel,
+        x: botPanel.x + botPanel.w / 2, y: botPanel.y + botPanel.h / 2,
+        w: 150, h: 96,
+        // Balance pass: slower + later detach + longer post-hit daze so it
+        // pressures scanning without dominating the whole level.
+        speed: 64 * mul, delay: 8, stun: 0, wob: 0,
+        detached: false,
+      });
+    }
     return list;
   }
 
   buildDocs() {
-    // Required (4) → one behind each hazard along the forced snake.
+    // Required (5) → one behind each hazard along the forced snake + one under FLAGGED TODAY.
     // Bonus (3) → placed along the spreadsheet green safe path.
     return [
       { x: 2555, y: 300,  required: true,  taken: false, takeT: 0 },  // by the gauge (snake end)
       { x: 1100, y: 750,  required: true,  taken: false, takeT: 0 },  // gauntlet #1 corridor
       { x: 2140, y: 1350, required: true,  taken: false, takeT: 0 },  // gauntlet #2 corridor
       { x: 900,  y: 1650, required: true,  taken: false, takeT: 0 },  // gauntlet #3 corridor
+      { x: 250,  y: 1650, required: true,  taken: false, takeT: 0 },  // under FLAGGED TODAY
       // Spreadsheet green path docs:
       { x: 1872, y: 2090, required: false, taken: false, takeT: 0 },  // D5 (index 3,4)
       { x: 2268, y: 1690, required: false, taken: false, takeT: 0 },  // G1 (index 6,0)
       { x: 2004, y: 2290, required: false, taken: false, takeT: 0 },  // E7 (index 4,6)
+      // Timed bonus doc: bigger, blinking, on a deletion countdown — scan it
+      // in time for a glass repair. Same corridor as the gauntlet #1 doc.
+      { x: 950,  y: 750,  required: false, taken: false, takeT: 0, bonusTimed: true, ttl: 45 },
     ];
   }
 
@@ -353,6 +511,12 @@ export default class DashboardScene extends Phaser.Scene {
       const y = 200 + r * 300;
       for (let g = 0; g < 6; g++) {
         if (g === OPEN_CONNECTOR[r]) continue;
+        // Exit pathway: keep the far-right connector (gap 5, x=2500) OPEN on
+        // rows 4 + 5 as well. Together with row 3 (already the open connector
+        // there) this forms a continuous vertical corridor from the
+        // spreadsheet's right-side exit gap straight up to the EXIT panel —
+        // emerging from the minefield leads somewhere instead of a dead end.
+        if (g === 5 && (r === 4 || r === 5)) continue;
         const gap = GAPS[g];
         if (inPanel(gap.x + gap.w / 2, y + 100)) continue;   // already walled by a panel
         seals.push({ x: gap.x, y, w: gap.w, h: 200, collapsed: 0 });
@@ -382,15 +546,12 @@ export default class DashboardScene extends Phaser.Scene {
   quitToMenu() {
     resetPauseMenu();
     stopAllSfxLoops();
-    crossfadeTo('menu', { fadeMs: 800 });
+    crossfadeTo('level1', { fadeMs: 800 });
     document.body.classList.add('menu-mode');
     this.scene.stop();
     this.scene.start('MenuScene');
   }
-  restartLevel() {
-    this.hideCrash();
-    this.scene.restart({ difficulty: this.difficulty, revealedGrid: this.revealedGrid });
-  }
+  // (restartLevel defined once below, next to the completion popup.)
 
   hits(x, y, w, h) {
     const box = { x: x - w / 2, y: y - h / 2, w, h };
@@ -398,6 +559,10 @@ export default class DashboardScene extends Phaser.Scene {
     const inSheet = (box.x + box.w > 1410 && box.x < 2466 && box.y + box.h > 1640 && box.y < 2640);
     for (const p of this.solids) {
       if (p.collapsed < 1 && aabb(box, p)) {
+        // sheetWall barriers are ALWAYS solid — they form the perimeter of the
+        // minefield and must block the player from exiting/entering the sheet
+        // from outside the designated entrance.
+        if (p.sheetWall) return true;
         if (inSheet && p.kind === undefined && p.margin === undefined) continue;
         return true;
       }
@@ -408,10 +573,13 @@ export default class DashboardScene extends Phaser.Scene {
     p.x = Phaser.Math.Clamp(p.x, p.w / 2, WORLD_W - p.w / 2);
     p.y = Phaser.Math.Clamp(p.y, p.h / 2, WORLD_H - p.h / 2);
   }
-  surfaceBelow(x, r, curY) {
+  // minTop (optional): ignore surfaces whose top edge is above it — used by
+  // grenades so they arc over their own panel instead of landing on its roof.
+  surfaceBelow(x, r, curY, minTop = 0) {
     let best = WORLD_H;
     for (const s of this.solids) {
       if (s.collapsed >= 1) continue;
+      if (s.y < minTop) continue;
       if (x > s.x && x < s.x + s.w && s.y >= curY - r * 0.5 && s.y < best) best = s.y;
     }
     return best;
@@ -432,7 +600,8 @@ export default class DashboardScene extends Phaser.Scene {
         const inSheet = (box.x + box.w > 1410 && box.x < 2466 && box.y + box.h > 1640 && box.y < 2640);
         for (const s of this.solids) {
           if (s.collapsed < 1 && aabb(box, s)) {
-            if (inSheet && s.kind === undefined && s.margin === undefined) continue;
+            // sheetWall barriers are always solid — never skip them
+            if (!s.sheetWall && inSheet && s.kind === undefined && s.margin === undefined) continue;
             hit = s;
             break;
           }
@@ -477,15 +646,39 @@ export default class DashboardScene extends Phaser.Scene {
 
     if (this.gs.status === 'lost') this.failed = true;
     if (this.failed) {
-      if (!this.crashShown) { this.showCrash(); playSfx('gameOver'); stopAllSfxLoops(); }
+      if (!this.crashSfxPlayed) { this.crashSfxPlayed = true; playSfx('gameOver'); stopAllSfxLoops(); }
       this.render(); this.updateHud(); return;
     }
     if (this.done) { this.render(); this.updateHud(); return; }
     if (this.narration) { this.render(); this.updateHud(); return; }
+    if (this.exitPan) { this.updateExitPan(dt); this.render(); this.updateHud(); return; }
 
     const p = this.player;
     if (p.invuln > 0) p.invuln -= dt;
     if (p.hitFlash > 0) p.hitFlash -= dt;
+
+    // Fullscreen poison-blind decay (re-touching a vent keeps it maxed)
+    if (this.gasScreen) {
+      this.gasScreen.t -= dt;
+      if (this.gasScreen.t <= 0) this.gasScreen = null;
+    }
+
+    // Glass cracks track the discrete-hits HP (grow on hit, repair on heal).
+    // Scan-interrupt mercy: a hit mid-scan halves progress instead of wiping it.
+    this._lastHp = syncCracksToHp(this.cracks, this._lastHp, p.hp, p.w, p.h);
+
+    // Timed bonus doc: countdown once the level has started
+    if (this.started) {
+      for (const d of this.docs) {
+        if (d.bonusTimed && !d.taken) {
+          d.ttl -= dt;
+          if (d.ttl <= 0) {
+            d.taken = true; d.takeT = this.time; d.expired = true;
+            beep(180, 0.25, 'sawtooth', 0.08);   // fizzle — file deleted
+          }
+        }
+      }
+    }
 
     if (this.detonatingMine) {
       p.vx = 0;
@@ -547,10 +740,11 @@ export default class DashboardScene extends Phaser.Scene {
     if (hz.activated) { if (hz.alertT < 1) hz.alertT = Math.min(1, hz.alertT + 0.05); return; }
     const c = { x: hz.panel.x + hz.panel.w / 2, y: hz.panel.y + hz.panel.h / 2 };
     if (dist(px, py, c.x, c.y) < range) {
+      // Silent activation — the panel shake is the tell. (The old
+      // "enemy spotted" hostile-alert sting was removed by request: only the
+      // background music and actual hit sounds should play.)
       hz.activated = true; hz.alertT = 0;
       hz.panel.hostileActive = true; hz.panel.shake = 1;
-      playSfx('hostileAlert');
-      beep(240, 0.16, 'sawtooth', 0.07); setTimeout(() => beep(180, 0.2, 'square', 0.06), 110);
     }
   }
 
@@ -562,6 +756,336 @@ export default class DashboardScene extends Phaser.Scene {
       else if (hz.type === 'bar') this.updateBar(hz, dt, p);
       else if (hz.type === 'gauge') this.updateGauge(hz, dt, p);
       else if (hz.type === 'sheet') this.updateSheet(hz, dt, p);
+      else if (hz.type === 'donut') this.updateDonut(hz, dt, p);
+      else if (hz.type === 'area') this.updateArea(hz, dt, p);
+      else if (hz.type === 'kpi') this.updateKpiGas(hz, dt, p);
+      else if (hz.type === 'hist') this.updateHist(hz, dt, p);
+      else if (hz.type === 'table') this.updateTable(hz, dt, p);
+      else if (hz.type === 'line') this.updateLine(hz, dt, p);
+      else if (hz.type === 'stalker') this.updateStalker(hz, dt, p);
+    }
+    this.updateShots(dt, p);
+  }
+
+  // ── Stalker: the BOT TRAFFIC widget hunts you all level ──
+  updateStalker(hz, dt, p) {
+    if (hz.delay > 0) {
+      hz.delay -= dt;
+      if (hz.delay <= 0) {
+        hz.detached = true;
+        hz.panel.stalkerGone = true;
+        whoosh(0.5, 200, 900, 0.1);   // tears free of its slot
+        beep(140, 0.35, 'sawtooth', 0.08);
+      }
+      return;
+    }
+    hz.wob += dt;
+    if (hz.stun > 0) { hz.stun -= dt; return; }
+    const d = dist(p.x, p.y, hz.x, hz.y) || 1;
+    // Floats OVER the maze straight at the player — walls don't apply to it
+    hz.x += ((p.x - hz.x) / d) * hz.speed * dt;
+    hz.y += ((p.y - hz.y) / d) * hz.speed * dt;
+    if (p.invuln <= 0 && d < 62) {
+      damagePlayer(this.gs, 30, ((p.x - hz.x) / d) * 90, ((p.y - hz.y) / d) * 90);
+      this.resolveStuck(p);
+      hz.stun = 2.2;   // backs off after a hit so it can't chain through invuln
+    }
+  }
+
+  // ── Donut → grenade lobber (tactical-shooter model) ──
+  // The DONUT panel is the visible thrower: it winds up (panel shake +
+  // pin-plink), lobs a grenade on a ballistic arc, and the grenade then
+  // LANDS and sits on the floor for a readable fuse window (blinking faster
+  // and faster) before detonating — the player gets a beat to clear out.
+  updateDonut(hz, dt, p) {
+    this.tryActivate(hz, p.x, p.y, hz.triggerR * 0.7);
+    if (!hz.activated) return;
+    hz.cooldown -= dt;
+    if (hz.cooldown > 0 || dist(p.x, p.y, hz.cx, hz.cy) > hz.triggerR) return;
+    hz.cooldown = hz.interval;
+    hz.panel.shake = 0.7;
+    // Solve a simple ballistic arc to (roughly) the player's position
+    const flight = 1.0;
+    const GRAV = 1500;
+    const vx = (p.x - hz.cx) / flight + (Math.random() - 0.5) * 60;
+    const vy = (p.y - hz.cy) / flight - GRAV * flight / 2;
+    this.shots.push({
+      kind: 'grenade', x: hz.cx, y: hz.cy, vx, vy, grav: GRAV,
+      landed: false,
+      airTimeout: flight + 2.5,   // fallback: detonate mid-air if it never lands
+      fuseLand: 1.7,              // seconds sitting on the floor before the blast
+      floorMin: hz.panel.y + hz.panel.h,   // don't land on the thrower's own roof
+      r: 12, spin: 0,
+    });
+    // grenade: pin "plink" + falling-bomb whistle for the whole arc
+    beep(1150, 0.05, 'triangle', 0.08);
+    whistle(flight + 0.1, 1500, 350, 0.055);
+  }
+
+  // ── Area chart → lava eruption ──
+  updateArea(hz, dt, p) {
+    this.tryActivate(hz, p.x, p.y, hz.triggerR * 0.7);
+    if (!hz.activated) return;
+    hz.cooldown -= dt;
+    const cx = hz.panel.x + hz.panel.w / 2, cy = hz.panel.y + hz.panel.h / 2;
+    if (hz.cooldown > 0 || dist(p.x, p.y, cx, cy) > hz.triggerR) return;
+    hz.cooldown = hz.interval;
+    hz.panel.shake = 1;
+    // volcanic rumble + gurgle
+    noise(0.45, 0.14); beep(70, 0.5, 'sawtooth', 0.09);
+    whoosh(0.4, 200, 700, 0.09);
+    // Blobs erupt from the ridge (panel top area) and rain down
+    const n = 4 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      this.shots.push({
+        kind: 'blob',
+        x: hz.panel.x + 30 + Math.random() * (hz.panel.w - 60),
+        y: hz.panel.y + hz.panel.h * 0.45,
+        vx: (Math.random() - 0.5) * 260,
+        vy: -(260 + Math.random() * 220),
+        grav: 1300, life: 2.6, r: 9 + Math.random() * 6, wob: Math.random() * 6,
+      });
+    }
+  }
+
+  // ── KPI → poison gas pipe (vents vertically into the corridor below) ──
+  // Cycle per vent (staggered by phase): idle → hiss telegraph → gas column.
+  // Contact with an active column triggers the fullscreen gas-blind effect
+  // (no HP damage — the impact is that you can't see; see triggerGasScreen).
+  updateKpiGas(hz, dt, p) {
+    this.tryActivate(hz, p.x, p.y, hz.triggerR * 0.8);
+    if (!hz.activated) return;
+    hz.t += dt;
+    const pb = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h };
+    for (const v of hz.vents) {
+      const f = ((hz.t / hz.period) + v.phase) % 1;
+      const wasState = v.state;
+      v.state = f < hz.warmFrac ? 'warm'
+              : f < hz.warmFrac + hz.ventFrac ? 'vent' : 'idle';
+      // vent ramp 0..1 for the draw (grow fast, fade at the tail)
+      if (v.state === 'vent') {
+        const vf = (f - hz.warmFrac) / hz.ventFrac;
+        v.flow = vf < 0.15 ? vf / 0.15 : vf > 0.85 ? (1 - vf) / 0.15 : 1;
+      } else v.flow = 0;
+      if (v.state === 'warm' && wasState !== 'warm') hiss(0.7, 0.05);   // telegraph
+      if (v.state === 'vent' && wasState !== 'vent') hiss(1.3, 0.09);   // pressurised release
+      // Collision — only while flowing hard enough to read as "on"
+      if (v.state === 'vent' && v.flow > 0.25) {
+        const col = { x: v.x - hz.ventW / 2, y: hz.pipeY, w: hz.ventW, h: hz.ventLen * v.flow };
+        if (aabb(col, pb)) this.triggerGasScreen();
+      }
+    }
+  }
+
+  // Fullscreen poison-blind. Duration scales with difficulty — short but
+  // highly impactful (the whole game window fogs over, not just SCAN.exe).
+  // Standing in the column keeps it maxed; it fades once you're clear.
+  triggerGasScreen() {
+    const dur = { easy: 1.3, normal: 2.0, hard: 2.8 }[this.difficulty] || 1.3;
+    if (!this.gasScreen) {
+      this.gasScreen = { t: dur, dur, seed: Math.random() * 100 };
+      hiss(1.2, 0.1);
+      beep(160, 0.3, 'sawtooth', 0.06);
+    } else {
+      this.gasScreen.t = Math.max(this.gasScreen.t, dur);
+      this.gasScreen.dur = dur;
+    }
+  }
+
+  // ── Histogram → cannonball transformer ──
+  updateHist(hz, dt, p) {
+    this.tryActivate(hz, p.x, p.y, hz.triggerR * 0.7);
+    const near = dist(p.x, p.y, hz.cx, hz.cy) < hz.triggerR;
+    if (hz.state === 'idle') {
+      hz.squish = Math.max(0, hz.squish - dt * 2);
+      if (hz.cooldown > 0) hz.cooldown -= dt;
+      if (hz.activated && near && hz.cooldown <= 0) {
+        hz.state = 'windup'; hz.t = 0;
+        beep(160, 0.25, 'sawtooth', 0.07);
+      }
+      return;
+    }
+    if (hz.state === 'windup') {
+      hz.t += dt;
+      hz.squish = Math.min(1, hz.t / 0.8);   // bars visibly compress into a ball
+      hz.panel.shake = 0.8;
+      if (hz.t >= 0.8) {
+        hz.state = 'idle'; hz.cooldown = 4.2; hz.t = 0;
+        const flight = 0.9;
+        const GRAV = 1500;
+        this.shots.push({
+          kind: 'ball', x: hz.cx, y: hz.cy,
+          vx: (p.x - hz.cx) / flight,
+          vy: (p.y - hz.cy) / flight - GRAV * flight / 2,
+          grav: GRAV, life: 4, r: 20, bounces: 1, spin: 0,
+        });
+        playSfx('boulderLaunch');
+        noise(0.2, 0.12);
+      }
+    }
+  }
+
+  // ── Table → row shards ──
+  updateTable(hz, dt, p) {
+    this.tryActivate(hz, p.x, p.y, hz.triggerR * 0.7);
+    if (!hz.activated) return;
+    hz.cooldown -= dt;
+    if (hz.rowFlash >= 0) hz.rowFlash -= dt * 3;
+    const cx = hz.panel.x + hz.panel.w / 2, cy = hz.panel.y + hz.panel.h / 2;
+    if (hz.cooldown > 0 || dist(p.x, p.y, cx, cy) > hz.triggerR) return;
+    hz.cooldown = hz.interval;
+    hz.rowFlash = 1;
+    hz.panel.shake = 0.5;
+    // Shard flies horizontally out of the panel edge nearest the player, at
+    // the player's current height (clamped to the panel's rows).
+    const dir = p.x >= cx ? 1 : -1;
+    const sy = Phaser.Math.Clamp(p.y, hz.panel.y + 46, hz.panel.y + hz.panel.h - 16);
+    this.shots.push({
+      kind: 'shard',
+      x: dir > 0 ? hz.panel.x + hz.panel.w : hz.panel.x,
+      y: sy, vx: dir * 420, vy: 0, grav: 0, life: 2.2,
+      w: 46, h: 12, spin: 0,
+    });
+    // sharp whip-crack as the row tears free
+    whoosh(0.28, 2200, 500, 0.13);
+  }
+
+  // ── Line chart → taut-line beam ──
+  updateLine(hz, dt, p) {
+    this.tryActivate(hz, p.x, p.y, hz.triggerR * 0.7);
+    const cx = hz.panel.x + hz.panel.w / 2, cy = hz.panel.y + hz.panel.h / 2;
+    const near = dist(p.x, p.y, cx, cy) < hz.triggerR;
+    if (hz.state === 'idle') {
+      if (hz.cooldown > 0) hz.cooldown -= dt;
+      if (hz.activated && near && hz.cooldown <= 0) {
+        hz.state = 'charge'; hz.t = 0;
+        playSfx('laserCharge');
+      }
+      return;
+    }
+    if (hz.state === 'charge') {
+      hz.t += dt;
+      hz.panel.shake = 0.4;
+      if (hz.t >= 1.0) {
+        hz.state = 'fire'; hz.t = 0;
+        playSfx('laserFire');
+        noise(0.18, 0.09);
+        // Damage anyone in the beam band on the firing frame window
+        const pb = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h };
+        const beam = { x: hz.beamX0, y: hz.beamY - 10, w: hz.beamX1 - hz.beamX0, h: 20 };
+        if (p.invuln <= 0 && aabb(beam, pb)) {
+          damagePlayer(this.gs, DMG.line, 0, 30);
+          this.resolveStuck(p);
+        }
+      }
+      return;
+    }
+    if (hz.state === 'fire') {
+      hz.t += dt;
+      // sustained beam for a short window — re-check contact while it burns
+      const pb = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h };
+      const beam = { x: hz.beamX0, y: hz.beamY - 10, w: hz.beamX1 - hz.beamX0, h: 20 };
+      if (p.invuln <= 0 && aabb(beam, pb)) {
+        damagePlayer(this.gs, DMG.line, 0, 30);
+        this.resolveStuck(p);
+      }
+      if (hz.t >= 0.3) { hz.state = 'idle'; hz.cooldown = 3.2; }
+    }
+  }
+
+  // ── Shared projectile system for the new enemies ──
+  updateShots(dt, p) {
+    const pb = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h };
+    for (let i = this.shots.length - 1; i >= 0; i--) {
+      const s = this.shots[i];
+      s.vy += (s.grav || 0) * dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      if (s.spin !== undefined) s.spin += dt * 9;
+
+      if (s.kind === 'grenade') {
+        if (!s.landed) {
+          s.airTimeout -= dt;
+          const surf = this.surfaceBelow(s.x, s.r, s.y, s.floorMin || 0);
+          if (s.vy > 0 && s.y + s.r >= surf) {
+            // LAND — settle on the floor and start the visible fuse window
+            s.landed = true;
+            s.y = surf - s.r;
+            s.vx = 0; s.vy = 0; s.grav = 0;
+            s.armT = s.fuseLand;
+            beep(220, 0.08, 'triangle', 0.07);   // metal clink
+            noise(0.06, 0.05);
+          } else if (s.airTimeout <= 0) {
+            this.explodeGrenade(s, p);           // never found a floor — air burst
+            this.shots.splice(i, 1);
+            continue;
+          }
+        } else {
+          s.armT -= dt;
+          if (s.armT <= 0) {
+            this.explodeGrenade(s, p);
+            this.shots.splice(i, 1);
+            continue;
+          }
+        }
+      } else if (s.kind === 'blob') {
+        s.life -= dt;
+        const landed = s.vy > 0 && s.y + s.r >= this.surfaceBelow(s.x, s.r, s.y);
+        if (p.invuln <= 0 && dist(p.x, p.y, s.x, s.y) < s.r + p.h * 0.45) {
+          damagePlayer(this.gs, DMG.area, s.vx * 0.05, 20);
+          this.resolveStuck(p);
+          this.shots.splice(i, 1);
+          continue;
+        }
+        if (s.life <= 0 || landed) {
+          whoosh(0.12, 320, 80, 0.07);   // molten splat
+          for (let j = 0; j < 5; j++) this.gs.sparks.push({
+            x: s.x, y: s.y, life: 0.35, hit: true,
+            vx: (Math.random() - 0.5) * 180, vy: -Math.random() * 140,
+          });
+          this.shots.splice(i, 1);
+          continue;
+        }
+      } else if (s.kind === 'ball') {
+        s.life -= dt;
+        const surf = this.surfaceBelow(s.x, s.r, s.y);
+        if (s.vy > 0 && s.y + s.r >= surf) {
+          if (s.bounces > 0) {
+            s.bounces--; s.y = surf - s.r; s.vy *= -0.55;
+            noise(0.12, 0.1); beep(65, 0.22, 'sine', 0.12);   // heavy iron thump
+          } else { this.shots.splice(i, 1); continue; }
+        }
+        if (p.invuln <= 0 && dist(p.x, p.y, s.x, s.y) < s.r + p.h * 0.4) {
+          damagePlayer(this.gs, DMG.hist, (p.x - s.x) >= 0 ? 60 : -60, -16);
+          this.resolveStuck(p);
+          this.shots.splice(i, 1);
+          continue;
+        }
+        if (s.life <= 0) { this.shots.splice(i, 1); continue; }
+      } else if (s.kind === 'shard') {
+        s.life -= dt;
+        const box = { x: s.x - s.w / 2, y: s.y - s.h / 2, w: s.w, h: s.h };
+        if (p.invuln <= 0 && aabb(box, pb)) {
+          damagePlayer(this.gs, DMG.table, s.vx * 0.08, 0);
+          this.resolveStuck(p);
+          this.shots.splice(i, 1);
+          continue;
+        }
+        if (s.life <= 0) { this.shots.splice(i, 1); continue; }
+      }
+    }
+  }
+
+  // Grenade blast — shared by the landed fuse and the air-burst fallback.
+  explodeGrenade(s, p) {
+    playSfx('mineBoom', { volume: 0.45 });
+    for (let j = 0; j < 18; j++) this.gs.sparks.push({
+      x: s.x, y: s.y, life: 0.55, hit: true,
+      vx: (Math.random() - 0.5) * 460, vy: (Math.random() - 0.5) * 460,
+    });
+    if (p.invuln <= 0 && dist(p.x, p.y, s.x, s.y) < 95) {
+      damagePlayer(this.gs, DMG.donut, (p.x - s.x) * 0.5, (p.y - s.y) * 0.5);
+      this.resolveStuck(p);
     }
   }
 
@@ -614,8 +1138,8 @@ export default class DashboardScene extends Phaser.Scene {
       this.resolveStuck(p);
     }
     hz.t += dt;
-    if (hz.t > 9) {
-      hz.state = 'idle'; hz.cooldown = 3; hz.x = cx; hz.y = cy; hz.vx = hz.vy = 0;
+    if (hz.t > 7) {
+      hz.state = 'idle'; hz.cooldown = 3.4; hz.x = cx; hz.y = cy; hz.vx = hz.vy = 0;
       if (hz.rollLoop) { hz.rollLoop.stop(); hz.rollLoop = null; }
     }
   }
@@ -729,33 +1253,32 @@ export default class DashboardScene extends Phaser.Scene {
     }
   }
 
-  // ── Doc capture ──
+  // ── Doc collection: park the window over a doc and HOLD SPACE to scan ──
   updateCapture(dt) {
     const p = this.player;
-    const holding = this.keys.space.isDown;
     const pb = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h };
-    let target = null;
+    const scanHeld = this.keys.space.isDown;
     for (const d of this.docs) {
       if (d.taken) continue;
-      if (d.x > pb.x && d.x < pb.x + pb.w && d.y > pb.y && d.y < pb.y + pb.h) { target = d; break; }
-    }
-    this.captureTarget = target;
-    if (target && holding) {
-      this.captureProg += dt / CAPTURE_TIME;
-      if (!this._scanLoop) this._scanLoop = playSfxLoop('docScanLoop', { volume: 0.9 });
-      if (Math.random() < 0.3) beep(1400 + Math.random() * 400, 0.01, 'square', 0.02);
-      if (this.captureProg >= 1) { this.collectDoc(target); this.captureProg = 0; }
-    } else {
-      this.captureProg = Math.max(0, this.captureProg - dt * 2);
-      if (this._scanLoop) { this._scanLoop.stop(); this._scanLoop = null; }
+      const overlapping = d.x > pb.x && d.x < pb.x + pb.w && d.y > pb.y && d.y < pb.y + pb.h;
+      d._near = overlapping;
+      if (updateScan(d, overlapping, scanHeld, dt)) this.collectDoc(d);
     }
   }
   collectDoc(d) {
     d.taken = true; d.takeT = this.time;
-    if (this._scanLoop) { this._scanLoop.stop(); this._scanLoop = null; }
     playSfx('docScan');
+    if (d.bonusTimed) {
+      // Bonus intel scanned in time → one hit of glass repaired
+      this.bonusCaptured++;
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + 1);
+      playSfx('heal');
+      beep(660, 0.1, 'sine', 0.12); setTimeout(() => beep(990, 0.16, 'sine', 0.1), 90);
+      return;
+    }
     beep(880, 0.08, 'sine', 0.13); setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
     if (d.required) this.captured++;
+    else this.bonusCaptured++;
     if (this.captured === 1 && d.required) setTimeout(() => this.playFirstDocNarration(), 250);
     else if (this.captured >= DOCS_TARGET) setTimeout(() => this.playAllDocsNarration(), 250);
   }
@@ -788,60 +1311,115 @@ export default class DashboardScene extends Phaser.Scene {
     if (this.done) return;
     this.done = true;
     beep(659, 0.12, 'sine', 0.12); setTimeout(() => beep(988, 0.25, 'sine', 0.12), 130);
-    this.quitToMenu();
+    // Speedrun clock: this level's time, then the whole-run total
+    saveLevelTime('l3', Math.max(0, this.time - (this.runStartT || 0)));
+    // Campaign complete — Toto's wrap-up chat waits on the desktop
+    try { localStorage.setItem('oqw-level3-cleared', 'true'); } catch (e) {}
+    // KiloGram credits play first; the existing name-entry/score popup
+    // follows when the credits finish (or are skipped).
+    playKilogramCredits({ onComplete: () => this.showCompletePopup() });
   }
 
-  // ── Crash / restart popup (DOM) ──
-  buildCrashPopup() {
+  // Mission-complete popup: total run time + name entry for the TOP AGENTS
+  // leaderboard on the desktop. Skipping just returns to the desktop.
+  // Victory finale — big popping "HUSH'S OPERATION IS EXPOSED!" animation
+  // (plays after the KiloGram credits), then the name entry for the TOP
+  // AGENTS leaderboard. Same save/skip logic as before, bigger ceremony.
+  showCompletePopup() {
+    const total = getTotalRunTime();
     const el = document.createElement('div');
-    el.id = 'dash-crash';
-    el.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:99990;background:rgba(30,40,60,0.35);font-family:Tahoma,Arial,sans-serif;';
-    el.innerHTML = `
-      <div style="width:380px;background:#ece9d8;border:1px solid #0a246a;border-radius:7px;overflow:hidden;box-shadow:0 14px 50px rgba(0,0,0,.45);">
-        <div style="background:linear-gradient(180deg,#2a64d8,#0a246a);color:#fff;font-weight:bold;font-size:13px;padding:6px 10px;">window.exe — Not Responding</div>
-        <div style="padding:20px 22px;display:flex;gap:16px;align-items:flex-start;">
-          <div style="font-size:34px;line-height:1;">⛔</div>
-          <div style="font-size:13px;color:#1a1a1a;line-height:1.5;">
-            <b>The window has crashed.</b><br><br>
-            <span id="dash-crash-reason">HUSH's dashboard caught up with you and your session was terminated.</span>
-          </div>
-        </div>
-        <div style="padding:0 22px 20px;text-align:right;">
-          <button id="dash-restart" style="font:bold 13px Tahoma,Arial;padding:6px 16px;margin-right:8px;border:1px solid #0a246a;border-radius:4px;background:#3a78e0;color:#fff;cursor:pointer;">Restart level</button>
-          <button id="dash-menu" style="font:13px Tahoma,Arial;padding:6px 16px;border:1px solid #888;border-radius:4px;background:#f3f1e6;color:#222;cursor:pointer;">Main menu</button>
-        </div>
-      </div>`;
-    document.body.appendChild(el);
-    el.querySelector('#dash-restart').onclick = () => this.restartLevel();
-    el.querySelector('#dash-menu').onclick = () => { this.hideCrash(); this.quitToMenu(); };
-    this.crashEl = el;
-    this.crashReasonEl = el.querySelector('#dash-crash-reason');
-  }
-  showCrash() {
-    this.crashShown = true;
-    if (this.crashReasonEl) {
-      this.crashReasonEl.textContent = this.gs.lostReason === 'STEPPED ON A MINE'
-        ? 'A spreadsheet cell was mined. The window was vaporised instantly.'
-        : "HUSH's dashboard caught up with you and your session was terminated.";
+    el.id = 'dash-complete';
+    el.style.cssText =
+      'position:fixed;inset:0;z-index:215;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+      'background:rgba(6,8,12,0.88);font-family:Tahoma,Arial,sans-serif;overflow:hidden;';
+
+    // Confetti burst — game-palette shards popping out from the headline
+    const CONF = ['#E63946', '#F4D35E', '#2D8659', '#4A7BC8', '#9b59b6', '#17a2b8'];
+    let confetti = '';
+    for (let i = 0; i < 46; i++) {
+      const ang = (i / 46) * Math.PI * 2 + Math.random() * 0.4;
+      const d = 180 + Math.random() * 340;
+      const tx = Math.cos(ang) * d, ty = Math.sin(ang) * d * 0.72;
+      const s = 6 + Math.random() * 9;
+      confetti +=
+        '<div style="position:absolute;left:50%;top:42%;width:' + s + 'px;height:' + (s * 0.55) + 'px;' +
+        'background:' + CONF[i % CONF.length] + ';border-radius:1.5px;opacity:0;' +
+        'animation:vic-conf .95s cubic-bezier(.16,.8,.35,1) ' + (0.45 + Math.random() * 0.25).toFixed(2) + 's forwards;' +
+        '--tx:' + tx.toFixed(0) + 'px;--ty:' + ty.toFixed(0) + 'px;--rot:' + (Math.random() * 720 - 360).toFixed(0) + 'deg;"></div>';
     }
-    if (this.crashEl) this.crashEl.style.display = 'flex';
+
+    const timeRows = total != null
+      ? '<div style="font:12px Consolas,monospace;letter-spacing:2px;color:#8a97ad;margin:2px 0 2px;">TOTAL RUN TIME</div>' +
+        '<div style="font:bold 40px Consolas,monospace;color:#2D8659;margin-bottom:12px;">' + fmtTime(total) + '</div>' +
+        '<div style="font:13px Tahoma,Arial;color:#555;margin-bottom:8px;">Write your name to enter the leaderboard:</div>' +
+        '<input id="dash-name" maxlength="12" placeholder="AGENT" style="width:210px;padding:8px 10px;text-align:center;' +
+          'font:bold 16px Consolas,monospace;color:#1a1a1f;border:2px inset #dfe5ef;outline:none;text-transform:uppercase;' +
+          'background:#fff;">' +
+        '<style>#dash-name::placeholder{color:#b0b8c8;opacity:1;}</style>'
+      : '<div style="font:13px Tahoma,Arial;color:#555;margin:12px 0;">Full-run time unavailable — beat all three levels in one save to post a score.</div>';
+
+    el.innerHTML =
+      '<style>' +
+        '@keyframes vic-pop { 0% { opacity:0; transform:scale(0.2); } 60% { opacity:1; transform:scale(1.14); } 80% { transform:scale(0.96); } 100% { opacity:1; transform:scale(1); } }' +
+        '@keyframes vic-rise { from { opacity:0; transform:translateY(26px); } to { opacity:1; transform:none; } }' +
+        '@keyframes vic-conf { 0% { opacity:1; transform:translate(0,0) rotate(0); } 100% { opacity:0; transform:translate(var(--tx),var(--ty)) rotate(var(--rot)); } }' +
+        '@keyframes vic-glow { 0%,100% { text-shadow:0 0 18px rgba(230,57,70,0.55); } 50% { text-shadow:0 0 42px rgba(230,57,70,0.9); } }' +
+      '</style>' +
+      confetti +
+      // Big popping headline
+      '<div style="opacity:0;animation:vic-pop .8s cubic-bezier(.2,1.4,.4,1) .35s forwards;text-align:center;">' +
+        '<div style="font:bold clamp(44px,7vw,92px)/1.02 \'Saira Condensed\',sans-serif;letter-spacing:4px;color:#E63946;' +
+          'animation:vic-glow 2.4s ease-in-out infinite;">HUSH\'S OPERATION<br>IS EXPOSED!</div>' +
+      '</div>' +
+      '<div style="opacity:0;animation:vic-pop .7s cubic-bezier(.2,1.4,.4,1) 1.05s forwards;margin-top:14px;' +
+        'font:bold clamp(20px,3vw,34px) \'Saira Condensed\',sans-serif;letter-spacing:3px;color:#F4D35E;">YOU HAVE SAVED THE WORLD.</div>' +
+      // Name-entry panel rises in once the headline lands
+      '<div style="opacity:0;animation:vic-rise .6s ease 1.8s forwards;margin-top:30px;width:400px;max-width:92vw;' +
+        'background:#ece9d8;border:2px solid #0a246a;box-shadow:6px 6px 0 rgba(0,0,0,0.45);">' +
+        '<div style="background:#0a246a;color:#fff;font-weight:bold;font-size:13px;padding:6px 10px;">MISSION COMPLETE — SCAN.exe</div>' +
+        '<div style="padding:16px 18px;text-align:center;">' +
+          timeRows +
+          '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center;">' +
+            (total != null
+              ? '<button id="dash-save" style="padding:10px 24px;font:bold 13px Tahoma;background:#2D8659;color:#fff;border:2px outset #6dc89e;cursor:pointer;letter-spacing:1px;">SAVE SCORE</button>'
+              : '<button id="dash-skip" style="padding:10px 24px;font:bold 13px Tahoma;background:#2D8659;color:#fff;border:2px outset #6dc89e;cursor:pointer;letter-spacing:1px;">GO BACK TO DESKTOP</button>') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(el);
+
+    // Victory sting synced to the pops
+    setTimeout(() => { playSfx('exportReady'); beep(523, 0.12, 'sine', 0.12); }, 380);
+    setTimeout(() => beep(784, 0.14, 'sine', 0.12), 700);
+    setTimeout(() => beep(1047, 0.22, 'sine', 0.13), 1080);
+
+    const close = () => { el.remove(); this.quitToMenu(); };
+    el.querySelector('#dash-save')?.addEventListener('click', () => {
+      const name = (el.querySelector('#dash-name')?.value || 'AGENT').toUpperCase();
+      submitScore(name, total);
+      playSfx('exportReady');
+      close();
+    });
+    el.querySelector('#dash-skip')?.addEventListener('click', close);
+    setTimeout(() => el.querySelector('#dash-name')?.focus(), 2200);
   }
-  hideCrash() { this.crashShown = false; if (this.crashEl) this.crashEl.style.display = 'none'; }
+
+  // (crash popup removed — unified canvas crash screen used instead, see drawCrashScreen)
+  restartLevel() {
+    this.scene.restart({ difficulty: this.difficulty, revealedGrid: this.revealedGrid });
+  }
 
   updateHud() {
     if (this.taskLine) {
       this.taskLine.textContent = this.escapeReady ? 'Get to the exit!'
         : this.exporting ? 'Exporting evidence… hold on.'
-        : 'X-ray the page. Hold SPACE on a doc to grab it.';
+        : 'Hold SPACE over the gold docs to scan them. X-ray reveals mines.';
     }
-    if (this.taskProg) this.taskProg.textContent = this.captured + ' / ' + DOCS_TARGET;
-    const p = this.player;
-    const pct = Phaser.Math.Clamp(p.hp / p.maxHp, 0, 1);
-    if (this.hpFill) {
-      this.hpFill.style.width = (pct * 100) + '%';
-      this.hpFill.style.background = pct > 0.5 ? C.green : pct > 0.25 ? C.yellow : C.red;
+    if (this.taskProg) {
+      this.taskProg.innerHTML = this.captured + ' / ' + DOCS_TARGET +
+        '  ·  <span style="color: #9ed6b5;">Bonus docs: ' + this.bonusCaptured + ' / 4</span>';
     }
-    if (this.hpNumber) this.hpNumber.textContent = Math.max(0, Math.round(p.hp));
+    // (HP bar removed — health is the glass-crack state of the window itself.)
   }
 
   // ===== Render =====
@@ -874,9 +1452,15 @@ export default class DashboardScene extends Phaser.Scene {
     // Draw mine detonation animation
     this.drawMineDetonation(ctx);
 
+    for (const hz of this.hazards) if (hz.type === 'kpi') this.drawGasPipe(ctx, hz);
     for (const hz of this.hazards) if (hz.type === 'bar' && hz.activated) this.drawPistons(ctx, hz);
     for (const hz of this.hazards) if (hz.type === 'gauge') this.drawGauge(ctx, hz);
     for (const hz of this.hazards) if (hz.type === 'pie' && hz.state === 'active') this.drawBoulder(ctx, hz);
+    for (const hz of this.hazards) if (hz.type === 'line' && hz.state !== 'idle') this.drawLineBeam(ctx, hz);
+    for (const hz of this.hazards) if (hz.type === 'hist' && hz.squish > 0) this.drawHistWindup(ctx, hz);
+    this.drawDocs(ctx);
+    this.drawShots(ctx);
+    for (const hz of this.hazards) if (hz.type === 'stalker' && hz.detached) this.drawStalker(ctx, hz);
 
     if (this.exit && this.escapeReady) this.drawExit(ctx);
 
@@ -890,12 +1474,19 @@ export default class DashboardScene extends Phaser.Scene {
 
     ctx.restore();
 
+    // Fullscreen poison-blind — covers the ENTIRE game window (not just the
+    // SCAN.exe window). Drawn in screen space, before the fail overlay.
+    if (this.gasScreen) this.drawGasScreen(ctx);
+
     if (this.introT < INTRO_TIME) this.drawIntroIris(ctx);
+    if (this.exitPan && this.exitPan.t > 0.45 && this.exitPan.t < 1.9) this.drawExitSpotlight(ctx);
     if (this.exporting && !this.done) this.drawExportBar(ctx);
-    if (this.failed) { ctx.fillStyle = 'rgba(238,241,246,0.5)'; ctx.fillRect(0, 0, VW, VH); }
-    else {
+    if (this.failed) {
+      // Unified death screen — same as Level 1.1 (HomeScene).
+      drawCrashScreen(ctx, VW, VH);
+    } else {
       ctx.fillStyle = C.sub; ctx.font = '12px Consolas, monospace'; ctx.textBaseline = 'middle';
-      ctx.fillText('WASD move  ·  SHIFT dash  ·  HOLD SPACE to scan  ·  R restart  ·  ESC to exit', 18, VH - 16);
+      ctx.fillText('WASD move  ·  SHIFT dash  ·  hold SPACE on docs to scan  ·  R restart  ·  ESC to exit', 18, VH - 16);
     }
   }
 
@@ -1185,11 +1776,49 @@ export default class DashboardScene extends Phaser.Scene {
       }
     }
 
-    // 3. Draw headers and grid lines on top
-    ctx.fillStyle = '#e7edf6'; ctx.fillRect(g.x, g.y - 24, W, 24); ctx.fillRect(g.x - 30, g.y, 30, H);
-    ctx.fillStyle = '#8a99b5'; ctx.font = '13px Consolas, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-    for (let c = 0; c < g.cols; c++) ctx.fillText(String.fromCharCode(65 + c), g.x + (c + 0.5) * g.cw, g.y - 12);
-    for (let r = 0; r < g.rows; r++) ctx.fillText(String(r + 1), g.x - 15, g.y + (r + 0.5) * g.ch);
+    // 3. Draw headers — these ARE the physical boundary walls.
+    //    Left header (row numbers): drawn per-row, skipping the entrance row.
+    //    Right header: mirror of left, skipping the exit row.
+    //    Top header (A–H letters): drawn full-width (existing).
+    //    Bottom header: mirror of top.
+    const hdrBg  = '#e7edf6';
+    const hdrTxt = '#8a99b5';
+    ctx.font = '13px Consolas, monospace';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+
+    // Top header strip (A B C … H) — unchanged from before
+    ctx.fillStyle = hdrBg;
+    ctx.fillRect(g.x, g.y - 24, W, 24);
+    ctx.fillStyle = hdrTxt;
+    for (let c = 0; c < g.cols; c++)
+      ctx.fillText(String.fromCharCode(65 + c), g.x + (c + 0.5) * g.cw, g.y - 12);
+
+    // Bottom header strip — mirror of top
+    ctx.fillStyle = hdrBg;
+    ctx.fillRect(g.x, g.y + H, W, 24);
+    ctx.fillStyle = hdrTxt;
+    for (let c = 0; c < g.cols; c++)
+      ctx.fillText(String.fromCharCode(65 + c), g.x + (c + 0.5) * g.cw, g.y + H + 12);
+
+    // Left header strip — row numbers, gap at ENTER_ROW (row 3 = label "4")
+    for (let r = 0; r < g.rows; r++) {
+      if (r === ENTER_ROW) continue;   // entrance gap: no background, no number
+      ctx.fillStyle = hdrBg;
+      ctx.fillRect(g.x - 30, g.y + r * g.ch, 30, g.ch);
+      ctx.fillStyle = hdrTxt;
+      ctx.fillText(String(r + 1), g.x - 15, g.y + (r + 0.5) * g.ch);
+    }
+
+    // Right header strip — mirror of left, gap at EXIT_ROW (row 8 = label "9")
+    for (let r = 0; r < g.rows; r++) {
+      if (r === EXIT_ROW) continue;    // exit gap: no background, no number
+      ctx.fillStyle = hdrBg;
+      ctx.fillRect(g.x + W, g.y + r * g.ch, 30, g.ch);
+      ctx.fillStyle = hdrTxt;
+      ctx.fillText(String(r + 1), g.x + W + 15, g.y + (r + 0.5) * g.ch);
+    }
+
     ctx.textAlign = 'left';
     ctx.strokeStyle = '#d6deeb'; ctx.lineWidth = 1;
     for (let c = 0; c <= g.cols; c++) { ctx.beginPath(); ctx.moveTo(g.x + c * g.cw, g.y); ctx.lineTo(g.x + c * g.cw, g.y + H); ctx.stroke(); }
@@ -1208,12 +1837,11 @@ export default class DashboardScene extends Phaser.Scene {
       }
     }
 
-    // 5. Guide arrows pointing right at the entrance of the safe path (4A and 4B, i.e. index 0,3 and 1,3)
-    ctx.fillStyle = '#1e5c3c'; // dark forest green for high contrast
+    // 5. Guide arrows at the entrance of the safe path
+    ctx.fillStyle = '#1e5c3c';
     ctx.font = 'bold 15px sans-serif';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
-    
     ctx.fillText('▶', g.x + 0.5 * g.cw - 15, g.y + 3.5 * g.ch);
     ctx.fillText('▶', g.x + 0.5 * g.cw + 15, g.y + 3.5 * g.ch);
     ctx.fillText('▶', g.x + 1.5 * g.cw - 15, g.y + 3.5 * g.ch);
@@ -1378,18 +2006,53 @@ export default class DashboardScene extends Phaser.Scene {
     }
     ctx.restore();
     ctx.strokeStyle = 'rgba(150,225,255,0.6)'; ctx.lineWidth = 2; ctx.strokeRect(rx, ry, rw, rh);
-
-    if (this.captureTarget) {
-      const d = this.captureTarget;
+    // (capture prompt/progress now lives with the visible docs — drawDocs)
+  }
+  // Docs are drawn in the OPEN now (no x-ray needed to spot them) — same
+  // gold-file look as Level 1.1. Walking over one collects it.
+  drawDocs(ctx) {
+    for (const d of this.docs) {
+      if (d.taken) {
+        const a = this.time - d.takeT;
+        if (a < 0.4 && !d.expired) {
+          ctx.strokeStyle = 'rgba(244,211,94,' + (1 - a / 0.4) + ')'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(d.x, d.y, 16 + a * 70, 0, Math.PI * 2); ctx.stroke();
+        }
+        continue;
+      }
+      const pulse = 1 + Math.sin(this.time * 4 + d.x * 0.01) * 0.12;
+      const big = d.bonusTimed ? 1.6 : 1;   // timed bonus doc is noticeably bigger
       ctx.save();
-      ctx.font = 'bold 13px Consolas, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      const txt = this.captureProg > 0 ? 'SCANNING…' : 'Hold SPACE to Scan';
-      const tw = ctx.measureText(txt).width;
-      ctx.fillStyle = 'rgba(189,252,255,0.95)'; ctx.fillRect(d.x - tw / 2 - 8, d.y - 44, tw + 16, 20);
-      ctx.fillStyle = '#06223a'; ctx.fillText(txt, d.x, d.y - 27);
+      // Timed bonus doc: hard blink + deletion countdown
+      if (d.bonusTimed && this.started) {
+        const urgent = d.ttl < 12;
+        ctx.globalAlpha = Math.sin(this.time * (urgent ? 11 : 5.5)) > -0.4 ? 1 : 0.25;
+        ctx.fillStyle = urgent ? C.red : C.ink;
+        ctx.font = 'bold 16px Consolas, monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('DELETING IN ' + Math.ceil(d.ttl) + 's', d.x, d.y - 46);
+      }
+      ctx.translate(d.x, d.y); ctx.scale(pulse * big, pulse * big);
+      // glow halo
+      ctx.fillStyle = d.required ? 'rgba(244,211,94,0.4)' : 'rgba(45,134,89,0.3)';
+      ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI * 2); ctx.fill();
+      // gold file body (green-tinged for bonus docs)
+      ctx.fillStyle = d.required ? '#F4D35E' : '#9ed6b5';
+      ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.5;
+      ctx.fillRect(-13, -16, 26, 32);
+      ctx.strokeRect(-13, -16, 26, 32);
+      // text lines
+      ctx.fillStyle = '#1a1a1f';
+      for (let i = 0; i < 4; i++) ctx.fillRect(-8, -9 + i * 7, 16 - (i === 3 ? 6 : 0), 2);
       ctx.restore();
+
+      // Hold-to-scan prompt + progress while the window covers the doc
+      if (d._near || (d.scanP || 0) > 0) {
+        drawScanPrompt(ctx, d, d.x, d.y, { above: 42 * big, scale: 0.95 });
+      }
     }
   }
+
   drawDocSkeleton(ctx, x, y, required) {
     const pulse = 0.6 + Math.sin(this.time * 6) * 0.4;
     ctx.save(); ctx.globalAlpha = pulse;
@@ -1397,12 +2060,7 @@ export default class DashboardScene extends Phaser.Scene {
     ctx.strokeRect(x - 12, y - 16, 24, 32);
     ctx.beginPath();
     for (let i = 0; i < 4; i++) { ctx.moveTo(x - 7, y - 9 + i * 7); ctx.lineTo(x + 7, y - 9 + i * 7); }
-    ctx.stroke();
-    if (this.captureTarget && this.captureTarget.x === x && this.captureTarget.y === y && this.captureProg > 0) {
-      ctx.globalAlpha = 1; ctx.strokeStyle = '#bdfcff'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(x, y, 24, -Math.PI / 2, -Math.PI / 2 + this.captureProg * Math.PI * 2); ctx.stroke();
-    }
-    ctx.restore();
+    ctx.stroke();    ctx.restore();
   }
   drawMineSkeleton(ctx, x, y) {
     const pulse = 0.5 + Math.sin(this.time * 10) * 0.5;
@@ -1415,6 +2073,173 @@ export default class DashboardScene extends Phaser.Scene {
       ctx.lineTo(x + Math.cos(a) * 22, y + Math.sin(a) * 22); ctx.stroke();
     }
     ctx.restore();
+  }
+
+  // The stalker — a floating KPI card that hunts the player. Its home panel
+  // dims to "SIGNAL LOST" once it detaches.
+  drawStalker(ctx, hz) {
+    // dim the vacated panel slot
+    const pn = hz.panel;
+    ctx.save();
+    ctx.fillStyle = 'rgba(238,241,246,0.75)';
+    ctx.fillRect(pn.x + 2, pn.y + 2, pn.w - 4, pn.h - 4);
+    ctx.strokeStyle = '#c3ccd9'; ctx.lineWidth = 1.4; ctx.setLineDash([7, 6]);
+    ctx.strokeRect(pn.x + 8, pn.y + 8, pn.w - 16, pn.h - 16);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#9aa7b8'; ctx.font = 'bold 15px Consolas, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('[ SIGNAL LOST ]', pn.x + pn.w / 2, pn.y + pn.h / 2);
+    ctx.restore();
+
+    // the card itself — hovering wobble + drop shadow
+    const bobY = Math.sin(hz.wob * 3) * 5;
+    const x = hz.x - hz.w / 2, y = hz.y - hz.h / 2 + bobY;
+    ctx.save();
+    if (hz.stun > 0) ctx.globalAlpha = 0.55;    // dazed after landing a hit
+    ctx.fillStyle = 'rgba(30,40,60,0.18)';
+    ctx.beginPath(); ctx.ellipse(hz.x, hz.y + hz.h / 2 + 16, hz.w * 0.4, 9, 0, 0, Math.PI * 2); ctx.fill();
+    drawHandRect(ctx, x, y, hz.w, hz.h, '#ffffff', C.red, 21, 2.2);
+    ctx.fillStyle = C.red; ctx.font = 'bold 12px Consolas, monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('BOT TRAFFIC', x + 10, y + 9);
+    ctx.fillStyle = C.ink; ctx.font = 'bold 26px "Saira Condensed", sans-serif';
+    ctx.fillText('99.9%', x + 10, y + 26);
+    // angry rising trend line
+    ctx.strokeStyle = C.red; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(x + 10, y + hz.h - 14);
+    ctx.lineTo(x + hz.w * 0.4, y + hz.h - 22 + Math.sin(hz.wob * 8) * 3);
+    ctx.lineTo(x + hz.w * 0.7, y + hz.h - 34);
+    ctx.lineTo(x + hz.w - 12, y + hz.h - 44);
+    ctx.stroke();
+    // little eye so it reads as "watching you"
+    ctx.fillStyle = C.red;
+    ctx.beginPath(); ctx.arc(x + hz.w - 20, y + 16, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(x + hz.w - 20 + Math.sin(hz.wob * 2) * 1.5, y + 16, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // ── New-enemy drawing (same hand-drawn canvas style as the rest) ──
+  drawLineBeam(ctx, hz) {
+    ctx.save();
+    if (hz.state === 'charge') {
+      // taut line telegraph — dashes tighten and pulse as it charges
+      const a = 0.25 + (hz.t / 1.0) * 0.6;
+      ctx.strokeStyle = 'rgba(230,57,70,' + a + ')';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([14 - hz.t * 10, 10 - hz.t * 7]);
+      ctx.beginPath(); ctx.moveTo(hz.beamX0, hz.beamY); ctx.lineTo(hz.beamX1, hz.beamY); ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (hz.state === 'fire') {
+      const a = 1 - hz.t / 0.3;
+      ctx.fillStyle = 'rgba(230,57,70,' + (0.75 * a) + ')';
+      ctx.fillRect(hz.beamX0, hz.beamY - 9, hz.beamX1 - hz.beamX0, 18);
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.85 * a) + ')';
+      ctx.fillRect(hz.beamX0, hz.beamY - 3, hz.beamX1 - hz.beamX0, 6);
+    }
+    ctx.restore();
+  }
+
+  drawHistWindup(ctx, hz) {
+    // Bars compressing into a ball — a dark sphere grows at the muzzle point
+    const r = 6 + hz.squish * 15;
+    ctx.save();
+    ctx.fillStyle = '#1a1a1f';
+    ctx.beginPath(); ctx.arc(hz.cx, hz.cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = C.red; ctx.lineWidth = 2;
+    const pulse = 0.5 + Math.sin(this.time * 20) * 0.5;
+    ctx.globalAlpha = 0.4 + pulse * 0.5;
+    ctx.beginPath(); ctx.arc(hz.cx, hz.cy, r + 7, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  drawShots(ctx) {
+    for (const s of this.shots) {
+      ctx.save();
+      if (s.kind === 'grenade') {
+        // Realistic frag grenade: dark-green oval body with a checkered
+        // "pineapple" grid, metal fuse cap + pin/lever on top. Tumbles in
+        // the air, sits upright once landed, blinks red faster as the fuse
+        // runs out.
+        const rx = s.r * 0.78, ry = s.r * 1.05;
+        ctx.translate(s.x, s.y);
+        ctx.rotate(s.landed ? 0 : s.spin);
+        // landed danger telegraph — pulsing blast-radius ring on the floor
+        if (s.landed) {
+          const urgency = 1 - s.armT / s.fuseLand;               // 0 → 1
+          const pulse = 0.5 + Math.sin(this.time * (8 + urgency * 18)) * 0.5;
+          ctx.strokeStyle = 'rgba(230,57,70,' + (0.15 + urgency * 0.45 * pulse) + ')';
+          ctx.lineWidth = 2 + urgency * 2;
+          ctx.setLineDash([8, 7]);
+          ctx.beginPath(); ctx.arc(0, 0, 95, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        // body
+        ctx.fillStyle = '#2f4a26';
+        ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#141d10'; ctx.lineWidth = 1.6; ctx.stroke();
+        // pineapple grid, clipped to the oval
+        ctx.save();
+        ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx.clip();
+        ctx.strokeStyle = 'rgba(16,24,12,0.85)'; ctx.lineWidth = 1.4;
+        for (let gx = -rx; gx <= rx; gx += rx * 0.55) {
+          ctx.beginPath(); ctx.moveTo(gx, -ry); ctx.lineTo(gx, ry); ctx.stroke();
+        }
+        for (let gy = -ry; gy <= ry; gy += ry * 0.42) {
+          ctx.beginPath(); ctx.moveTo(-rx, gy); ctx.lineTo(rx, gy); ctx.stroke();
+        }
+        // top-left sheen
+        ctx.fillStyle = 'rgba(255,255,255,0.14)';
+        ctx.beginPath(); ctx.ellipse(-rx * 0.35, -ry * 0.4, rx * 0.35, ry * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        // metal fuse cap + lever + pin ring on top
+        ctx.fillStyle = '#9aa3b5';
+        ctx.fillRect(-3.5, -ry - 6, 7, 7);                       // cap
+        ctx.strokeStyle = '#6e7787'; ctx.lineWidth = 1;
+        ctx.strokeRect(-3.5, -ry - 6, 7, 7);
+        ctx.strokeStyle = '#8d96a8'; ctx.lineWidth = 2;          // lever (spoon)
+        ctx.beginPath(); ctx.moveTo(3, -ry - 5); ctx.quadraticCurveTo(rx + 4, -ry, rx * 0.8, -ry * 0.2); ctx.stroke();
+        ctx.strokeStyle = '#c9cfda'; ctx.lineWidth = 1.6;        // pin ring
+        ctx.beginPath(); ctx.arc(-6, -ry - 7, 4, 0, Math.PI * 2); ctx.stroke();
+        // blinking fuse light — faster as detonation nears
+        const blinkHz = s.landed ? 8 + (1 - s.armT / s.fuseLand) * 26 : 10;
+        if (Math.sin(this.time * blinkHz) > 0) {
+          ctx.fillStyle = C.red;
+          ctx.beginPath(); ctx.arc(0, -ry - 2.5, 2.6, 0, Math.PI * 2); ctx.fill();
+        }
+      } else if (s.kind === 'blob') {
+        // molten blob — hot core + darker rim, slight wobble
+        const w = 1 + Math.sin(this.time * 10 + s.wob) * 0.15;
+        ctx.translate(s.x, s.y); ctx.scale(w, 2 - w);
+        ctx.fillStyle = '#E63946';
+        ctx.beginPath(); ctx.arc(0, 0, s.r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#F4D35E';
+        ctx.beginPath(); ctx.arc(0, 0, s.r * 0.5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(0, 0, s.r, 0, Math.PI * 2); ctx.stroke();
+      } else if (s.kind === 'ball') {
+        // compressed-histogram cannonball — dark sphere with bar stripes
+        ctx.translate(s.x, s.y); ctx.rotate(s.spin * 0.5);
+        ctx.fillStyle = '#1a1a1f';
+        ctx.beginPath(); ctx.arc(0, 0, s.r, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#4A7BC8'; ctx.lineWidth = 2.5;
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath(); ctx.moveTo(i * 8, -s.r * 0.7); ctx.lineTo(i * 8, s.r * 0.7); ctx.stroke();
+        }
+        ctx.strokeStyle = '#1a1a1f'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(0, 0, s.r, 0, Math.PI * 2); ctx.stroke();
+      } else if (s.kind === 'shard') {
+        // ejected table row — white strip with data lines, spinning slightly
+        ctx.translate(s.x, s.y); ctx.rotate(Math.sin(s.spin) * 0.12);
+        drawHandRect(ctx, -s.w / 2, -s.h / 2, s.w, s.h, '#ffffff', '#1a1a1f', 7, 1.4);
+        ctx.fillStyle = '#9aa7b8';
+        ctx.fillRect(-s.w / 2 + 5, -1.5, s.w * 0.4, 3);
+        ctx.fillStyle = C.red;
+        ctx.fillRect(s.w / 2 - 14, -1.5, 9, 3);
+      }
+      ctx.restore();
+    }
   }
 
   // ── Player window — the disguised L1.2 browser/error window (consistent art) ──
@@ -1439,6 +2264,107 @@ export default class DashboardScene extends Phaser.Scene {
     ctx.restore();
     ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = 'bold 10px ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('0x7F4C', x + p.w / 2, y + p.h / 2 + 5);
+
+    // Glass cracks — the window IS the health display (no HP bar)
+    drawCracks(ctx, this.cracks, p.x, p.y, p.w, p.h);
+    ctx.restore();
+  }
+
+  // ── Gas pipe — visible metal pipe along the KPI panel's bottom edge,
+  // venting animated gas columns straight down into the corridor. ──
+  drawGasPipe(ctx, hz) {
+    if (hz.panel.collapsed >= 1) return;
+    const p = hz.panel, y = hz.pipeY;
+    const armed = hz.activated;
+    ctx.save();
+    // pipe body (slightly wider than the panel so it reads as bolted on)
+    ctx.fillStyle = armed ? '#435062' : '#5b677a';
+    ctx.fillRect(p.x - 8, y - 5, p.w + 16, 12);
+    // top highlight + bottom shade so it reads as a cylinder
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillRect(p.x - 8, y - 5, p.w + 16, 3);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(p.x - 8, y + 4, p.w + 16, 3);
+    // end flanges + bolts
+    for (const fx of [p.x - 8, p.x + p.w - 4]) {
+      ctx.fillStyle = '#37404f';
+      ctx.fillRect(fx, y - 8, 12, 18);
+      ctx.fillStyle = '#8a97ad';
+      ctx.fillRect(fx + 4, y - 6, 3, 3);
+      ctx.fillRect(fx + 4, y + 5, 3, 3);
+    }
+    // hazard tag
+    if (armed) {
+      ctx.fillStyle = '#b7cf3f';
+      ctx.font = 'bold 10px Consolas, monospace';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText('☣ GAS', p.x + 6, y + 1);
+    }
+    // nozzles + gas columns
+    for (const v of hz.vents) {
+      // nozzle stub
+      ctx.fillStyle = '#37404f';
+      ctx.fillRect(v.x - 7, y + 5, 14, 8);
+      const state = v.state || 'idle';
+      if (state === 'warm') {
+        // telegraph: tiny sputtering puffs at the nozzle
+        const s = 3 + Math.sin(this.time * 22 + v.x) * 2;
+        ctx.fillStyle = 'rgba(140,190,90,0.45)';
+        ctx.beginPath(); ctx.arc(v.x + Math.sin(this.time * 17) * 3, y + 16 + s, 5 + s, 0, Math.PI * 2); ctx.fill();
+      } else if (state === 'vent' && v.flow > 0.02) {
+        // vertical gas column — stacked wobbling puffs, denser near the pipe
+        const len = hz.ventLen * v.flow;
+        const n = Math.max(3, Math.round(len / 22));
+        for (let i = 0; i < n; i++) {
+          const f = i / n;
+          const gy = y + 12 + f * len;
+          const wob = Math.sin(this.time * 6 + v.x * 0.13 + i * 1.7) * (3 + f * 7);
+          const r = (hz.ventW * 0.42) * (0.7 + f * 0.65);
+          const a = (0.5 - f * 0.28) * Math.min(1, v.flow * 1.4);
+          ctx.fillStyle = i % 2 ? 'rgba(106,168,79,' + a + ')' : 'rgba(140,190,90,' + a + ')';
+          ctx.beginPath(); ctx.arc(v.x + wob, gy, r, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  // ── Fullscreen poison-blind — green gas cloud + vignette over the whole
+  // viewport. Alpha eases in fast and fades out with the timer. ──
+  drawGasScreen(ctx) {
+    const { VW, VH } = this;
+    const g = this.gasScreen;
+    const f = Math.max(0, Math.min(1, g.t / g.dur));            // 1 → 0
+    const inRamp = Math.min(1, (g.dur - g.t) / 0.18);           // fast attack
+    const a = Math.min(1, inRamp) * (f < 0.35 ? f / 0.35 : 1);  // hold, then fade tail
+    if (a <= 0) return;
+    ctx.save();
+    // base green film
+    ctx.fillStyle = 'rgba(96,148,72,' + (0.38 * a) + ')';
+    ctx.fillRect(0, 0, VW, VH);
+    // drifting cloud blobs — big, soft, layered
+    for (let i = 0; i < 7; i++) {
+      const cx = ((Math.sin(g.seed + i * 2.3) * 0.5 + 0.5) * VW + this.time * (26 + i * 9)) % (VW + 340) - 170;
+      const cy = (Math.cos(g.seed * 1.7 + i * 1.9) * 0.5 + 0.5) * VH + Math.sin(this.time * 0.9 + i) * 26;
+      const r = Math.max(VW, VH) * (0.16 + (i % 3) * 0.07);
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grad.addColorStop(0, 'rgba(120,175,88,' + (0.34 * a) + ')');
+      grad.addColorStop(1, 'rgba(120,175,88,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    }
+    // heavy edge vignette — the "inhaled poison" tunnel-vision read
+    const vg = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.22, VW / 2, VH / 2, Math.max(VW, VH) * 0.72);
+    vg.addColorStop(0, 'rgba(30,60,24,0)');
+    vg.addColorStop(1, 'rgba(22,48,18,' + (0.85 * a) + ')');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, VW, VH);
+    // caption
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#d7f0c0';
+    ctx.font = 'bold 22px Consolas, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('☣ POISON GAS INHALED', VW / 2, 64);
     ctx.restore();
   }
 
@@ -1465,7 +2391,49 @@ export default class DashboardScene extends Phaser.Scene {
 
   // ===== Narration =====
   playIntroNarration() {
-    this.started = true;
+    // Exit spotlight (suggestion #7): before control starts, the camera pans
+    // to the exit panel for a beat so the player knows where they're headed,
+    // then returns. `started` flips on when the pan lands back.
+    this.exitPan = { t: 0 };
+  }
+
+  updateExitPan(dt) {
+    const OUT = 0.9, HOLD = 1.0, BACK = 0.9;
+    const e = this.exitPan;
+    e.t += dt;
+    const target = e.t < OUT + HOLD
+      ? { x: this.exitPanel.x + this.exitPanel.w / 2, y: this.exitPanel.y + this.exitPanel.h / 2 }
+      : { x: this.player.x, y: this.player.y };
+    const tx = Phaser.Math.Clamp(target.x - this.viewWW / 2, 0, Math.max(0, WORLD_W - this.viewWW));
+    const ty = Phaser.Math.Clamp(target.y - this.viewHW / 2, 0, Math.max(0, WORLD_H - this.viewHW));
+    this.camX += (tx - this.camX) * Math.min(1, dt * 4);
+    this.camY += (ty - this.camY) * Math.min(1, dt * 4);
+    if (e.t >= OUT + HOLD + BACK) {
+      this.exitPan = null;
+      this.started = true;
+      this.runStartT = this.time;   // speedrun clock starts with control
+    }
+  }
+
+  drawExitSpotlight(ctx) {
+    const { VW, VH } = this;
+    const wx = this.exitPanel.x + this.exitPanel.w / 2;
+    const wy = this.exitPanel.y + this.exitPanel.h / 2;
+    const sx = (wx - this.camX) * this.scale;
+    const sy = (wy - this.camY) * this.scale;
+    const r = Math.max(this.exitPanel.w, this.exitPanel.h) * 0.62 * this.scale;
+    ctx.save();
+    const g = ctx.createRadialGradient(sx, sy, r * 0.7, sx, sy, r * 1.6);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(6,34,58,0.78)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, VW, VH);
+    ctx.strokeStyle = '#F4D35E'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#F4D35E'; ctx.font = 'bold 20px Consolas, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('THE EXIT — opens once all ' + DOCS_TARGET + ' docs are exported', sx, sy - r - 24);
+    ctx.restore();
   }
   playFirstDocNarration() {}
   playAllDocsNarration() {
@@ -1560,6 +2528,14 @@ export default class DashboardScene extends Phaser.Scene {
 
     // RIGHT path (1 arrow)
     drawThickArrow(1200, 2030, 0);
+
+    // Exit pathway — from the spreadsheet's right exit gap, a chain of UP
+    // arrows leads through the (now open) far-right connectors toward the
+    // EXIT panel, then one RIGHT arrow points into it.
+    drawThickArrow(2555, 2350, -Math.PI / 2);
+    drawThickArrow(2555, 1800, -Math.PI / 2);
+    drawThickArrow(2555, 1500, -Math.PI / 2);
+    drawThickArrow(2555, 1350, 0);
   }
 
   drawMineDetonation(ctx) {

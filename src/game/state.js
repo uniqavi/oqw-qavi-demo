@@ -88,9 +88,12 @@ export function createState() {
       x: PLAYER.startX, y: PLAYER.startY,
       size: PLAYER.startSize,
       invuln: 0, hitFlash: 0, growT: 0,
-      hp: PLAYER.startHp,         // HP-bar damage model (replaces size shrink)
-      maxHp: PLAYER.maxHp,
-      useHp: true,                // GameScene uses the HP model in both phases
+      // Discrete-hits damage model, same as Level 1.1: 3 hits and the window
+      // shatters. Damage shows as glass cracks on the window (no HP bar).
+      hp: 3,
+      maxHp: 3,
+      useHp: true,
+      useHits: true,
       // Active buff timers — each decremented per frame, drives effect.
       // (`size` retained for backwards-compat with the test panel; no
       // runtime powerup grants it anymore.)
@@ -110,6 +113,8 @@ export function createState() {
     cursor: null,
     gaze: 0,
     docsCollected: 0,
+    bonusCollected: 0,     // ★ bonus docs (glass repair) — HUD shows separately
+    scanHeld: false,       // SPACE held — hold-to-scan doc collection
     cookieCollected: false,
     status: 'menu',
     lostReason: '',
@@ -153,6 +158,7 @@ export function createState() {
     hiddenDocs: [],
     hiddenDocSpawnT: 10,        // first hidden doc ~10s in
     docsTarget: 5,
+    bonusDocSpawned: false,     // the one-off timed bonus doc (glass repair)
     // Run state for the new game over flow.
     gameOver: false,
     hitCount: 0,          // total enemy hits taken (drives the humour quip)
@@ -188,9 +194,9 @@ export function resetState(state) {
   const p = state.player;
   p.x = PLAYER.startX; p.y = PLAYER.startY; p.size = PLAYER.startSize;
   p.invuln = 0; p.hitFlash = 0; p.growT = 0;
-  p.hp = PLAYER.startHp; p.maxHp = PLAYER.maxHp;
+  p.hp = 3; p.maxHp = 3;
 
-  state.docs.forEach(d => { d.taken = false; d.takeT = 0; });
+  state.docs.forEach(d => { d.taken = false; d.takeT = 0; d.scanP = 0; d._near = false; });
   state.looseCookies.forEach(d => { d.taken = false; d.takeT = 0; });
   state.cookieJar.taken = false;
   state.cookieJar.takeT = 0;
@@ -205,6 +211,8 @@ export function resetState(state) {
   state.cursor = null;
   state.gaze = 0;
   state.docsCollected = 0;
+  state.bonusCollected = 0;
+  state.scanHeld = false;
   state.lostReason = '';
   state.time = 0;
 
@@ -235,6 +243,7 @@ export function resetState(state) {
   state.powerupSpawnT = 4;
   state.hiddenDocs.length = 0;
   state.hiddenDocSpawnT = 10;
+  state.bonusDocSpawned = false;
   state.escape = null;
   state.narration = null;
   state.hitCount = 0;

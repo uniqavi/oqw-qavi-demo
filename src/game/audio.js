@@ -69,6 +69,71 @@ export function beep(freq, dur, type = 'sine', vol = 0.08) {
   osc.stop(audioCtx.currentTime + dur + 0.02);
 }
 
+// Filtered-noise sweep — the building block for "something flying past":
+// band-passed noise whose centre frequency slides from `from` → `to` Hz.
+export function whoosh(dur = 0.25, from = 1200, to = 300, vol = 0.12) {
+  if (!audioCtx) return;
+  const len = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const f = audioCtx.createBiquadFilter();
+  f.type = 'bandpass'; f.Q.value = 2.5;
+  f.frequency.setValueAtTime(Math.max(40, from), audioCtx.currentTime);
+  f.frequency.exponentialRampToValueAtTime(Math.max(40, to), audioCtx.currentTime + dur);
+  const g = audioCtx.createGain();
+  g.gain.value = vol;
+  src.connect(f).connect(g).connect(masterGain || audioCtx.destination);
+  src.start();
+}
+
+// Falling-bomb style whistle — a pure tone sliding down (or up) over `dur`.
+export function whistle(dur = 0.9, from = 1400, to = 300, vol = 0.05) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(Math.max(40, from), audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(40, to), audioCtx.currentTime + dur);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(vol, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+  osc.connect(g).connect(masterGain || audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + dur + 0.02);
+}
+
+// Flip-flop flap: a burst of quick soft slaps, like a sandal tumbling
+// through the air.
+export function flutter(dur = 0.5, vol = 0.1) {
+  if (!audioCtx) return;
+  const slaps = Math.max(2, Math.floor(dur / 0.09));
+  for (let i = 0; i < slaps; i++) {
+    setTimeout(() => whoosh(0.06, 900 - i * 60, 260, vol * (1.1 - i / slaps)), i * 90);
+  }
+}
+
+// Soft sustained hiss — gas venting.
+export function hiss(dur = 0.8, vol = 0.06) {
+  if (!audioCtx) return;
+  const len = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) {
+    const env = Math.min(1, i / (len * 0.15)) * (1 - i / len);
+    d[i] = (Math.random() * 2 - 1) * env;
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const f = audioCtx.createBiquadFilter();
+  f.type = 'highpass'; f.frequency.value = 2600;
+  const g = audioCtx.createGain();
+  g.gain.value = vol;
+  src.connect(f).connect(g).connect(masterGain || audioCtx.destination);
+  src.start();
+}
+
 export function noise(dur, vol = 0.1) {
   if (!audioCtx) return;
   const len = Math.max(1, Math.floor(audioCtx.sampleRate * dur));

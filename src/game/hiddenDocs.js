@@ -7,6 +7,7 @@
 // scene flips into the "escape" state.
 import { PW } from '../config.js';
 import { effectiveSize } from './playerSize.js';
+import { playSfx } from './sfx.js';
 
 const DOC = {
   w: 36, h: 44,
@@ -16,18 +17,50 @@ const DOC = {
   spawnIntervalMin: 15,         // seconds between spawns (random in this range)
   spawnIntervalMax: 26,
   revealRange: 160,             // window center within this distance → doc becomes visible
+  enemyClearance: 150,          // min spawn distance from any live enemy
 };
 
 function spawn(state, camY, viewH) {
+  // Pick a spawn X clear of enemies near the spawn line so a doc never pops
+  // in on top of (or under) an enemy window. Best-of-N candidates.
+  const spawnY = camY + viewH + 30 + Math.random() * 80;
+  let bestX = 80 + Math.random() * Math.max(80, PW - DOC.w - 160);
+  let bestClear = -1;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const wx = 80 + Math.random() * Math.max(80, PW - DOC.w - 160);
+    let clear = Infinity;
+    for (const e of state.waveEnemies) {
+      if (Math.abs(e.wy - spawnY) > 320) continue;    // only enemies near the spawn line matter
+      clear = Math.min(clear, Math.hypot(e.wx + (e.w || 0) / 2 - wx, e.wy - spawnY));
+    }
+    if (clear >= DOC.enemyClearance + 100) { bestX = wx; bestClear = clear; break; }
+    if (clear > bestClear) { bestClear = clear; bestX = wx; }
+  }
   state.hiddenDocs.push({
-    wx: 80 + Math.random() * Math.max(80, PW - DOC.w - 160),
-    wy: camY + viewH + 30 + Math.random() * 80,
+    wx: bestX,
+    wy: spawnY,
     w: DOC.w, h: DOC.h,
     vy: -DOC.riseSpeed,
     age: 0,
     reveal: 0,                  // 0..1 — proximity-driven visibility
+
     taken: false,
   });
+}
+
+// One-off timed BONUS doc (suggestion #3): bigger, blinking, on a deletion
+// countdown. Grabbing it in time repairs one hit of glass. Extra credit —
+// it never counts toward the win condition.
+function spawnBonusDoc(state, camY, viewH) {
+  state.hiddenDocs.push({
+    wx: 120 + Math.random() * Math.max(80, PW - 240),
+    wy: camY + viewH + 40,
+    w: DOC.w * 1.5, h: DOC.h * 1.5,
+    vy: -DOC.riseSpeed * 0.55,        // slower drift → catchable despite the timer
+    age: 0, reveal: 1, taken: false,
+    bonusTimed: true, ttl: 14,
+  });
+  playSfx('exportReady');
 }
 
 export function tick(state, dt, viewH) {
@@ -39,6 +72,12 @@ export function tick(state, dt, viewH) {
       state.hiddenDocSpawnT = DOC.spawnIntervalMin +
         Math.random() * (DOC.spawnIntervalMax - DOC.spawnIntervalMin);
     }
+  }
+
+  // The bonus doc appears once, after the second regular doc is secured
+  if (!state.bonusDocSpawned && state.docsCollected >= 2) {
+    state.bonusDocSpawned = true;
+    spawnBonusDoc(state, state.scrollY, viewH);
   }
 
   const p = state.player;
@@ -54,6 +93,12 @@ export function tick(state, dt, viewH) {
     if (d.taken) { state.hiddenDocs.splice(i, 1); continue; }
     d.wy += d.vy * dt;
     d.age += dt;
+
+    // Timed bonus doc: deletion countdown
+    if (d.bonusTimed) {
+      d.ttl -= dt;
+      if (d.ttl <= 0) { state.hiddenDocs.splice(i, 1); continue; }   // file deleted
+    }
 
     // Magnet (testing) — pull nearby docs straight toward the player.
     if (magnet) {
@@ -81,15 +126,29 @@ export function tick(state, dt, viewH) {
     // Smooth reveal so it fades in / out as you approach / leave
     d.reveal += (target - d.reveal) * Math.min(1, dt * 7);
 
-    // Collision — AABB overlap collects the doc (no scan time required;
-    // touching = collecting since the docs are moving targets)
+    // Simple touch-to-collect — just overlap the doc to grab it
     const overlapping =
       d.wx < px + s && d.wx + d.w > px &&
       d.wy < py + ph && d.wy + d.h > py;
+    d._near = overlapping;
+    if (overlapping) d.reveal = 1;    // covered docs are always fully visible
     if (overlapping) {
       d.taken = true;
-      state.docsCollected++;
       state.hiddenDocs.splice(i, 1);
+      playSfx('docScan');
+      if (d.bonusTimed) {
+        // Glass repair — extra credit, not part of the win condition
+        const pl = state.player;
+        pl.hp = Math.min(pl.maxHp, pl.hp + 1);
+        state.bonusCollected = (state.bonusCollected || 0) + 1;
+        playSfx('heal');
+        state.floatingTexts.push({
+          wx: d.wx + d.w / 2, wy: d.wy, text: 'GLASS REPAIRED', color: '#6dc89e',
+          age: 0, life: 1.4,
+        });
+      } else {
+        state.docsCollected++;
+      }
     }
   }
 }
@@ -101,8 +160,20 @@ export function draw(ctx, state) {
     // Much more visible now (the light-yellow-on-white was too hard to spot).
     // Stays clearly readable even at zero reveal; brightens further when near.
     const ambient = 0.85;
-    const alpha = Math.min(1, Math.max(ambient, r));
+    let alpha = Math.min(1, Math.max(ambient, r));
     ctx.save();
+
+    // Timed bonus doc: hard blink + deletion countdown above it
+    if (d.bonusTimed) {
+      const urgent = d.ttl < 6;
+      alpha = Math.sin(state.time * (urgent ? 12 : 6)) > -0.4 ? 1 : 0.25;
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = urgent ? '#E63946' : '#1a1a1f';
+      ctx.font = 'bold 15px ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('DELETING IN ' + Math.ceil(d.ttl) + 's', d.wx + d.w / 2, d.wy - 22);
+      ctx.textAlign = 'left';
+    }
     // Soft halo grows with reveal
     if (r > 0.2) {
       ctx.globalAlpha = r * 0.5;
@@ -142,6 +213,7 @@ export function draw(ctx, state) {
       ctx.lineWidth = 2.5;
       ctx.strokeRect(d.wx - 2, d.wy - 2, d.w + 4, d.h + 4);
     }
+
     ctx.restore();
   }
 }

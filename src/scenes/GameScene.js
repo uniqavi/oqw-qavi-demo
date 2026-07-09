@@ -17,12 +17,16 @@ import * as Waves from '../game/waveEnemies.js';
 import * as Powerups from '../game/powerups.js';
 import * as HiddenDocs from '../game/hiddenDocs.js';
 import { effectiveSize } from '../game/playerSize.js';
-import { startEndSequence, updateEndSequence, drawArcs, PHASE_DURATIONS } from '../game/endSequence.js';
-import { crossfadeTo, stopMusic } from '../game/music.js';
-import { playSfx } from '../game/sfx.js';
+import { syncCracksToHp, drawCracks } from '../game/cracks.js';
+import { saveLevelTime } from '../game/leaderboard.js';
+import { crossfadeTo, stopMusic, loadMusic } from '../game/music.js';
+import { playSfx, loadSfx, stopAllSfxLoops } from '../game/sfx.js';
 import { playVoice, stopVoice } from '../game/voice.js';
 import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
 import { damagePlayer } from '../game/combat.js';
+import { drawCrashScreen } from '../game/crashScreen.js';
+import { updateScan, drawScanPrompt } from '../game/scanDocs.js';
+import { showLevelComplete, removeLevelComplete } from '../game/levelComplete.js';
 
 // First-time onboarding tips. Direction A voice — has personality but
 // still tells you what to do. Keyed in localStorage so veterans never see.
@@ -122,8 +126,12 @@ export default class GameScene extends Phaser.Scene {
       cc.triggerR = 250 * this.diffMod.triggerRange;
     }
 
-    // Swap menu music → L1 theme. Crossfade so it feels continuous.
-    crossfadeTo('level1', { fadeMs: 1500 });
+    // Per-level music: the 1.2 runner gets its own upbeat chiptune loop
+    // ("Voxel Revolution"); the desktop hub plays level1.mp3. Crossfade so
+    // it feels continuous. load* are no-ops if already loaded, but cover
+    // DEV jumps straight into this scene.
+    loadMusic(); loadSfx();
+    crossfadeTo('level12', { fadeMs: 1500 });
 
     // Art-matched hole image (drawn behind the suspicious comment when the
     // passage is revealed). Loads async; drawHole falls back to a dark rect
@@ -152,6 +160,7 @@ export default class GameScene extends Phaser.Scene {
       down: Phaser.Input.Keyboard.KeyCodes.S,
       right: Phaser.Input.Keyboard.KeyCodes.D,
       shift: Phaser.Input.Keyboard.KeyCodes.SHIFT,
+      space: Phaser.Input.Keyboard.KeyCodes.SPACE,
     });
     this.input.keyboard.on('keydown-PLUS', this.zoomInStep, this);
     this.input.keyboard.on('keydown-EQUALS', this.zoomInStep, this);
@@ -206,10 +215,13 @@ export default class GameScene extends Phaser.Scene {
       hpFill:       document.getElementById('hp-fill'),
       hpNumber:     document.getElementById('hp-number'),
     };
-    // Show the runner frames while this scene is active
+    // Show the runner objective frame while this scene is active. The HP bar
+    // stays hidden — health shows as glass cracks on the window (Level 1.1
+    // consistency).
     this.runnerHud.taskFrame?.classList.remove('hidden');
     this.runnerHud.taskFrame?.classList.remove('cleared');
-    this.runnerHud.hpFrame?.classList.remove('hidden');
+    this.cracks = [];
+    this._lastHp = 3;
 
     // Solo-YOU intro removed - directly start play.
 
@@ -235,16 +247,7 @@ export default class GameScene extends Phaser.Scene {
     };
     this.testEls.opts?.forEach((el) => el.addEventListener('click', this.onTestOpt));
 
-    // End-sequence DOM refs (malware install + glitch wipe)
-    this.endDom = {
-      wrap:    document.getElementById('end-sequence'),
-      install: document.getElementById('malware-install'),
-      fill:    document.getElementById('malware-fill'),
-      pct:     document.getElementById('malware-pct'),
-      sweep:   document.getElementById('glitch-sweep'),
-    };
     this.canvasWrapEl = document.querySelector('.canvas-wrap');
-    this.endSeq = null;
 
     // Intel dialog DOM refs (in-game memo popup)
     this.intelDom = {
@@ -301,7 +304,9 @@ export default class GameScene extends Phaser.Scene {
         if (e.key === 'Escape') { e.preventDefault(); this.backToMenu(); }
         else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); this.restart(); }
       } else if (this.state.status === 'lost') {
-        if (e.key === 'Escape') { e.preventDefault(); this.backToMenu(); }
+        // Unified crash screen: R restarts, ESC goes to menu (same as Level 1.1)
+        if (e.key === 'r' || e.key === 'R') { e.preventDefault(); this.restart(); }
+        else if (e.key === 'Escape') { e.preventDefault(); this.backToMenu(); }
       }
     };
     document.addEventListener('keydown', this.onKey);
@@ -320,22 +325,12 @@ export default class GameScene extends Phaser.Scene {
     };
     this.tipEl?.addEventListener('click', this.onTipClick);
 
-    // Tab system — locked tabs no-op until L1 ends. spygram.hush tab swaps
-    // into Level 2 after the post-mission state begins.
+    // Tab system — after a win the tab close buttons flash; clicking one
+    // exits to the desktop (Phase 3 completion flow). Locked tabs no-op.
     this.tabEls = document.querySelectorAll('#browser-tabs .tab');
     this.onTabClick = (e) => {
-      const el = e.currentTarget;
-      if (el.classList.contains('locked')) return;
-      if (el.classList.contains('plus')) return;
-      // SPYGRAM tab: switch to L2 scene (only if unlocked, i.e. post-mission)
-      if (el.dataset.tab === 'spygram' && this.state.status === 'won') {
-        const urlBar = document.getElementById('browser-url');
-        if (urlBar) urlBar.textContent = 'https://spygram.hush/auth?session=lewis';
-        this.tabEls.forEach((t) => t.classList.remove('active'));
-        el.classList.add('active');
-        this.canvasWrapEl?.classList.remove('post-mission');
-        this.scene.stop();
-        this.scene.start('Level2Scene');
+      if (this.state.status === 'won' && e.target.classList.contains('x')) {
+        this.backToMenu();
       }
     };
     this.tabEls.forEach((el) => el.addEventListener('click', this.onTabClick));
@@ -352,11 +347,9 @@ export default class GameScene extends Phaser.Scene {
       if (this.revealTimers) this.revealTimers.forEach(clearTimeout);
       if (this.tipTimer) clearTimeout(this.tipTimer);
       if (this.intelTypeTimer) clearTimeout(this.intelTypeTimer);
+      stopAllSfxLoops();
       resetPauseMenu();
-      // Reset end-sequence + intel DOM so nothing leaks across re-entries
-      this.endDom?.wrap?.classList.add('hidden');
-      this.endDom?.install?.classList.remove('show');
-      this.endDom?.sweep?.classList.remove('run');
+      removeLevelComplete();
       this.intelDom?.wrap?.classList.add('hidden');
       this.intelDom?.wrap?.classList.remove('show');
       this.postMissionEl?.classList.add('hidden');
@@ -456,12 +449,14 @@ export default class GameScene extends Phaser.Scene {
     if (this.overlayEl) this.overlayEl.classList.remove('show');
     this.resetResultsUI();
     resetState(this.state);
+    this.cracks = [];
+    this._lastHp = this.state.player.hp;
   }
   backToMenu() {
     if (this.overlayEl) this.overlayEl.classList.remove('show');
     this.resetResultsUI();
     document.body.classList.add('menu-mode');
-    crossfadeTo('menu', { fadeMs: 800 });
+    crossfadeTo('level1', { fadeMs: 800 });
     this.scene.stop('HUDScene');
     this.scene.start('MenuScene');
   }
@@ -472,12 +467,6 @@ export default class GameScene extends Phaser.Scene {
     this.gradeLetterEl?.classList.remove('show');
     this.gradeNameEl?.classList.remove('show');
     this.statRows?.forEach((row) => row.classList.add('hidden-row'));
-    // Clean up end-sequence DOM so a restart starts from a known state
-    this.endDom?.wrap?.classList.add('hidden');
-    this.endDom?.install?.classList.remove('show');
-    this.endDom?.sweep?.classList.remove('run');
-    if (this.endDom?.fill) this.endDom.fill.style.width = '0%';
-    if (this.endDom?.pct) this.endDom.pct.textContent = '0%';
     // Intel dialog + post-mission banner reset
     this.intelDom?.wrap?.classList.add('hidden');
     this.intelDom?.wrap?.classList.remove('show');
@@ -487,8 +476,8 @@ export default class GameScene extends Phaser.Scene {
     this.postMissionEl?.classList.remove('show');
     // Restart wipes the post-mission dim so the page is "live" again
     this.canvasWrapEl?.classList.remove('post-mission');
+    document.querySelectorAll('#browser-tabs .tab .x').forEach(x => x.classList.remove('flash-exit'));
     this.firstAdDragged = false;
-    this.endSeq = null;
   }
 
   // ===== Onboarding tooltips =====
@@ -533,86 +522,6 @@ export default class GameScene extends Phaser.Scene {
     // design and were popping up mid-run. The OBJECTIVE frame is the guidance
     // now. Make sure none are left showing.
     if (this.currentTip) this.hideTip(false);
-  }
-
-  // ===== End sequence (malware install → short-circuit arcs → glitch wipe) =====
-  beginEndSequence() {
-    if (this.endSeq) return;
-    this.endSeq = startEndSequence(this.state);
-    this.state.status = 'ending';
-    // Show DOM overlay + install bar
-    this.endDom.wrap?.classList.remove('hidden');
-    this.endDom.install?.classList.add('show');
-  }
-  tickEndSequenceDom() {
-    const es = this.endSeq;
-    if (!es) return;
-    if (es.phase === 'install') {
-      const pct = Math.min(100, Math.round((es.t / PHASE_DURATIONS.install) * 100));
-      if (this.endDom.fill) this.endDom.fill.style.width = pct + '%';
-      if (this.endDom.pct) this.endDom.pct.textContent = pct + '%';
-    } else if (es.phase === 'sweep') {
-      // Install bar done — hide it so the canvas sweep takes the stage
-      this.endDom.install?.classList.remove('show');
-    }
-  }
-
-  // Cinematic camera driver — runs during state.status === 'ending'.
-  // Install phase: smoothly pan from player position up to the top of the page.
-  // Sweep phase: keep the descending sweep line at ~30% of the viewport so
-  // the player sees enemies above (about to die) and below (already dead).
-  updateCinematicCamera(dt) {
-    const es = this.endSeq;
-    if (!es) return;
-    const cam = this.state.cam;
-
-    // Lock zoom to baseZoom (full-page-width fit) so framing is predictable
-    cam.targetZoom = cam.baseZoom;
-
-    const viewW = this.VW / cam.zoom;
-    const viewH = this.VH / cam.zoom;
-    const maxCamY = Math.max(0, PH - viewH);
-    const targetX = (PW - viewW) / 2;
-
-    let targetY = cam.y;
-    if (es.phase === 'install') {
-      // Save the camera's starting position once, then ease it toward 0
-      if (es.camStartY === undefined) es.camStartY = cam.y;
-      const tRaw = Math.min(1, es.t / PHASE_DURATIONS.install);
-      const eased = tRaw < 0.5
-        ? 2 * tRaw * tRaw
-        : 1 - Math.pow(-2 * tRaw + 2, 2) / 2;
-      targetY = es.camStartY * (1 - eased);
-    } else if (es.phase === 'sweep') {
-      // Position the sweep line ~30% from the top of the viewport so the
-      // player sees the kill happen with breathing room around it.
-      targetY = es.sweepY - viewH * 0.3;
-      targetY = Math.max(0, Math.min(maxCamY, targetY));
-    }
-
-    // Smooth follow — fairly tight so the camera doesn't lag behind the sweep
-    cam.y += (targetY - cam.y) * Math.min(1, dt * 5);
-    cam.x += (targetX - cam.x) * Math.min(1, dt * 3);
-  }
-  finishEndSequence() {
-    try { localStorage.setItem('oqw-level2-cleared', 'true'); } catch (e) {}
-    // Hide overlays + apply post-mission dim
-    this.endDom.wrap?.classList.add('hidden');
-    this.endDom.sweep?.classList.remove('run');
-    this.sweepRun = false;
-    this.canvasWrapEl?.classList.add('post-mission');
-    // Unlock the SPYGRAM tab with a pulse animation
-    const spygramTab = document.querySelector('#browser-tabs .tab[data-tab="spygram"]');
-    if (spygramTab) {
-      spygramTab.classList.remove('locked');
-      spygramTab.removeAttribute('data-tooltip');
-      spygramTab.innerHTML = '<span class="dot">●</span>spygram.hush<span class="x">×</span>';
-      spygramTab.classList.add('unlocking');
-    }
-    this.state.status = 'won';
-    // Show the small post-mission banner instead of the big results screen
-    this.postMissionEl?.classList.remove('hidden');
-    requestAnimationFrame(() => this.postMissionEl?.classList.add('show'));
   }
 
   // ===== Intel dialog (in-game memo popup) =====
@@ -750,7 +659,7 @@ export default class GameScene extends Phaser.Scene {
       this.overlayTagEl.textContent = '[ EXFILTRATED ]';
       this.overlayTagEl.style.color = '#2D8659';
       this.overlayTitleEl.textContent = 'MISSION COMPLETE';
-      this.overlaySubEl.textContent = 'malware planted. page short-circuited. new tab open — spygram.hush';
+      this.overlaySubEl.textContent = 'evidence exfiltrated. return to the desktop.';
     } else {
       this.overlayTagEl.textContent = '[ THE PAGE WON ]';
       this.overlayTagEl.style.color = '#E63946';
@@ -888,23 +797,14 @@ export default class GameScene extends Phaser.Scene {
     } else if (this.state.intelDialog) {
       // Game paused while reading the intel memo — only typewriter ticks
       // run (driven by its own setTimeout). Don't advance time/gaze/agents.
-    } else if (this.state.status === 'ending') {
-      // Cinematic camera during the end sequence:
-      //   install phase → pan from player position up to the top of the page
-      //   sweep phase   → follow the descending sweep line down to the bottom
-      this.updateCinematicCamera(dt);
-      const done = updateEndSequence(this.endSeq, dt, this.state);
-      this.tickEndSequenceDom();
-      if (done) this.finishEndSequence();
     }
 
     this.render();
     this.updateHUD();
-    // Only the LOSS path shows the big results screen. WIN goes straight to
-    // post-mission state (banner + secured page) per the new design.
-    if (this.state.status === 'lost' && !this.overlayEl?.classList.contains('show')) {
-      this.showOverlay();
-    }
+    // WIN: the shared LEVEL COMPLETE overlay is shown from
+    // updateEscapeInteractions (single "go back to desktop" action).
+    // LOSS: unified canvas crash screen (drawn inside render()) — no DOM
+    // overlay needed. The old results/grade overlay (showOverlay) is retired.
   }
 
   runGameLogic(dt) {
@@ -997,10 +897,17 @@ export default class GameScene extends Phaser.Scene {
     if (p.hitFlash > 0) p.hitFlash -= dt;
     if (p.growT > 0) p.growT -= dt;
 
+    // Hold-to-scan input — consumed by the doc systems (Phase A fixed docs
+    // + the Phase B hidden-doc scroller in hiddenDocs.js).
+    state.scanHeld = this.wasd.space.isDown;
+
     // ── Wave enemies + powerups + hidden docs (Phase B only) ─────────────
     // Phase A has no scroller spawn systems — it's pure static-page combat.
     // During the escape sequence we also stop spawning new threats/docs and
     // let any in-flight ones clear. Enemies still update so they fly off.
+    // Glass cracks track the discrete-hits HP (grow on hit, repair on heal)
+    this._lastHp = syncCracksToHp(this.cracks, this._lastHp, p.hp, effectiveSize(p), effectiveSize(p) * 0.75);
+
     if (state.phase === 'scroller' && !state.escape) {
       Waves.tickSpawner(state, dt, viewH);
       Powerups.tick(state, dt, viewH);
@@ -1153,12 +1060,16 @@ export default class GameScene extends Phaser.Scene {
     const state = this.state;
     const p = state.player;
 
-    // Doc collection — proximity-pickup on the 5 fixed-position docs.
+    // Doc collection — stand over one of the 5 fixed-position docs and
+    // HOLD SPACE to scan it (see src/game/scanDocs.js).
     for (const d of state.docs) {
       if (d.taken) continue;
-      if (dist(p.x, p.y, d.x, d.y) < d.r + p.size * 0.32) {
+      const overlapping = dist(p.x, p.y, d.x, d.y) < d.r + p.size * 0.32;
+      d._near = overlapping;
+      if (updateScan(d, overlapping, state.scanHeld, dt)) {
         d.taken = true; d.takeT = state.time;
         state.docsCollected++;
+        playSfx('docScan');
         beep(880, 0.08, 'sine', 0.13);
         setTimeout(() => beep(1320, 0.12, 'sine', 0.1), 70);
         if (state.docsCollected >= state.docsTarget) {
@@ -1279,9 +1190,19 @@ export default class GameScene extends Phaser.Scene {
         setTimeout(() => beep(784, 0.2, 'sine', 0.12), 200);
         state.status = 'won';
         state.stats.endedAt = state.time;
+        saveLevelTime('l2', state.time);   // speedrun clock for the leaderboard
+        // Story progression loop: Level 1.2 complete → back to the DESKTOP
+        // (new intel lands in the Briefing folder there). The dashboard
+        // launches from its desktop icon after the decryption minigame — no
+        // direct jump into DashboardScene.
+        try { localStorage.setItem('oqw-level2-cleared', 'true'); } catch (e) {}
         this.scene.stop('HUDScene');
-        this.scene.stop();
-        this.scene.start('DashboardScene', { difficulty: this.difficulty });
+        showLevelComplete({
+          title: 'LEVEL 1.2 — THE BOOSTED VIDEO',
+          sub: 'You slipped out before HUSH traced the window. That run stirred them up — ' +
+               'something just landed in the <b>Briefing</b> folder on your desktop.',
+          onDesktop: () => this.backToMenu(),
+        });
       }
     }
   }
@@ -1531,6 +1452,11 @@ export default class GameScene extends Phaser.Scene {
       ctx.lineWidth = 2.5;
       ctx.strokeRect(dx - 2, dy - 2, DW + 4, DH + 4);
       ctx.restore();
+
+      // Hold-to-scan prompt + progress while the window covers the doc
+      if (d._near || (d.scanP || 0) > 0) {
+        drawScanPrompt(ctx, d, d.x, d.y, { above: DH / 2 + 26, scale: 0.85 });
+      }
     }
 
     // Once cookieReady, pulse the cookie banner so the player knows it's
@@ -1974,6 +1900,8 @@ export default class GameScene extends Phaser.Scene {
         const tw = ctx.measureText(t).width;
         ctx.fillText(t, px + s / 2 - tw / 2, py + ph / 2 + 4);
       }
+      // Glass cracks — the window IS the health display (no HP bar)
+      drawCracks(ctx, this.cracks, p.x, p.y, s, ph);
       ctx.restore();
     }
 
@@ -2005,13 +1933,16 @@ export default class GameScene extends Phaser.Scene {
       ctx.restore();
     }
 
-    // End-sequence electrical arcs (drawn last so they overlay everything in world space)
-    if (this.endSeq) drawArcs(ctx, this.endSeq, state);
-
     ctx.restore();
 
     // Screen-space overlays (outside the world transform)
     this.drawQuip(ctx);
+
+    // Unified death screen — drawn last so it sits on top of everything.
+    // Matches Level 1.1 exactly: dark backdrop + WINDOW CRASHED + R/ESC hint.
+    if (this.state.status === 'lost') {
+      drawCrashScreen(ctx, this.VW, this.VH);
+    }
   }
 
   // ===== HUD =====
@@ -2022,16 +1953,23 @@ export default class GameScene extends Phaser.Scene {
     // ── Runner HUD (top-left task + top-right HP) ──
     if (this.runnerHud?.taskLine) {
       const step = state.escape?.step;
+      // Bonus pickups (glass-repair docs) are tracked separately from the
+      // required evidence — shown as ★ so the counter never lies about the
+      // win requirement.
+      const bonusSuffix = state.bonusCollected > 0 ? '  ·  ★' + state.bonusCollected : '';
       let line, prog;
       if (step === 'exit' || step === 'done') {
         line = '▸ Slip the window through the hole to escape!';
         prog = 'GO';
       } else if (state.escape) {
         line = 'Evidence secured — find the way out.';
-        prog = state.docsCollected + ' / ' + state.docsTarget;
+        prog = state.docsCollected + ' / ' + state.docsTarget + bonusSuffix;
+      } else if (state.phase === 'static') {
+        line = 'Hold SPACE over the 5 gold docs to scan them.';
+        prog = state.docsCollected + ' / ' + state.docsTarget + bonusSuffix;
       } else {
-        line = 'Collect 5 pieces of evidence to take it down.';
-        prog = state.docsCollected + ' / ' + state.docsTarget;
+        line = 'Scan 5 pieces of evidence (hold SPACE) to take it down.';
+        prog = state.docsCollected + ' / ' + state.docsTarget + bonusSuffix;
       }
       this.runnerHud.taskLine.textContent = line;
       this.runnerHud.taskProgress.textContent = prog;
@@ -2042,17 +1980,7 @@ export default class GameScene extends Phaser.Scene {
         this.runnerHud.taskFrame?.classList.remove('cleared');
       }
     }
-    if (this.runnerHud?.hpFill) {
-      const hpPct = Math.max(0, Math.min(100, Math.round((p.hp / p.maxHp) * 100)));
-      const hpRound = Math.max(0, Math.round(p.hp));
-      this.runnerHud.hpFill.style.width = hpPct + '%';
-      // Color shifts as HP drops
-      this.runnerHud.hpFill.style.background =
-        hpPct > 60 ? 'linear-gradient(90deg, #2D8659 0%, #6dc89e 100%)'
-        : hpPct > 30 ? 'linear-gradient(90deg, #F4D35E 0%, #ffe48a 100%)'
-        : 'linear-gradient(90deg, #E63946 0%, #ff6b73 100%)';
-      this.runnerHud.hpNumber.textContent = hpRound + ' / ' + p.maxHp;
-    }
+    // (HP bar removed — health is the glass-crack state of the window itself.)
 
     // ── Legacy HUD writes (still set for any code path that reads them) ──
     if (this.hud.size) this.hud.size.textContent = Math.round(p.hp) + ' / ' + p.maxHp;

@@ -103,7 +103,9 @@
     <div class="viewport" id="viewport">
       
       <!-- New Login Screen Overlay -->
-      <div id="login-screen" class="absolute inset-0 z-[10000] flex flex-col items-center justify-center font-body-ms text-body-ms overflow-hidden selection:bg-primary selection:text-on-primary" style="background-color: #00001a; background-image: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); background-size: 100% 4px, 6px 100%;">
+      <!-- Retired MeTube OS lock screen: permanently hidden; the LANDING PAGE
+           (src/game/landingPage.js) is the entry screen now. -->
+      <div id="login-screen" class="hidden absolute inset-0 z-[10000] flex-col items-center justify-center font-body-ms text-body-ms overflow-hidden selection:bg-primary selection:text-on-primary" style="background-color: #00001a; background-image: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); background-size: 100% 4px, 6px 100%;">
         <!-- Main Login Modal/Window Context -->
         <main class="flex flex-col items-center justify-center p-8 gap-12 z-10 relative w-full max-w-sm">
           <!-- Logo Section -->
@@ -141,6 +143,27 @@
         <div class="urlbar">
           <span class="nav">←</span><span class="nav">→</span><span class="nav">↻</span>
           <div class="url" id="browser-url">https://totallynormaltube.gov.??/watch?v=truth</div>
+          <!-- Level HUD lives in the browser chrome itself (Phase 2 top-bar
+               redesign): docs-secured badge + vector extension/settings icons -->
+          <div class="urlbar-tools hidden" id="urlbar-tools">
+            <div class="secured-badge" id="secured-badge">
+              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <path d="M1.5 3.5h4l1.5 2h7.5v7.5h-13z" fill="#F4D35E" stroke="#1a1a1f" stroke-width="1"/>
+              </svg>
+              <span id="secured-count">0/4</span>&nbsp;SECURED
+            </div>
+            <span class="urlbar-icon" title="TruthLens extension">
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+                <path d="M8 3h4v2.2a1.8 1.8 0 1 0 0 3.6V11h2.2a1.8 1.8 0 1 1 3.6 0H20v4a2 2 0 0 1-2 2h-4v-2.2a1.8 1.8 0 1 0-3.6 0V17H6a2 2 0 0 1-2-2v-4h1.2a1.8 1.8 0 1 0 0-3.6H4V5a2 2 0 0 1 2-2z" transform="translate(-2,-1) scale(0.95)" fill="#8a8a8a"/>
+              </svg>
+            </span>
+            <span class="urlbar-icon" title="Settings">
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+                <path d="M10 6.5A3.5 3.5 0 1 0 10 13.5 3.5 3.5 0 0 0 10 6.5zm0 1.8a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4z" fill="#8a8a8a"/>
+                <path d="M10 1.6l1.1 2.1c.5.1 1 .3 1.4.6l2.3-.7 1.6 1.6-.7 2.3c.3.4.5.9.6 1.4l2.1 1.1-2.1 1.1c-.1.5-.3 1-.6 1.4l.7 2.3-1.6 1.6-2.3-.7c-.4.3-.9.5-1.4.6L10 18.4l-1.1-2.1c-.5-.1-1-.3-1.4-.6l-2.3.7-1.6-1.6.7-2.3c-.3-.4-.5-.9-.6-1.4L1.6 10l2.1-1.1c.1-.5.3-1 .6-1.4l-.7-2.3 1.6-1.6 2.3.7c.4-.3.9-.5 1.4-.6L10 1.6zm0 4.4a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" fill="#8a8a8a"/>
+              </svg>
+            </span>
+          </div>
         </div>
         <div class="canvas-wrap">
           <div id="game"></div>
@@ -217,19 +240,6 @@
                 </div>
               </div>
             </div>
-          </div>
-
-          <!-- ===== MALWARE INSTALL / SHORT-CIRCUIT SEQUENCE ===== -->
-          <div class="end-sequence hidden" id="end-sequence">
-            <div class="malware-install" id="malware-install">
-              <div class="malware-frame">
-                <div class="malware-tag">[ MALWARE.exe — SILENT INSTALL ]</div>
-                <div class="malware-line">Injecting payload into HUSH pipeline...</div>
-                <div class="malware-bar"><div class="malware-fill" id="malware-fill"></div></div>
-                <div class="malware-pct" id="malware-pct">0%</div>
-              </div>
-            </div>
-            <div class="glitch-sweep" id="glitch-sweep"></div>
           </div>
 
           <!-- ===== INTEL DIALOG (triggered when player uncovers a hidden memo) ===== -->

@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "playtest": "node playtests/run-playtest.js"
   },
   "devDependencies": {
+    "playwright": "^1.61.1",
     "vite": "^8.0.10"
   },
   "dependencies": {

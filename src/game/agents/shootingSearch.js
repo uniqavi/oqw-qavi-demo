@@ -4,7 +4,7 @@
 
 import { AGENTS, DAMAGE } from '../../config.js';
 import { dist, playerBox } from '../physics.js';
-import { beep, noise } from '../audio.js';
+import { beep, flutter } from '../audio.js';
 import { playSfx } from '../sfx.js';
 import { damagePlayer } from '../combat.js';
 
@@ -55,8 +55,9 @@ export function update(agent, dt, state) {
       });
       agent.shotsLeft--;
       agent.cooldown = T.fireInterval;
-      beep(1400, 0.04, 'square', 0.05);
-      noise(0.04, 0.05);
+      // The projectiles are flying flip-flops — each launch flaps like a
+      // sandal tumbling through the air.
+      flutter(0.45, 0.11);
     }
     if (agent.shotsLeft <= 0) {
       agent.state = 'cooldown';

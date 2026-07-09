@@ -12,6 +12,7 @@ import { PW, WAVE } from '../config.js';
 import { effectiveSize } from './playerSize.js';
 import { beep, noise } from './audio.js';
 import { playSfx } from './sfx.js';
+import { damagePlayer } from './combat.js';
 
 const AD_TEXTS = [
   'DOWNLOAD MORE RAM — FREE',
@@ -62,10 +63,6 @@ export function update(state, dt, viewH) {
   const p = state.player;
   const camY = state.scrollY;
   const list = state.waveEnemies;
-  // Immune to damage during the escape sequence too — once the docs are
-  // collected and the page is decelerating, leftover enemies shouldn't be
-  // able to chip away at the player.
-  const immune = p.buffs.immune > 0 || (p.test && p.test.immune) || !!state.escape;
 
   for (let i = list.length - 1; i >= 0; i--) {
     const e = list[i];
@@ -92,12 +89,16 @@ export function update(state, dt, viewH) {
     const px = p.x - s / 2, py = p.y - ph / 2;
     const hit = e.wx < px + s && e.wx + e.w > px && e.wy < py + ph && e.wy + e.h > py;
     if (hit && e.dying <= 0) {
-      if (!immune && p.invuln <= 0) {
-        p.hp = Math.max(0, p.hp - def.damage);
-        p.invuln = 0.6; p.hitFlash = 0.25;
+      // Skip all damage during the escape sequence — leftover enemies shouldn't
+      // chip away at the player once the docs are collected.
+      // All other immunity (test panel IMMUNE toggle, SHIELD buff, invuln window)
+      // is handled inside damagePlayer() consistently.
+      if (!state.escape) {
+        damagePlayer(state, def.damage, 0, 0);
         state.hitCount = (state.hitCount || 0) + 1;
         playSfx('hit');
-        if (p.hp === 0) state.gameOver = true;
+        // Mirror gameOver flag so GameScene's runner loop catches the death.
+        if (p.hp <= 0) state.gameOver = true;
       }
       e.dying = 0.22;
       noise(0.08, 0.06); beep(180, 0.1, 'square', 0.08);
