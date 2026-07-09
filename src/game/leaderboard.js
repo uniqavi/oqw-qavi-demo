@@ -18,9 +18,9 @@ export function getTotalRunTime() {
 }
 
 const DEFAULT_BOARD = [
-  { name: 'ShadowX', time: 154.56 },
-  { name: 'NightHawk', time: 192.78 },
-  { name: 'GhostRider', time: 225.23 }
+  { name: 'ShadowX', time: 634.56 },
+  { name: 'NightHawk', time: 732.78 },
+  { name: 'GhostRider', time: 945.23 }
 ];
 
 export function getLeaderboard() {

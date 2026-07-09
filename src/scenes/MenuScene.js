@@ -19,14 +19,14 @@ export default class MenuScene extends Phaser.Scene {
     preload() {
         // Briefing dossier is down to two pages (1.jpg + 3.jpg) — the rest
         // were removed from the design.
-        this.load.image('briefing_img_1', 'src/Briefing Images/1.jpg');
-        this.load.image('briefing_img_2', 'src/Briefing Images/3.jpg');
+        this.load.image('briefing_img_1', 'Briefing Images/1.jpg');
+        this.load.image('briefing_img_2', 'Briefing Images/3.jpg');
 
         // Load Bonus Content images
         for (let i = 1; i <= 4; i++) {
-            this.load.image(`bonus_img_${i}`, `src/Bonus Content/${i}.jpeg`);
+            this.load.image(`bonus_img_${i}`, `Bonus Content/${i}.jpeg`);
         }
-        this.load.image('bonus_img_5', 'src/Bonus Content/5.jpg');
+        this.load.image('bonus_img_5', 'Bonus Content/5.jpg');
     }
 
 
