@@ -17,25 +17,19 @@ export function getTotalRunTime() {
   return parts.reduce((a, b) => a + b, 0);
 }
 
-const DEFAULT_BOARD = [
-  { name: 'ShadowX', time: 634.56 },
-  { name: 'NightHawk', time: 732.78 },
-  { name: 'GhostRider', time: 945.23 }
-];
-
 export function getLeaderboard() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY));
-    return Array.isArray(raw) && raw.length > 0 ? raw : DEFAULT_BOARD;
-  } catch (e) { return DEFAULT_BOARD; }
+    return Array.isArray(raw) ? raw : [];
+  } catch (e) { return []; }
 }
 
-// Insert a run and keep the 3 fastest. Returns the new board.
+// Insert a run and keep the 10 fastest. Returns the new board.
 export function submitScore(name, time) {
   const board = getLeaderboard();
   board.push({ name: String(name).slice(0, 12) || 'AGENT', time });
   board.sort((a, b) => a.time - b.time);
-  const top = board.slice(0, 3);
+  const top = board.slice(0, 10);
   try { localStorage.setItem(KEY, JSON.stringify(top)); } catch (e) {}
   return top;
 }

@@ -321,7 +321,8 @@ export default class MenuScene extends Phaser.Scene {
             board.forEach((run, i) => {
                 const y = rowsY + i * rowH;
                 const medal = this.add.graphics();
-                medal.fillStyle(Phaser.Display.Color.HexStringToColor(medals[i]).color, 1);
+                const medalColor = medals[i] || '#3e3e42';
+                medal.fillStyle(Phaser.Display.Color.HexStringToColor(medalColor).color, 1);
                 medal.fillCircle(24, y + rowH / 2, 10);
                 const rank = TXT(24, y + rowH / 2, String(i + 1), {
                     fontFamily: 'Tahoma, Arial', fontSize: '12px', color: '#1a1a1f', fontWeight: 'bold'

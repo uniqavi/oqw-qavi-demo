@@ -216,16 +216,18 @@ function buildStartCard() {
     `</div>`);
 }
 
-// LeaderboardCard — compact top-3, right side.
+// LeaderboardCard — compact top-10, right side.
 function buildLeaderboardCard(rows) {
   const medals = ['🥇', '🥈', '🥉'];
-  const rowsHtml = rows.map((r, i) =>
-    `<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;` +
-      `${i < rows.length - 1 ? `border-bottom:1px solid ${C.border};` : ''}">` +
-      `<div style="flex:none;font-size:17px;">${medals[i] || r.rank}</div>` +
-      `<div style="flex:1;font:600 14px 'Segoe UI',Arial,sans-serif;color:${C.ink};">${r.player}</div>` +
-      `<div style="font:bold 13px Consolas,monospace;color:#2D8659;">${r.bestTime}</div>` +
-    `</div>`).join('');
+  const rowsHtml = rows.length === 0
+    ? `<div style="text-align:center;padding:24px 10px;font:italic 13px 'Segoe UI',Arial,sans-serif;color:${C.sub};">No completed runs yet</div>`
+    : rows.map((r, i) =>
+        `<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;` +
+          `${i < rows.length - 1 ? `border-bottom:1px solid ${C.border};` : ''}">` +
+          `<div style="flex:none;font-size:17px;width:24px;text-align:center;">${medals[i] || r.rank}</div>` +
+          `<div style="flex:1;font:600 14px 'Segoe UI',Arial,sans-serif;color:${C.ink};">${r.player}</div>` +
+          `<div style="font:bold 13px Consolas,monospace;color:#2D8659;">${r.bestTime}</div>` +
+        `</div>`).join('');
   return (
     `<div id="lp-board" class="lp-rise" style="animation-delay:.34s;` +
       `background:${C.card};border:1px solid ${C.border};border-radius:14px;box-shadow:0 6px 22px rgba(40,60,90,0.10);overflow:hidden;">` +
