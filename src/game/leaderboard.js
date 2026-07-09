@@ -24,6 +24,19 @@ export function getLeaderboard() {
   } catch (e) { return []; }
 }
 
+// One-time migration: purge stale mock entries left by older builds.
+// Runs once on module load; if the board contains only fake placeholder
+// names it gets wiped so the player starts fresh.
+const MOCK_NAMES = new Set(['ShadowX', 'NightHawk', 'GhostRider']);
+(function _purgeStaleMockData() {
+  try {
+    const board = getLeaderboard();
+    if (board.length > 0 && board.every(r => MOCK_NAMES.has(r.name))) {
+      localStorage.removeItem(KEY);
+    }
+  } catch (e) {}
+})();
+
 // Insert a run and keep the 10 fastest. Returns the new board.
 export function submitScore(name, time) {
   const board = getLeaderboard();
