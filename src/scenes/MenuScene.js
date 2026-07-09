@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { loadSfx, playSfx } from '../game/sfx.js';
 import { loadMusic, stopMusic, playMusic } from '../game/music.js';
 import { initAudio, beep } from '../game/audio.js';
-import { getLeaderboard, fmtTime } from '../game/leaderboard.js';
+import { getLeaderboard, fmtTime, fetchGlobalLeaderboard } from '../game/leaderboard.js';
 import { showLandingPage } from '../game/landingPage.js';
 
 /**
@@ -254,6 +254,13 @@ export default class MenuScene extends Phaser.Scene {
         this.createNotification();
         this.createLeaderboardWidget();
 
+        // Fetch fresh global scores and update the widget when they load
+        fetchGlobalLeaderboard().then(() => {
+            if (this.sys && this.sys.isActive()) {
+                this.createLeaderboardWidget();
+            }
+        }).catch(() => {});
+
         // Returning from a cleared runner with intel still encrypted → nudge
         // the player toward the Briefing folder.
         if (runnerCleared && !decrypted) {
@@ -271,6 +278,9 @@ export default class MenuScene extends Phaser.Scene {
 
     // Desktop widget: TOP AGENTS — the 3 fastest full runs (name + total time).
     createLeaderboardWidget() {
+        if (this.leaderboardWidget) {
+            this.leaderboardWidget.destroy();
+        }
         const board = getLeaderboard();
         const w = 280, rowH = 32, headerRowH = 24;
         const h = 60 + headerRowH + Math.max(1, board.length) * rowH + 10;

@@ -21,7 +21,7 @@
 // real API call later; the card renders whatever it resolves.
 
 import { initAudio, beep } from './audio.js';
-import { getLeaderboard, fmtTime } from './leaderboard.js';
+import { getLeaderboard, fmtTime, fetchGlobalLeaderboard } from './leaderboard.js';
 
 // ── Palette (mirrors DashboardScene's light "HUSH analytics" theme) ─────────
 const C = {
@@ -36,7 +36,7 @@ const C = {
 // ── Leaderboard data provider — loads from shared leaderboard module. ─────────
 // Shape: [{ rank, player, bestTime }] — the card is agnostic to the source.
 export async function fetchTopPlayers() {
-  const board = getLeaderboard();
+  const board = await fetchGlobalLeaderboard();
   return board.map((r, i) => ({
     rank: i + 1,
     player: r.name,
