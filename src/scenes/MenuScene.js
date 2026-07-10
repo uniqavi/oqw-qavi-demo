@@ -189,9 +189,12 @@ export default class MenuScene extends Phaser.Scene {
 
         // 1. Briefing Folder (Gates story mode)
         this.briefFolderGroup = this.createDesktopIcon(60, currentY, 'folder_icon', 'Briefing', () => this.openBriefingFolderWindow());
-        // "New doc available" badge once the runner is beaten but the intel
-        // hasn't been decrypted yet (Phase 3 lore notification badge).
-        if (runnerCleared && !decrypted) this._addFolderBadge();
+        // Show a tiny red dot over the Briefing folder if the intro briefing is unread,
+        // or if a new encrypted intel file is dropped after the runner is beaten.
+        this.briefFolderDot = null;
+        if (!briefingRead || (runnerCleared && !decrypted)) {
+            this.briefFolderDot = this._addFolderDot(this.briefFolderGroup);
+        }
         currentY += 100;
 
         // 2. SecureChat App
@@ -233,9 +236,15 @@ export default class MenuScene extends Phaser.Scene {
 
         // 4b. Bonus folder - created permanently, but only visible if epilogue is done
         this.bonusFolderGroup = this.createDesktopIcon(170, 160, 'folder_icon', 'Bonus', () => this.openBriefingFolderWindow(true));
+        this.bonusFolderDot = null;
         if (!this.epilogueDone) {
             this.bonusFolderGroup.setVisible(false);
             this.bonusFolderGroup.setAlpha(0);
+        } else {
+            const bonusRead = localStorage.getItem('oqw-bonus-read') === 'true';
+            if (!bonusRead) {
+                this.bonusFolderDot = this._addFolderDot(this.bonusFolderGroup);
+            }
         }
 
         // 5. Recycle Bin Icon
@@ -349,24 +358,21 @@ export default class MenuScene extends Phaser.Scene {
         this.leaderboardWidget = widget;
     }
 
-    // Small red pulsing "!" badge on the Briefing folder icon.
-    _addFolderBadge() {
+    // Small red pulsing dot badge on a folder icon.
+    _addFolderDot(folderGroup) {
         const badge = this.add.container(24, -26);
         const dot = this.add.graphics();
         dot.fillStyle(0xe63946, 1);
-        dot.fillCircle(0, 0, 11);
-        dot.lineStyle(2, 0xffffff, 1);
-        dot.strokeCircle(0, 0, 11);
-        const mark = this.add.text(0, 0, '!', {
-            fontFamily: 'Arial', fontSize: '14px', color: '#ffffff', fontWeight: 'bold'
-        }).setOrigin(0.5);
-        badge.add([dot, mark]);
-        this.briefFolderGroup.add(badge);
-        this.folderBadge = badge;
+        dot.fillCircle(0, 0, 8);
+        dot.lineStyle(1.5, 0xffffff, 1);
+        dot.strokeCircle(0, 0, 8);
+        badge.add(dot);
+        folderGroup.add(badge);
         this.tweens.add({
             targets: badge, scaleX: 1.25, scaleY: 1.25,
             duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
         });
+        return badge;
     }
 
     _showIntelNotification() {
@@ -1643,6 +1649,19 @@ export default class MenuScene extends Phaser.Scene {
     // FILE EXPLORER WINDOW — Windows XP style
     // ═══════════════════════════════════════════════════════════════════════
     openBriefingFolderWindow(isBonus = false) {
+        if (!isBonus) {
+            if (this.briefFolderDot) {
+                this.briefFolderDot.destroy();
+                this.briefFolderDot = null;
+            }
+        } else {
+            if (this.bonusFolderDot) {
+                this.bonusFolderDot.destroy();
+                this.bonusFolderDot = null;
+            }
+            try { localStorage.setItem('oqw-bonus-read', 'true'); } catch (e) {}
+        }
+
         const winName = isBonus ? 'bonus_folder_explorer' : 'folder_explorer';
         const existing = this._getWindow(winName);
         if (existing) {
@@ -2345,7 +2364,7 @@ export default class MenuScene extends Phaser.Scene {
 
         this.decrypted = true;
         localStorage.setItem('oqw-decrypted', 'true');
-        if (this.folderBadge) { this.folderBadge.destroy(); this.folderBadge = null; }
+        if (this.briefFolderDot) { this.briefFolderDot.destroy(); this.briefFolderDot = null; }
 
         this._decryptCleanup?.();
         this._unregisterWindow(minigameWindow);
@@ -2508,6 +2527,10 @@ export default class MenuScene extends Phaser.Scene {
             if (this.bonusFolderGroup) {
                 this.bonusFolderGroup.setVisible(true);
                 this.tweens.add({ targets: this.bonusFolderGroup, alpha: 1, duration: 800 });
+                const bonusRead = localStorage.getItem('oqw-bonus-read') === 'true';
+                if (!bonusRead && !this.bonusFolderDot) {
+                    this.bonusFolderDot = this._addFolderDot(this.bonusFolderGroup);
+                }
             }
             this.time.delayedCall(1200, () => {
                 this._showBonusFolderNotification();

@@ -23,6 +23,7 @@ export const PROGRESS_KEYS = [
   'oqw-epilogue-done',    // Toto's wrap-up chat after the campaign
   // per-run speedrun clocks (feed one TOP AGENTS submission, then reset)
   'oqw-time-l1', 'oqw-time-l2', 'oqw-time-l3',
+  'oqw-accum-l1', 'oqw-accum-l2', 'oqw-accum-l3',
 ];
 
 export function resetProgress() {

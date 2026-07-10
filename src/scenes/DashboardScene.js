@@ -250,13 +250,13 @@ export default class DashboardScene extends Phaser.Scene {
     this.escapeReady = false;
     this.done = false;
 
-    // Discrete-hits health — this level runs 4 hits (slightly higher than the 3 the
+    // Discrete-hits health — this level runs 6 hits (slightly higher than the 3 the
     // earlier levels use) because it's a long, dense gauntlet.
     // Damage still shows as glass cracks on the window (no HP bar).
     const player = {
       x: 330, y: 1990, w: 56, h: 40, size: 56,
       vx: 0, vy: 0,
-      hp: 4, maxHp: 4, useHp: true, useHits: true,
+      hp: 6, maxHp: 6, useHp: true, useHits: true,
       invuln: 0, hitFlash: 0,
       test: { immune: false },
     };
@@ -636,6 +636,13 @@ export default class DashboardScene extends Phaser.Scene {
     if (isPauseOpen()) { this.render(); return; }
     this.time += dt;
     this.gs.time = this.time;
+
+    if (this.started && !this.failed && !this.done && !this.narration && !this.exitPan) {
+      try {
+        const currentAccum = parseFloat(localStorage.getItem('oqw-accum-l3') || '0');
+        localStorage.setItem('oqw-accum-l3', String(currentAccum + dt));
+      } catch (e) {}
+    }
     if (this.introT < INTRO_TIME) this.introT += dt;
 
     this.gs.sparks = this.gs.sparks.filter(s => {
@@ -1311,8 +1318,8 @@ export default class DashboardScene extends Phaser.Scene {
     if (this.done) return;
     this.done = true;
     beep(659, 0.12, 'sine', 0.12); setTimeout(() => beep(988, 0.25, 'sine', 0.12), 130);
-    // Speedrun clock: this level's time, then the whole-run total
-    saveLevelTime('l3', Math.max(0, this.time - (this.runStartT || 0)));
+    // Speedrun clock: time spent actively playing this level across all attempts
+    saveLevelTime('l3', parseFloat(localStorage.getItem('oqw-accum-l3') || '0'));
     // Campaign complete — Toto's wrap-up chat waits on the desktop
     try { localStorage.setItem('oqw-level3-cleared', 'true'); } catch (e) {}
     // KiloGram credits play first; the existing name-entry/score popup

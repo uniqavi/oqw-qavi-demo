@@ -391,6 +391,13 @@ export default class HomeScene extends Phaser.Scene {
     this.time += dt;
     this.gs.time = this.time;
 
+    if (this.started && !this.failed && !this.entering) {
+      try {
+        const currentAccum = parseFloat(localStorage.getItem('oqw-accum-l1') || '0');
+        localStorage.setItem('oqw-accum-l1', String(currentAccum + dt));
+      } catch (e) {}
+    }
+
     // Sparks decay every frame (even when paused / failed).
     this.gs.sparks = this.gs.sparks.filter(s => {
       s.life -= dt;
@@ -548,8 +555,8 @@ export default class HomeScene extends Phaser.Scene {
   // Level 1.1 complete — no more direct jump into the runner. The player
   // returns to the desktop, where Toto's chat unlocks Level 1.2.
   finishLevel() {
-    // Speedrun clock: time from tutorial end to clearing the level
-    saveLevelTime('l1', Math.max(0, this.time - (this.startT || 0)));
+    // Speedrun clock: time spent actively playing this level across all attempts
+    saveLevelTime('l1', parseFloat(localStorage.getItem('oqw-accum-l1') || '0'));
     try { localStorage.setItem('oqw-level1-cleared', 'true'); } catch (e) {}
     clearInterval(this._tickingInterval);
     showLevelComplete({

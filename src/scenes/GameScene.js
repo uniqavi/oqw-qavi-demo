@@ -753,6 +753,12 @@ export default class GameScene extends Phaser.Scene {
       // scroller's slow→fast ramp starts fresh in Phase B (rather than
       // already being mid-ramp because state.time was already large).
       this.state.phaseTime = (this.state.phaseTime ?? 0) + dt;
+      if (this.state.status === 'playing') {
+        try {
+          const currentAccum = parseFloat(localStorage.getItem('oqw-accum-l2') || '0');
+          localStorage.setItem('oqw-accum-l2', String(currentAccum + dt));
+        } catch (e) {}
+      }
     }
 
     // Smooth zoom toward target
@@ -1190,7 +1196,7 @@ export default class GameScene extends Phaser.Scene {
         setTimeout(() => beep(784, 0.2, 'sine', 0.12), 200);
         state.status = 'won';
         state.stats.endedAt = state.time;
-        saveLevelTime('l2', state.time);   // speedrun clock for the leaderboard
+        saveLevelTime('l2', parseFloat(localStorage.getItem('oqw-accum-l2') || '0'));   // speedrun clock for the leaderboard
         // Story progression loop: Level 1.2 complete → back to the DESKTOP
         // (new intel lands in the Briefing folder there). The dashboard
         // launches from its desktop icon after the decryption minigame — no
