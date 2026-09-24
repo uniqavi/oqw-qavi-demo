@@ -12,6 +12,7 @@ import { saveLevelTime, getTotalRunTime, submitScore, fmtTime } from '../game/le
 import { drawCrashScreen } from '../game/crashScreen.js';
 import { updateScan, drawScanPrompt } from '../game/scanDocs.js';
 import { playKilogramCredits, removeKilogramCredits } from '../game/kilogram.js';
+import { isCheatsEnabled } from '../game/cheats.js';
 
 // LEVEL 2 — "THE DASHBOARD" (HUSH's corrupted SEO / analytics backend)
 //
@@ -258,7 +259,7 @@ export default class DashboardScene extends Phaser.Scene {
       vx: 0, vy: 0,
       hp: 6, maxHp: 6, useHp: true, useHits: true,
       invuln: 0, hitFlash: 0,
-      test: { immune: false },
+      test: { immune: false, size: false, magnet: false },
     };
     this.player = player;
     this.cracks = [];
@@ -315,6 +316,42 @@ export default class DashboardScene extends Phaser.Scene {
     this.taskFrame?.classList.remove('hidden');
     this.taskFrame?.classList.remove('cleared');
 
+    // Dev testing panel (temporary). Toggle button + ability toggles that
+    // flip this.player.test.* flags (immune / size / magnet).
+    this.testEls = {
+      toggle: document.getElementById('test-toggle'),
+      panel:  document.getElementById('test-panel'),
+      opts:   document.querySelectorAll('#test-panel .test-opt'),
+    };
+    if (isCheatsEnabled()) {
+      this.testEls.toggle?.classList.remove('hidden');
+    } else {
+      this.testEls.toggle?.classList.add('hidden');
+      this.testEls.panel?.classList.add('hidden');
+    }
+    this.testEls.opts?.forEach((el) => {
+      const key = el.dataset.test;
+      const on = !!(this.player.test && this.player.test[key]);
+      el.classList.toggle('on', on);
+      const st = el.querySelector('.test-state');
+      if (st) st.textContent = on ? 'ON' : 'OFF';
+    });
+    this.onTestToggle = (e) => { e.stopPropagation(); this.testEls.panel?.classList.toggle('hidden'); };
+    this.testEls.toggle?.addEventListener('click', this.onTestToggle);
+    this.onTestOpt = (e) => {
+      e.stopPropagation();
+      const key = e.currentTarget.dataset.test;
+      const t = this.player.test;
+      if (t) {
+        t[key] = !t[key];
+        e.currentTarget.classList.toggle('on', t[key]);
+        const st = e.currentTarget.querySelector('.test-state');
+        if (st) st.textContent = t[key] ? 'ON' : 'OFF';
+        beep(t[key] ? 880 : 440, 0.05, 'square', 0.05);
+      }
+    };
+    this.testEls.opts?.forEach((el) => el.addEventListener('click', this.onTestOpt));
+
     // Narration
     this.intelDom = {
       wrap:    document.getElementById('intel-dialog'),
@@ -344,6 +381,10 @@ export default class DashboardScene extends Phaser.Scene {
       resetPauseMenu();
       stopAllSfxLoops();
       this.taskFrame?.classList.add('hidden');
+      this.testEls?.toggle?.classList.add('hidden');
+      this.testEls?.panel?.classList.add('hidden');
+      this.testEls?.toggle?.removeEventListener('click', this.onTestToggle);
+      this.testEls?.opts?.forEach((el) => el.removeEventListener('click', this.onTestOpt));
       this.intelDom?.wrap?.classList.add('hidden');
       this.intelDom?.wrap?.classList.remove('show');
       this.crashEl?.remove();
@@ -879,7 +920,7 @@ export default class DashboardScene extends Phaser.Scene {
       // Collision — only while flowing hard enough to read as "on"
       if (v.state === 'vent' && v.flow > 0.25) {
         const col = { x: v.x - hz.ventW / 2, y: hz.pipeY, w: hz.ventW, h: hz.ventLen * v.flow };
-        if (aabb(col, pb)) this.triggerGasScreen();
+        if (aabb(col, pb) && !(p.test && p.test.immune)) this.triggerGasScreen();
       }
     }
   }
@@ -1355,15 +1396,23 @@ export default class DashboardScene extends Phaser.Scene {
         '--tx:' + tx.toFixed(0) + 'px;--ty:' + ty.toFixed(0) + 'px;--rot:' + (Math.random() * 720 - 360).toFixed(0) + 'deg;"></div>';
     }
 
-    const timeRows = total != null
-      ? '<div style="font:12px Consolas,monospace;letter-spacing:2px;color:#8a97ad;margin:2px 0 2px;">TOTAL RUN TIME</div>' +
-        '<div style="font:bold 40px Consolas,monospace;color:#2D8659;margin-bottom:12px;">' + fmtTime(total) + '</div>' +
-        '<div style="font:13px Tahoma,Arial;color:#555;margin-bottom:8px;">Write your name to enter the leaderboard:</div>' +
-        '<input id="dash-name" maxlength="12" placeholder="AGENT" style="width:210px;padding:8px 10px;text-align:center;' +
-          'font:bold 16px Consolas,monospace;color:#1a1a1f;border:2px inset #dfe5ef;outline:none;text-transform:uppercase;' +
-          'background:#fff;">' +
-        '<style>#dash-name::placeholder{color:#b0b8c8;opacity:1;}</style>'
-      : '<div style="font:13px Tahoma,Arial;color:#555;margin:12px 0;">Full-run time unavailable — beat all three levels in one save to post a score.</div>';
+    const cheatsOn = isCheatsEnabled();
+    const timeRows = cheatsOn
+      ? '<div style="font:12px Consolas,monospace;letter-spacing:2px;color:#8a97ad;margin:2px 0 2px;">TOTAL RUN TIME (CHEATS ENABLED)</div>' +
+        '<div style="font:bold 40px Consolas,monospace;color:#f4d35e;margin-bottom:10px;">' + (total != null ? fmtTime(total) : '--:--') + '</div>' +
+        '<div style="font:13px Tahoma,Arial;color:#e63946;margin:12px 0;line-height:1.4;">' +
+          '<strong>CHEATS WERE ENABLED</strong><br>' +
+          '<span style="font-size:11.5px;color:#666;">Leaderboard registration is disabled for cheated runs.</span>' +
+        '</div>'
+      : (total != null
+        ? '<div style="font:12px Consolas,monospace;letter-spacing:2px;color:#8a97ad;margin:2px 0 2px;">TOTAL RUN TIME</div>' +
+          '<div style="font:bold 40px Consolas,monospace;color:#2D8659;margin-bottom:12px;">' + fmtTime(total) + '</div>' +
+          '<div style="font:13px Tahoma,Arial;color:#555;margin-bottom:8px;">Write your name to enter the leaderboard:</div>' +
+          '<input id="dash-name" maxlength="12" placeholder="AGENT" style="width:210px;padding:8px 10px;text-align:center;' +
+            'font:bold 16px Consolas,monospace;color:#1a1a1f;border:2px inset #dfe5ef;outline:none;text-transform:uppercase;' +
+            'background:#fff;">' +
+          '<style>#dash-name::placeholder{color:#b0b8c8;opacity:1;}</style>'
+        : '<div style="font:13px Tahoma,Arial;color:#555;margin:12px 0;">Full-run time unavailable — beat all three levels in one save to post a score.</div>');
 
     el.innerHTML =
       '<style>' +
@@ -1387,7 +1436,7 @@ export default class DashboardScene extends Phaser.Scene {
         '<div style="padding:16px 18px;text-align:center;">' +
           timeRows +
           '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center;">' +
-            (total != null
+            (total != null && !cheatsOn
               ? '<button id="dash-save" style="padding:10px 24px;font:bold 13px Tahoma;background:#2D8659;color:#fff;border:2px outset #6dc89e;cursor:pointer;letter-spacing:1px;">SAVE SCORE</button>'
               : '<button id="dash-skip" style="padding:10px 24px;font:bold 13px Tahoma;background:#2D8659;color:#fff;border:2px outset #6dc89e;cursor:pointer;letter-spacing:1px;">GO BACK TO DESKTOP</button>') +
           '</div>' +
@@ -2253,6 +2302,18 @@ export default class DashboardScene extends Phaser.Scene {
   drawWindow(ctx) {
     const p = this.player, x = p.x - p.w / 2, y = p.y - p.h / 2;
     ctx.save();
+
+    // Immune-buff golden halo (drawn behind player window)
+    if (p.test && p.test.immune) {
+      const pulse = 0.6 + Math.sin(this.time * 8) * 0.4;
+      ctx.strokeStyle = 'rgba(244, 211, 94, ' + (0.5 + pulse * 0.4) + ')';
+      ctx.lineWidth = 5;
+      ctx.shadowColor = 'rgba(244, 211, 94, 0.9)';
+      ctx.shadowBlur = 18;
+      ctx.strokeRect(x - 4, y - 4, p.w + 8, p.h + 8);
+      ctx.shadowBlur = 0;
+    }
+
     if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.45;
     // subtle scan glow
     ctx.shadowColor = 'rgba(122,208,235,0.7)'; ctx.shadowBlur = 10;

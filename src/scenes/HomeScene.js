@@ -14,6 +14,7 @@ import { crossfadeTo, loadMusic } from '../game/music.js';
 import { loadSfx, playSfx } from '../game/sfx.js';
 import { updateScan, drawScanPrompt } from '../game/scanDocs.js';
 import { showLevelComplete, removeLevelComplete } from '../game/levelComplete.js';
+import { isCheatsEnabled } from '../game/cheats.js';
 
 
 // LEVEL 1.1 — TOTALLYNORMALTUBE HOME PAGE ("Hidden Agents")
@@ -208,6 +209,42 @@ export default class HomeScene extends Phaser.Scene {
     this.urlbarTools?.classList.remove('hidden');
     this.securedBadge?.classList.remove('cleared');
 
+    // Dev testing panel (temporary). Toggle button + ability toggles that
+    // flip this.player.test.* flags (immune).
+    this.testEls = {
+      toggle: document.getElementById('test-toggle'),
+      panel:  document.getElementById('test-panel'),
+      opts:   document.querySelectorAll('#test-panel .test-opt'),
+    };
+    if (isCheatsEnabled()) {
+      this.testEls.toggle?.classList.remove('hidden');
+    } else {
+      this.testEls.toggle?.classList.add('hidden');
+      this.testEls.panel?.classList.add('hidden');
+    }
+    this.testEls.opts?.forEach((el) => {
+      const key = el.dataset.test;
+      const on = !!(this.player.test && this.player.test[key]);
+      el.classList.toggle('on', on);
+      const st = el.querySelector('.test-state');
+      if (st) st.textContent = on ? 'ON' : 'OFF';
+    });
+    this.onTestToggle = (e) => { e.stopPropagation(); this.testEls.panel?.classList.toggle('hidden'); };
+    this.testEls.toggle?.addEventListener('click', this.onTestToggle);
+    this.onTestOpt = (e) => {
+      e.stopPropagation();
+      const key = e.currentTarget.dataset.test;
+      const t = this.player.test;
+      if (t) {
+        t[key] = !t[key];
+        e.currentTarget.classList.toggle('on', t[key]);
+        const st = e.currentTarget.querySelector('.test-state');
+        if (st) st.textContent = t[key] ? 'ON' : 'OFF';
+        beep(t[key] ? 880 : 440, 0.05, 'square', 0.05);
+      }
+    };
+    this.testEls.opts?.forEach((el) => el.addEventListener('click', this.onTestOpt));
+
     // Narration: reuse the intel-dialog DOM. Click anywhere or SPACE/Enter
     // advances. While narration is active the level is paused.
     this.intelDom = {
@@ -234,6 +271,10 @@ export default class HomeScene extends Phaser.Scene {
       resetPauseMenu();
       removeLevelComplete();
       this.urlbarTools?.classList.add('hidden');
+      this.testEls?.toggle?.classList.add('hidden');
+      this.testEls?.panel?.classList.add('hidden');
+      this.testEls?.toggle?.removeEventListener('click', this.onTestToggle);
+      this.testEls?.opts?.forEach((el) => el.removeEventListener('click', this.onTestOpt));
       this.intelDom?.wrap?.classList.add('hidden');
       this.intelDom?.wrap?.classList.remove('show');
     });
@@ -1213,6 +1254,18 @@ export default class HomeScene extends Phaser.Scene {
   drawWindow(ctx) {
     const p = this.player, x = p.x - p.w / 2, y = p.y - p.h / 2;
     ctx.save();
+
+    // Immune-buff golden halo (drawn behind player window)
+    if (p.test && p.test.immune) {
+      const pulse = 0.6 + Math.sin(this.time * 8) * 0.4;
+      ctx.strokeStyle = 'rgba(244, 211, 94, ' + (0.5 + pulse * 0.4) + ')';
+      ctx.lineWidth = 5;
+      ctx.shadowColor = 'rgba(244, 211, 94, 0.9)';
+      ctx.shadowBlur = 18;
+      ctx.strokeRect(x - 4, y - 4, p.w + 8, p.h + 8);
+      ctx.shadowBlur = 0;
+    }
+
     // blink during invulnerability frames
     if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.45;
     const body = p.hitFlash > 0 ? '#ffffff' : 'rgba(17,2,20,0.30)';

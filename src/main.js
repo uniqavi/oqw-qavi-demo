@@ -30,20 +30,14 @@ const config = {
 
 const game = new Phaser.Game(config);
 
-// Dev-only handle so the preview/verification workflow can jump straight to a
-// scene (e.g. window.__game.scene.start('GameScene', { difficulty: 'easy' }))
-// without clicking through the cutscene + tutorial. Vite strips this whole
-// block from production builds (import.meta.env.DEV is statically false).
-if (import.meta.env.DEV) {
-  window.__game = game;
-  // Same-instance handle to the music module for the preview/verification
-  // workflow (a console dynamic import would get a different Vite instance).
-  import('./game/music.js').then((m) => { window.__music = m; });
-  buildDevJumpPanel(game);
-}
+import { isCheatsEnabled } from './game/cheats.js';
 
-// Floating "DEV JUMP" picker (DEV builds only) — jump straight into any scene
-// for testing without playing through the whole flow. Stripped from prod.
+window.__game = game;
+import('./game/music.js').then((m) => { window.__music = m; });
+buildDevJumpPanel(game);
+
+// Floating "DEV JUMP" picker — jump straight into any scene for testing.
+// Display is toggled dynamically when cheats are enabled.
 function buildDevJumpPanel(game) {
   const XP_OVERLAYS = ['xp-welcome', 'xp-desktop', 'xp-call', 'xp-browser'];
 
@@ -88,7 +82,8 @@ function buildDevJumpPanel(game) {
   ];
 
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed;top:8px;left:8px;z-index:99999;font:11px ui-monospace,Consolas,monospace;user-select:none;';
+  wrap.id = 'dev-jump-wrap';
+  wrap.style.cssText = 'position:fixed;top:8px;left:8px;z-index:99999;font:11px ui-monospace,Consolas,monospace;user-select:none;display:' + (isCheatsEnabled() ? 'block' : 'none') + ';';
 
   const toggle = document.createElement('button');
   toggle.textContent = 'DEV ▾';

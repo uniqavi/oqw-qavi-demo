@@ -22,6 +22,7 @@
 
 import { initAudio, beep } from './audio.js';
 import { getLeaderboard, fmtTime, fetchGlobalLeaderboard } from './leaderboard.js';
+import { isCheatsEnabled, setCheatsEnabled } from './cheats.js';
 
 // ── Palette (mirrors DashboardScene's light "HUSH analytics" theme) ─────────
 const C = {
@@ -216,6 +217,37 @@ function buildStartCard() {
     `</div>`);
 }
 
+// Cheats Toggle Button — placed to the right of the Start button
+function buildCheatsToggle() {
+  const on = isCheatsEnabled();
+  return (
+    `<div id="lp-cheat-container" class="lp-rise" style="animation-delay:.24s;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;max-width:270px;">` +
+      `<button id="lp-cheat-toggle" style="` +
+        `display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:12px;cursor:pointer;user-select:none;` +
+        `font:bold 12.5px Consolas,monospace;letter-spacing:1px;transition:all .2s ease;outline:none;width:100%;` +
+        (on
+          ? `background:#2D8659;border:2px solid #38a169;color:#ffffff;box-shadow:0 6px 18px rgba(45,134,89,0.35);`
+          : `background:#e2e8f0;border:2px solid #cbd5e1;color:#64748b;box-shadow:none;`) +
+        `">` +
+        `<div id="lp-cheat-pill" style="` +
+          `flex:none;width:38px;height:22px;border-radius:11px;padding:2px;display:flex;align-items:center;transition:all .2s ease;` +
+          (on ? `background:#1e6b45;justify-content:flex-end;` : `background:#94a3b8;justify-content:flex-start;`) +
+          `">` +
+          `<div style="width:18px;height:18px;border-radius:50%;background:#ffffff;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>` +
+        `</div>` +
+        `<span>START WITH CHEATS ON</span>` +
+      `</button>` +
+      `<div id="lp-cheat-warning" style="` +
+        `margin-top:10px;font:11.5px Consolas,monospace;color:#e63946;line-height:1.45;` +
+        `background:rgba(230,57,70,0.08);border:1px solid rgba(230,57,70,0.22);border-radius:6px;padding:8px 12px;` +
+        (on ? `display:block;` : `display:none;`) +
+        `">` +
+        `⚠️ You can't register on leaderboards after toggling cheats on.` +
+      `</div>` +
+    `</div>`
+  );
+}
+
 // LeaderboardCard — compact top-10, right side.
 function buildLeaderboardCard(rows) {
   const medals = ['🥇', '🥈', '🥉'];
@@ -263,8 +295,9 @@ export function showLandingPage({ onStart, onTeam } = {}) {
       buildBrand() +
       `<div id="lp-main" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px 60px;gap:38px;">` +
       buildHero() +
-        `<div id="lp-cards" style="display:flex;gap:26px;justify-content:center;flex-wrap:wrap;">` +
+        `<div id="lp-cards" style="display:flex;gap:26px;justify-content:center;flex-wrap:wrap;align-items:center;">` +
           buildStartCard() +
+          buildCheatsToggle() +
         `</div>` +
         buildLeaderboardCard([]) +    // placeholder; filled async below
       `</div>` +
@@ -291,6 +324,40 @@ export function showLandingPage({ onStart, onTeam } = {}) {
     setTimeout(() => beep(1320, 0.09, 'sine', 0.06), 80);
     leave(onStart);
   });
+
+  const cheatToggle = root.querySelector('#lp-cheat-toggle');
+  const cheatWarning = root.querySelector('#lp-cheat-warning');
+  const cheatPill = root.querySelector('#lp-cheat-pill');
+
+  cheatToggle?.addEventListener('click', () => {
+    const next = !isCheatsEnabled();
+    setCheatsEnabled(next);
+    initAudio();
+    beep(next ? 880 : 440, 0.05, 'square', 0.06);
+
+    if (next) {
+      cheatToggle.style.background = '#2D8659';
+      cheatToggle.style.border = '2px solid #38a169';
+      cheatToggle.style.color = '#ffffff';
+      cheatToggle.style.boxShadow = '0 6px 18px rgba(45,134,89,0.35)';
+      if (cheatPill) {
+        cheatPill.style.background = '#1e6b45';
+        cheatPill.style.justifyContent = 'flex-end';
+      }
+      if (cheatWarning) cheatWarning.style.display = 'block';
+    } else {
+      cheatToggle.style.background = '#e2e8f0';
+      cheatToggle.style.border = '2px solid #cbd5e1';
+      cheatToggle.style.color = '#64748b';
+      cheatToggle.style.boxShadow = 'none';
+      if (cheatPill) {
+        cheatPill.style.background = '#94a3b8';
+        cheatPill.style.justifyContent = 'flex-start';
+      }
+      if (cheatWarning) cheatWarning.style.display = 'none';
+    }
+  });
+
   return root;
 }
 

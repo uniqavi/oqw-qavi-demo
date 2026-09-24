@@ -23,6 +23,7 @@ import { crossfadeTo, stopMusic, loadMusic } from '../game/music.js';
 import { playSfx, loadSfx, stopAllSfxLoops } from '../game/sfx.js';
 import { playVoice, stopVoice } from '../game/voice.js';
 import { togglePauseMenu, isPauseOpen, resetPauseMenu } from '../game/pauseMenu.js';
+import { isCheatsEnabled } from '../game/cheats.js';
 import { damagePlayer } from '../game/combat.js';
 import { drawCrashScreen } from '../game/crashScreen.js';
 import { updateScan, drawScanPrompt } from '../game/scanDocs.js';
@@ -232,7 +233,12 @@ export default class GameScene extends Phaser.Scene {
       panel:  document.getElementById('test-panel'),
       opts:   document.querySelectorAll('#test-panel .test-opt'),
     };
-    this.testEls.toggle?.classList.remove('hidden');
+    if (isCheatsEnabled()) {
+      this.testEls.toggle?.classList.remove('hidden');
+    } else {
+      this.testEls.toggle?.classList.add('hidden');
+      this.testEls.panel?.classList.add('hidden');
+    }
     this.onTestToggle = (e) => { e.stopPropagation(); this.testEls.panel?.classList.toggle('hidden'); };
     this.testEls.toggle?.addEventListener('click', this.onTestToggle);
     this.onTestOpt = (e) => {

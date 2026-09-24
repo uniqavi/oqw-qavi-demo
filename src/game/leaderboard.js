@@ -3,6 +3,8 @@
 // final level (the Dashboard) sums them, asks for a name, and stores the
 // top 3 runs. The desktop (MenuScene) shows them in the TOP AGENTS widget.
 
+import { isCheatsEnabled } from './cheats.js';
+
 const KEY = 'oqw-leaderboard';
 export const TIME_KEYS = { l1: 'oqw-time-l1', l2: 'oqw-time-l2', l3: 'oqw-time-l3' };
 
@@ -63,6 +65,10 @@ const MOCK_NAMES = new Set(['ShadowX', 'NightHawk', 'GhostRider']);
 
 // Insert a run, POST to Firebase, and update local cache.
 export function submitScore(name, time) {
+  if (isCheatsEnabled()) {
+    console.warn("Cheats are enabled; score will not be submitted to the leaderboard.");
+    return getLeaderboard();
+  }
   const sanitizedName = (String(name).slice(0, 12) || 'AGENT').toUpperCase();
   
   // 1. Update local cache immediately
