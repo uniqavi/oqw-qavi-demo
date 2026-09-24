@@ -14,20 +14,20 @@
 import { getMasterVolume, audioCtx, masterGain, initAudio } from './audio.js';
 
 const SFX = {
-  hit:           '/sfx/player-hit.mp3',
-  gameOver:      '/sfx/game-over.mp3',
-  heal:          '/sfx/heal.mp3',
-  gun:           '/sfx/gun-shot.mp3',
-  burst:         '/sfx/burst-fire.mp3',
-  crusherSlam:   '/sfx/crusher-slam.mp3',
-  boulderLaunch: '/sfx/boulder-launch.mp3',
-  boulderRoll:   '/sfx/boulder-roll.mp3',
-  laserCharge:   '/sfx/laser-charge.mp3',
-  laserFire:     '/sfx/laser-fire.mp3',
-  mineBoom:      '/sfx/mine-boom.mp3',
-  docScan:       '/sfx/doc-scan.mp3',
-  exportReady:   '/sfx/export-ready.mp3',
-  desktopClick:  '/sfx/meme_Mouse_click.mp3',
+  hit:           './sfx/player-hit.mp3',
+  gameOver:      './sfx/game-over.mp3',
+  heal:          './sfx/heal.mp3',
+  gun:           './sfx/gun-shot.mp3',
+  burst:         './sfx/burst-fire.mp3',
+  crusherSlam:   './sfx/crusher-slam.mp3',
+  boulderLaunch: './sfx/boulder-launch.mp3',
+  boulderRoll:   './sfx/boulder-roll.mp3',
+  laserCharge:   './sfx/laser-charge.mp3',
+  laserFire:     './sfx/laser-fire.mp3',
+  mineBoom:      './sfx/mine-boom.mp3',
+  docScan:       './sfx/doc-scan.mp3',
+  exportReady:   './sfx/export-ready.mp3',
+  desktopClick:  './sfx/meme_Mouse_click.mp3',
 };
 
 const clips = {}; // AudioBuffers

@@ -35,7 +35,7 @@ export function setVoiceMuted(value) {
 export function playVoice(id) {
   if (!id) return;
   stopVoice();
-  const clip = new Audio('/voice/' + id + '.mp3');
+  const clip = new Audio('./voice/' + id + '.mp3');
   clip.volume = voiceVol();
   // Suppress 404 console spam if the voice file hasn't been generated yet
   clip.addEventListener('error', () => { /* file not present, no problem */ });

@@ -140,7 +140,7 @@ export default class GameScene extends Phaser.Scene {
     this.holeImg = new Image();
     this.holeImgLoaded = false;
     this.holeImg.onload = () => { this.holeImgLoaded = true; };
-    this.holeImg.src = '/hole.png';
+    this.holeImg.src = './hole.png';
 
     // Hidden Phaser canvas children that aren't used — we draw to #oqw instead.
     this.cameras.main.setBackgroundColor(0x181818);

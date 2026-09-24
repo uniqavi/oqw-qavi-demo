@@ -72,7 +72,7 @@ function initialAvatarHtml(name, color, size) {
 function devAvatarHtml(key, color, size) {
   return `<div style="position:relative;width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;flex:none;">` +
     initialAvatarHtml(key, color, size) +
-    `<img src="/credits/${key}.jpg" onerror="this.remove()" ` +
+    `<img src="./credits/${key}.jpg" onerror="this.remove()" ` +
     `style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">` +
     `</div>`;
 }

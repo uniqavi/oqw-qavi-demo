@@ -23,10 +23,10 @@ import { getMasterVolume, onMasterVolumeChange } from './audio.js';
 // Each level now has its own upbeat loop (see public/music/README.md for
 // track credits — level12/level3 are Kevin MacLeod, CC-BY 4.0).
 const TRACKS = {
-  level1:  '/music/level1.mp3',        // desktop hub theme
-  level2:  '/music/level2.mp3',        // Level 1.1 home feed (original in-level loop)
-  level12: '/music/level12.mp3',       // Level 1.2 runner — "Voxel Revolution"
-  level3:  '/music/level3.mp3',        // Dashboard finale — "Cyborg Ninja"
+  level1:  './music/level1.mp3',        // desktop hub theme
+  level2:  './music/level2.mp3',        // Level 1.1 home feed (original in-level loop)
+  level12: './music/level12.mp3',       // Level 1.2 runner — "Voxel Revolution"
+  level3:  './music/level3.mp3',        // Dashboard finale — "Cyborg Ninja"
 };
 
 const audioElements = {};
